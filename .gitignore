@@ -1,0 +1,6 @@
+/.idea/
+/.env
+/order-service.iml
+/payment-service.iml
+/inventory-service.iml
+/shipping-service.iml
