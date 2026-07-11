@@ -1,7 +1,8 @@
 package kafkago
 
 import (
-	"inventoryservice/usecases/ports/kafka/common"
+	"inventoryservice/interfaceadapters/common/kafka"
+	"inventoryservice/interfaceadapters/in/kafka/common"
 
 	"github.com/google/uuid"
 )
@@ -14,7 +15,7 @@ func NewStubMessageConsumer() common.KafkaMessageConsumer {
 	return &messageConsumer{}
 }
 
-func (c *messageConsumer) ConsumeAsync(_ func(eventType common.EventType, eventId, correlationId uuid.UUID, payload []byte) error) {
+func (c *messageConsumer) ConsumeAsync(_ func(eventType kafka.EventType, eventId, correlationId uuid.UUID, payload []byte) error) {
 }
 
 func (c *messageConsumer) Close() error {

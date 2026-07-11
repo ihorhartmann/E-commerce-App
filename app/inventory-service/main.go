@@ -1,7 +1,7 @@
 package main
 
 import (
-	"inventoryservice/env"
+	"inventoryservice/frameworks/env"
 	"inventoryservice/interfaceadapters/in/http"
 	"inventoryservice/interfaceadapters/out/repository"
 	"inventoryservice/usecases"

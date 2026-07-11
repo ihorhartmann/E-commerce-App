@@ -1,7 +1,8 @@
 package kafkago
 
 import (
-	"inventoryservice/usecases/ports/kafka/common"
+	"inventoryservice/interfaceadapters/common/kafka"
+	"inventoryservice/interfaceadapters/out/kafka/common"
 
 	"github.com/google/uuid"
 )
@@ -14,7 +15,7 @@ func NewStubMessageProducer() common.KafkaMessageProducer {
 	return &messageProducer{}
 }
 
-func (p *messageProducer) Send(_ common.EventType, _ uuid.UUID, _ any) error {
+func (p *messageProducer) Send(_ kafka.EventType, _ uuid.UUID, _ any) error {
 	return nil
 }
 
