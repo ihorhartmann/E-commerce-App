@@ -293,10 +293,6 @@ The package contains:
 * Services
 * Ports
 
-##### application/services
-
-Services contain business logic that operates on domain objects.
-
 ##### application/ports
 
 Ports are interfaces that define how business logic interacts with external systems, such as:
@@ -304,6 +300,11 @@ Ports are interfaces that define how business logic interacts with external syst
 * Databases
 * Kafka
 * Third-party services
+
+##### application/services
+
+Services contain business logic that operates on domain objects.
+
 
 ---
 
@@ -336,8 +337,6 @@ Kafka event types are defined in:
 ```text
 adapters/common/kafka
 ```
-
-Kafka adapters also use shared producer and consumer interfaces defined under the `common` package.
 
 ##### adapters/out
 
@@ -381,10 +380,10 @@ Mapping must be implemented using package-level functions without receivers.
 
 Function names must be:
 
-* `FromDomainModel`
-* `ToDomainModel`
+* `fromDomainModel`
+* `toDomainModel`
 
-When introducing a new DTO, implement only the mapping functions required by the current use case. Do not create unused mapping functions.
+When introducing a new DTO, implement only the mapping functions required by the current service. Do not create unused mapping functions.
 
 ### Infrastructure
 
@@ -392,22 +391,13 @@ Contains frameworks, drivers, and their configuration.
 
 Examples:
 
-* GORM
+* Spring configuration
 * Database migrations
-* kafka-go
 * Environment configuration
 * Application configuration
 
 This layer depends only on the `Adapters` layer.
 
-This layer contains the implementations of:
-
-* `CommonKafkaProducer`
-* `CommonKafkaConsumer`
-
-These implementations do not contain business-specific logic and are therefore implemented at the infrastructure level.
-
-Kafka producers and consumers that contain business-specific behavior belong to the `Adapters` layer.
 
 
 # 4. Shipping Service Architecture
