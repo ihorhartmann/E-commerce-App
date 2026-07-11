@@ -1,8 +1,9 @@
 package kafka
 
 import (
+	"inventoryservice/interfaceadapters/common/kafka"
+	"inventoryservice/interfaceadapters/in/kafka/common"
 	"inventoryservice/usecases"
-	"inventoryservice/usecases/ports/kafka/common"
 
 	"github.com/google/uuid"
 )
@@ -30,6 +31,6 @@ func (cc *ReservationConsumer) Close() error {
 	return cc.consumer.Close()
 }
 
-func (cc *ReservationConsumer) handleMessage(eventType common.EventType, _, _ uuid.UUID, payload []byte) error {
+func (cc *ReservationConsumer) handleMessage(eventType kafka.EventType, _, _ uuid.UUID, payload []byte) error {
 	return nil
 }

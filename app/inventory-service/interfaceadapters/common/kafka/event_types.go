@@ -1,4 +1,4 @@
-package common
+package kafka
 
 type EventType string
 
