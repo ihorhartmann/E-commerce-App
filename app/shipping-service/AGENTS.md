@@ -7,6 +7,14 @@
 **Technologies:** GORM, Gin, kafka-go
 
 
+## Generic code conventions
+
+* Use lowerCamelCase  identifiers by default.
+* Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
+* If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
+* HTTP status codes must always be taken from the `net/http` package.
+
+
 ## Layers and Packages
 
 ### Domain
@@ -14,6 +22,8 @@
 Contains domain objects that represent business concepts and rules.
 
 This layer must not depend on any other layer.
+
+Errors in this layer must be declared in an `errors.go` file located next to the file where they are used.
 
 #### Package structure
 
@@ -50,31 +60,47 @@ Contains application business logic and ports that define how business logic int
 
 This layer depends only on the `Domain` layer.
 
+Errors in this layer must be declared in an `errors.go` file located next to the file where they are used.
+
 #### Package structure
 
 ```text
 application/
-├── ports/
-├── services/
+├── port/
+│   ├── in/
+│   └── out/
+│       ├── repository/
+│       ├── kafka/
+│       ├── http/
+│       └── ...
+│
+├── service/
 └── ...
 ```
 
 The package contains:
 
-* Services
 * Ports
+* Services
+
+##### application/ports/in
+
+Inbound ports are interfaces that define how business logic is invoked by `Adapters` layer.
+
+Inbound ports must be named like `EntityService`, for example `ShipmentService`.
+
+##### application/ports/out
+
+Outbound ports are interfaces that define how business logic interacts with external systems, such as:
+databases, kafka, third-party services.
+
+Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`, etc.
 
 ##### application/services
 
 Services contain business logic that operates on domain objects.
 
-##### application/ports
-
-Ports are interfaces that define how business logic interacts with external systems, such as:
-
-* Databases
-* Kafka
-* Third-party services
+Classes in this package provide implementations of the inbound service port interfaces defined in `application/ports/in` and must be named like `EntityServiceImpl`, for example `ShipmentServiceImpl`.
 
 ---
 
@@ -84,13 +110,25 @@ Contains adapters that connect the application core with external interfaces and
 
 This layer may depend on the `Application` and `Domain` layers.
 
+Errors used by adapter must be declared in an `errors.go` file located next to the corresponding port interface in the `Application` layer.
+
 #### Package structure
 
 ```text
 adapters/
 ├── common/
+│   ├── kafka/
+│   └── ...
+│
 ├── in/
+│   ├── http/
+│   └── kafka/
+│
 └── out/
+    ├── kafka/
+    ├── http/
+    ├── repository/
+    └── ...
 ```
 
 ##### adapters/common
@@ -102,60 +140,40 @@ Examples:
 * Kafka event types
 * Shared adapter utilities
 
-Kafka event types are defined in:
-
-```text
-adapters/common/kafka
-```
-
 Kafka adapters also use shared producer and consumer interfaces defined under the `common` package.
 
 ##### adapters/out
 
-Outgoing adapters that implement interfaces defined in `usecases/ports`.
+Outbound adapters that implement interfaces defined in `application/ports`. Output adapter implementations must be named in format `TechnologyPortName`.
 
+Examples:
+
+* `KafkaGoShipmentProducer`
+* `PostgresShipmentRepository`
 ##### adapters/in
 
-Incoming adapters that invoke use cases and serve as entry points to the service.
+Inbound adapters that invoke application logic and serve as entry points to the service.
 
 Examples:
 
 * REST API handlers
-* gRPC handlers
 * Kafka consumers
 
-#### Adapter organization
+HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
 
-Within both `in` and `out`, adapters are grouped by transport or technology type.
-
-Examples:
-
-```text
-in/
-├── http/
-├── grpc/
-└── kafka/
-
-out/
-├── kafka/
-├── grpc/
-└── ...
-```
-
-Each adapter type contains dedicated DTO packages.
+Controllers must be named like `EntityController`, for example `ShipmentController` and each controller must provide a `RegisterRoutes` function responsible for registering all controller routes.
 
 #### DTO mapping rules
 
 DTO packages are responsible for mapping between DTOs and domain models.
 
-Mapping must be implemented using package-level functions without receivers.
+Each adapter type contains dedicated DTO packages.
 
-Function names must be:
+Mapping must be implemented using package-level functions without receivers. Nested DTOs must also have dedicated functions responsible for mapping nested objects.
 
-* `FromDomainModel`
-* `ToDomainModel`
+Function names must be like `FromDtoName` and `ToDtoName`, for example `FromCreateOrderRequest`, `ToCreateOrderResponse`.
 
-When introducing a new DTO, implement only the mapping functions required by the current use case. Do not create unused mapping functions.
+When introducing a new DTO, implement only the mapping functions required by the current service. Do not create unused mapping functions.
 
 ### Infrastructure
 
