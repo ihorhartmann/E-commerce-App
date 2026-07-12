@@ -6,7 +6,7 @@
 
 Всі сервіси мають мати healthcheck endpoint, який повертає статус сервісу
 
-
+Шари Domain/Entity для кожного сервісу мають відповідати принципу Information Expert (перефразувати це для ШІ в контексті валідації).
 
 
 # Overall Architecture
