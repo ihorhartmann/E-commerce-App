@@ -144,12 +144,13 @@ Kafka adapters also use shared producer and consumer interfaces defined under th
 
 ##### adapters/out
 
-Outbound adapters that implement interfaces defined in `application/ports`. Output adapter implementations must be named in format `TechnologyPortName`.
+Outbound adapters that implement interfaces defined in `application/ports/out`. Output adapter implementations must be named in format `TechnologyPortName`.
 
 Examples:
 
 * `KafkaGoShipmentProducer`
 * `PostgresShipmentRepository`
+
 ##### adapters/in
 
 Inbound adapters that invoke application logic and serve as entry points to the service.
@@ -187,7 +188,7 @@ Examples:
 * Environment configuration
 * Application configuration
 
-This layer depends only on the `Adapters` layer.
+This layer may depend only on the `Adapters` layer.
 
 This layer contains the implementations of:
 
