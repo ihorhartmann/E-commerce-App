@@ -1,4 +1,4 @@
-package com.hartmann.application.port.out.db.exception;
+package com.hartmann.application.port.out.repository.exception;
 
 import com.hartmann.application.exception.ApplicationException;
 

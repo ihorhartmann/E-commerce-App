@@ -6,7 +6,6 @@
 
 **Technologies:** SpringBoot, jOOQ
 
-
 ## Layers and Packages
 
 ### Domain
@@ -14,6 +13,8 @@
 Contains domain objects that represent business concepts and rules.
 
 This layer must not depend on any other layer.
+
+Exceptions in this layer must be declared in a `domain.exception` package.
 
 #### Package structure
 
@@ -23,7 +24,7 @@ domain/
 └── values/
 ```
 
-##### domain/model
+##### domain.model
 
 Domain models with their own identity.
 
@@ -32,7 +33,7 @@ Examples:
 * `Product`
 * `Order`
 
-##### domain/values
+##### domain.values
 
 Value objects used by domain models.
 
@@ -54,8 +55,15 @@ This layer depends only on the `Domain` layer.
 
 ```text
 application/
-├── ports/
-├── services/
+├── port/
+│   ├── in/
+│   └── out/
+│       ├── repository/
+│       ├── kafka/
+│       ├── http/
+│       └── ...
+│
+├── service/
 └── ...
 ```
 
@@ -64,17 +72,26 @@ The package contains:
 * Services
 * Ports
 
-##### application/ports
+##### application.port.in
 
-Ports are interfaces that define how business logic interacts with external systems, such as:
+Inbound ports are interfaces that define how business logic is invoked by `Adapters` layer.
 
-* Databases
-* Kafka
-* Third-party services
+Inbound ports must be named like `EntityService`, for example `PaymentService`.
 
-##### application/services
+##### application.port.out
+
+Outbound ports are interfaces that define how business logic interacts with external systems, such as:
+databases, kafka, third-party services.
+
+Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
+etc.
+
+##### application.service
 
 Services contain business logic that operates on domain objects.
+
+Classes in this package provide implementations of the inbound service port interfaces defined in `application.port.in`
+and must be named like `EntityServiceImpl`, for example `PaymentServiceImpl`.
 
 
 ---
@@ -85,63 +102,45 @@ Contains adapters that connect the application core with external interfaces and
 
 This layer may depend on the `Application` and `Domain` layers.
 
+Exceptions used by this layer must be declared in the `Application` layer and located in the package of the
+corresponding port interface.
+
 #### Package structure
 
 ```text
-adapters/
-├── common/
+adapter/
 ├── in/
+│   ├── http/
+│   └── kafka/
+│
 └── out/
+    ├── kafka/
+    ├── http/
+    ├── repository/
+    └── ...
 ```
 
-##### adapters/common
+##### adapter.out
 
-Shared code used by both incoming and outgoing adapters.
+Outbound adapters that implement interfaces defined in `application.port.out`. Output adapter implementations must be
+named in format `TechnologyPortName`.
 
 Examples:
 
-* Kafka event types
-* Shared adapter utilities
+* `PostgresShipmentRepository`
 
-Kafka event types are defined in:
+##### adapter.in
 
-```text
-adapters/common/kafka
-```
-
-##### adapters/out
-
-Outgoing adapters that implement interfaces defined in `usecases/ports`.
-
-##### adapters/in
-
-Incoming adapters that invoke use cases and serve as entry points to the service.
+Inbound adapters that invoke application logic and serve as entry points to the service.
 
 Examples:
 
-* REST API handlers
-* gRPC handlers
+* REST API controllers
 * Kafka consumers
 
-#### Adapter organization
+HTTP error handling must be declared in an `GlobalExceptionHandler` class located in the `adapter.in.http` package.
 
-Within both `in` and `out`, adapters are grouped by transport or technology type.
-
-Examples:
-
-```text
-in/
-├── http/
-├── grpc/
-└── kafka/
-
-out/
-├── kafka/
-├── grpc/
-└── ...
-```
-
-Each adapter type contains dedicated DTO packages.
+Controllers must be named like `EntityController`, for example `ShipmentController`.
 
 #### DTO mapping rules
 
@@ -154,7 +153,8 @@ Method names must be:
 * `fromDomainModel`
 * `toDomainModel`
 
-When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused mapping methods.
+When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused
+mapping methods.
 
 ### Infrastructure
 
@@ -167,4 +167,4 @@ Examples:
 * Environment configuration
 * Application configuration
 
-This layer depends only on the `Adapters` layer.
+This layer may depend only on the `Adapters` layer.

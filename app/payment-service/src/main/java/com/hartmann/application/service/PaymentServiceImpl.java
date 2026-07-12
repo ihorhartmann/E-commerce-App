@@ -1,16 +1,16 @@
-package com.hartmann.application.usecase;
+package com.hartmann.application.service;
 
-import com.hartmann.application.port.in.PaymentUseCase;
-import com.hartmann.application.port.out.db.PaymentRepository;
+import com.hartmann.application.port.in.PaymentService;
+import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import org.springframework.stereotype.Service;
 
 @Service
-public class PaymentUseCaseImpl implements PaymentUseCase {
+public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
 
-    public PaymentUseCaseImpl(PaymentRepository paymentRepository) {
+    public PaymentServiceImpl(PaymentRepository paymentRepository) {
         this.paymentRepository = paymentRepository;
     }
 

@@ -1,11 +1,13 @@
-package com.hartmann.adapter.out.db;
+package com.hartmann.adapter.out.repository;
 
-import com.hartmann.application.port.out.db.RefundRepository;
-import com.hartmann.application.port.out.db.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.repository.RefundRepository;
+import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -28,9 +30,9 @@ public class RefundInMemRepository implements RefundRepository {
 
         var now = Instant.now();
         List.of(
-                new Refund(1L, 1L, new Money(100.0, Currency.EUR), RefundStatus.SUCCEEDED, now, now),
-                new Refund(2L, 2L, new Money(50.0, Currency.USD), RefundStatus.SUCCEEDED, now, now),
-                new Refund(3L, 2L, new Money(75.0, Currency.USD), RefundStatus.SUCCEEDED, now, now)
+                new Refund(1L, 1L, new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),
+                new Refund(2L, 2L, new Money(new BigDecimal("50.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now),
+                new Refund(3L, 2L, new Money(new BigDecimal("75.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now)
         ).forEach(refund -> refunds.put(refund.id(), refund));
     }
 

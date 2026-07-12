@@ -2,9 +2,11 @@ package com.hartmann.domain.value;
 
 import com.hartmann.domain.exception.DomainException;
 
-public record Money(double amount, Currency currency) {
+import java.math.BigDecimal;
+
+public record Money(BigDecimal amount, Currency currency) {
     public Money {
-        if (amount < 0) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new DomainException("Amount must not be negative");
         }
     }

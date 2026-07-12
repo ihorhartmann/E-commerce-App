@@ -1,6 +1,6 @@
 package com.hartmann.adapter.in.http.refund;
 
-import com.hartmann.application.port.in.RefundUseCase;
+import com.hartmann.application.port.in.RefundService;
 
 import java.util.List;
 
@@ -12,17 +12,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/refunds")
 public class RefundController {
-    private final RefundUseCase refundUseCase;
+    private final RefundService refundService;
+    private final RefundMapper refundMapper;
 
-    public RefundController(RefundUseCase refundUseCase) {
-        this.refundUseCase = refundUseCase;
+    public RefundController(RefundService refundService, RefundMapper refundMapper) {
+        this.refundService = refundService;
+        this.refundMapper = refundMapper;
     }
 
     @GetMapping("/{orderId}")
     public List<RefundResponse> getByOrderId(@PathVariable("orderId") long orderId) {
-        return refundUseCase.getByOrderId(orderId)
+        return refundService.getByOrderId(orderId)
                 .stream()
-                .map(RefundResponse::fromDomainModel)
+                .map(refundMapper::fromDomainModel)
                 .toList();
     }
 }

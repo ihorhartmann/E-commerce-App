@@ -1,11 +1,13 @@
-package com.hartmann.adapter.out.db;
+package com.hartmann.adapter.out.repository;
 
-import com.hartmann.application.port.out.db.PaymentRepository;
-import com.hartmann.application.port.out.db.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.repository.PaymentRepository;
+import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -19,10 +21,10 @@ public class PaymentInMemRepository implements PaymentRepository {
     public PaymentInMemRepository() {
         var now = Instant.now();
         List.of(
-                new Payment(1L, 1001L, new Money(100.0, Currency.EUR), PaymentStatus.COMPLETED, now, now),
-                new Payment(2L, 1002L, new Money(250.0, Currency.USD), PaymentStatus.COMPLETED, now, now),
-                new Payment(3L, 1003L, new Money(75.0, Currency.GBP), PaymentStatus.FAILED, now, now),
-                new Payment(4L, 1004L, new Money(40.0, Currency.EUR), PaymentStatus.PENDING, now, now)
+                new Payment(1L, 1001L, new Money(new BigDecimal("100.00"), Currency.EUR), PaymentStatus.COMPLETED, now, now),
+                new Payment(2L, 1002L, new Money(new BigDecimal("250.00"), Currency.USD), PaymentStatus.COMPLETED, now, now),
+                new Payment(3L, 1003L, new Money(new BigDecimal("75.00"), Currency.GBP), PaymentStatus.FAILED, now, now),
+                new Payment(4L, 1004L, new Money(new BigDecimal("45.00"), Currency.EUR), PaymentStatus.PENDING, now, now)
         ).forEach(payment -> payments.put(payment.id(), payment));
     }
 
