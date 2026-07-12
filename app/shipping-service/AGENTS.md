@@ -66,8 +66,15 @@ Errors in this layer must be declared in an `errors.go` file located next to the
 
 ```text
 application/
-├── ports/
-├── services/
+├── port/
+│   ├── in/
+│   └── out/
+│       ├── repository/
+│       ├── kafka/
+│       ├── http/
+│       └── ...
+│
+├── service/
 └── ...
 ```
 
@@ -89,21 +96,11 @@ databases, kafka, third-party services.
 
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`, etc.
 
-Example:
-
-```text
-out/
-├── http/
-├── kafka/
-├── repository/
-└── ...
-```
-
 ##### application/services
 
 Services contain business logic that operates on domain objects.
 
-Service implementations must implement inbound ports and be named like `EntityServiceImpl`, for example `ShipmentServiceImpl`.
+Classes in this package provide implementations of the inbound service port interfaces defined in `application/ports/in` and must be named like `EntityServiceImpl`, for example `ShipmentServiceImpl`.
 
 ---
 
@@ -120,8 +117,18 @@ Errors used by adapter must be declared in an `errors.go` file located next to t
 ```text
 adapters/
 ├── common/
+│   ├── kafka/
+│   └── ...
+│
 ├── in/
+│   ├── http/
+│   └── kafka/
+│
 └── out/
+    ├── kafka/
+    ├── http/
+    ├── repository/
+    └── ...
 ```
 
 ##### adapters/common
@@ -132,12 +139,6 @@ Examples:
 
 * Kafka event types
 * Shared adapter utilities
-
-Kafka event types are defined in:
-
-```text
-adapters/common/kafka
-```
 
 Kafka adapters also use shared producer and consumer interfaces defined under the `common` package.
 
@@ -156,36 +157,17 @@ Inbound adapters that invoke application logic and serve as entry points to the 
 Examples:
 
 * REST API handlers
-* gRPC handlers
 * Kafka consumers
 
 HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
 
 Controllers must be named like `EntityController`, for example `ShipmentController` and each controller must provide a `RegisterRoutes` function responsible for registering all controller routes.
 
-#### Adapter organization
-
-Within both `in` and `out`, adapters are grouped by transport or technology type.
-
-Examples:
-
-```text
-in/
-├── http/
-├── grpc/
-└── kafka/
-
-out/
-├── kafka/
-├── grpc/
-└── ...
-```
-
-Each adapter type contains dedicated DTO packages.
-
 #### DTO mapping rules
 
 DTO packages are responsible for mapping between DTOs and domain models.
+
+Each adapter type contains dedicated DTO packages.
 
 Mapping must be implemented using package-level functions without receivers. Nested DTOs must also have dedicated functions responsible for mapping nested objects.
 
