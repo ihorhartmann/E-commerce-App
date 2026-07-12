@@ -30,7 +30,7 @@ func (pc *ProductController) CreateProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidRequestBody))
 	}
 
-	product, err := request.ToDomainModel()
+	product, err := dto.FromCreateProductRequest(request)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -40,7 +40,7 @@ func (pc *ProductController) CreateProduct(c *fiber.Ctx) error {
 		return handleError(c, err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(dto.FromDomainModel(createdProduct))
+	return c.Status(fiber.StatusCreated).JSON(dto.ToProductResponse(createdProduct))
 }
 
 func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
@@ -54,7 +54,7 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidRequestBody))
 	}
 
-	product, err := request.ToDomainModel(id)
+	product, err := dto.FromUpdateProductRequest(id, request)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -64,7 +64,7 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 		return handleError(c, err)
 	}
 
-	return c.JSON(dto.FromDomainModel(updatedProduct))
+	return c.JSON(dto.ToProductResponse(updatedProduct))
 }
 
 func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
@@ -78,7 +78,7 @@ func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 		return handleError(c, err)
 	}
 
-	return c.JSON(dto.FromDomainModel(product))
+	return c.JSON(dto.ToProductResponse(product))
 }
 
 func (pc *ProductController) DeleteProduct(c *fiber.Ctx) error {

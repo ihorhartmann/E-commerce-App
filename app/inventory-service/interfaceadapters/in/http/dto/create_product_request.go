@@ -9,6 +9,6 @@ type CreateProductRequest struct {
 	OnHand      uint    `json:"onHand"`
 }
 
-func (dto CreateProductRequest) ToDomainModel() (*model.Product, error) {
-	return model.NewProduct(0, dto.Name, dto.Description, dto.Price, dto.OnHand, 0)
+func FromCreateProductRequest(request CreateProductRequest) (*model.Product, error) {
+	return model.NewProduct(0, request.Name, request.Description, request.Price, request.OnHand, 0)
 }

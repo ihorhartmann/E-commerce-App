@@ -12,7 +12,7 @@ type ProductDTO struct {
 	Available   uint    `json:"available"`
 }
 
-func FromDomainModel(product *model.Product) *ProductDTO {
+func ToProductResponse(product *model.Product) *ProductDTO {
 	return &ProductDTO{
 		ID:          product.ID(),
 		Name:        product.Name(),

@@ -10,6 +10,6 @@ type UpdateProductRequest struct {
 	Reserved    uint    `json:"reserved"`
 }
 
-func (dto UpdateProductRequest) ToDomainModel(id uint64) (*model.Product, error) {
-	return model.NewExistingProduct(id, dto.Name, dto.Description, dto.Price, dto.OnHand, dto.Reserved)
+func FromUpdateProductRequest(id uint64, request UpdateProductRequest) (*model.Product, error) {
+	return model.NewExistingProduct(id, request.Name, request.Description, request.Price, request.OnHand, request.Reserved)
 }
