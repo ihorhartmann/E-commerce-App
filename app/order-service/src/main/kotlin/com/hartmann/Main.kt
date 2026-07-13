@@ -1,10 +1,11 @@
 package com.hartmann
 
-fun main() {
-    val name = "Kotlin"
-    println("Hello, " + name + "!")
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
 
-    for (i in 1..5) {
-        println("i = $i")
-    }
+@SpringBootApplication
+class Main
+
+fun main(args: Array<String>) {
+    runApplication<Main>(*args)
 }

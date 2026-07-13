@@ -1,0 +1,53 @@
+services:
+  inventory-service:
+    build:
+      context: ./app/inventory-service
+      dockerfile: Dockerfile
+    image: inventory-service:latest
+    networks:
+      - app-network
+    ports:
+      - "${INVENTORY_SERVICE_PORT}:${INVENTORY_SERVICE_PORT}"
+    environment:
+      INVENTORY_SERVICE_PORT: ${INVENTORY_SERVICE_PORT}
+
+  order-service:
+    build:
+      context: ./app/order-service
+      dockerfile: Dockerfile
+    image: order-service:latest
+    networks:
+      - app-network
+    ports:
+      - "${ORDER_SERVICE_PORT}:${ORDER_SERVICE_PORT}"
+    environment:
+      ORDER_SERVICE_PORT: ${ORDER_SERVICE_PORT}
+
+  payment-service:
+    build:
+      context: ./app/payment-service
+      dockerfile: Dockerfile
+    image: payment-service:latest
+    networks:
+      - app-network
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
+    environment:
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+
+  shipping-service:
+    build:
+      context: ./shipping-service
+      dockerfile: Dockerfile
+    image: shipping-service:latest
+    networks:
+      - app-network
+    ports:
+      - "${SHIPPING_SERVICE_PORT}:${SHIPPING_SERVICE_PORT}"
+    environment:
+      SHIPPING_SERVICE_PORT: ${SHIPPING_SERVICE_PORT}
+
+networks:
+  app-network:
+    name: app-network
+    driver: bridge
