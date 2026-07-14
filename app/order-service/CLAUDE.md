@@ -146,7 +146,7 @@ Mapping must be implemented using Mapper classes.
 
 Method names must be:
 
-* `fromDomainModel`
+* `fromDomain`
 * `toDomainModel`
 
 When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused
@@ -180,8 +180,8 @@ Mapping must be implemented using Mapper classes.
 
 Method names must be:
 
-* `fromDomainModel`
-* `toDomainModel`
+* `fromDomain`
+* `toDomain`
 
 When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused
 mapping methods.

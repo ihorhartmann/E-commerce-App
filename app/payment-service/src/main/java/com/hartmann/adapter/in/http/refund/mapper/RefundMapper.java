@@ -1,11 +1,12 @@
-package com.hartmann.adapter.in.http.refund;
+package com.hartmann.adapter.in.http.refund.mapper;
 
+import com.hartmann.adapter.in.http.refund.dto.RefundResponse;
 import com.hartmann.domain.model.Refund;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RefundMapper {
-    public RefundResponse fromDomainModel(Refund refund) {
+    public RefundResponse fromDomain(Refund refund) {
         return new RefundResponse(
                 refund.id(),
                 refund.paymentId(),

@@ -12,42 +12,54 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class RefundInMemRepository implements RefundRepository {
     private final Map<Long, Refund> refunds = new HashMap<>();
-    private final Map<Long, Long> paymentOrderIds = new HashMap<>();
+    private final AtomicLong idSequence = new AtomicLong(4);
 
     public RefundInMemRepository() {
-        paymentOrderIds.putAll(Map.of(
-                1L, 1001L,
-                2L, 1002L,
-                3L, 1003L,
-                4L, 1004L
-        ));
-
         var now = Instant.now();
         List.of(
-                new Refund(1L, 1L, new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),
-                new Refund(2L, 2L, new Money(new BigDecimal("50.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now),
-                new Refund(3L, 2L, new Money(new BigDecimal("75.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now)
+                new Refund(1L, 1L, "re_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),
+                new Refund(2L, 2L, "re_seed_2", new Money(new BigDecimal("50.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now),
+                new Refund(3L, 2L, "re_seed_3", new Money(new BigDecimal("75.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now)
         ).forEach(refund -> refunds.put(refund.id(), refund));
     }
 
     @Override
     public Refund create(Refund refund) {
-        refunds.put(refund.id(), refund);
-        return refund;
+        var id = idSequence.getAndIncrement();
+        var created = new Refund(
+                id,
+                refund.paymentId(),
+                refund.externalId(), refund.amount(),
+                refund.status(),
+                refund.createdAt(),
+                refund.updatedAt()
+        );
+        refunds.put(id, created);
+        return created;
     }
 
     @Override
-    public List<Refund> findByOrderId(long orderId) {
+    public List<Refund> findByPaymentId(long paymentId) {
         return refunds.values()
                 .stream()
-                .filter(refund -> Objects.equals(paymentOrderIds.get(refund.paymentId()), orderId))
+                .filter(refund -> refund.paymentId() == paymentId)
                 .toList();
+    }
+
+    @Override
+    public Refund getByExternalId(String externalId) {
+        return refunds.values()
+                .stream()
+                .filter(refund -> refund.externalId().equals(externalId))
+                .findFirst()
+                .orElseThrow(() -> new ObjectNotFoundException(
+                        "Refund with external id " + externalId + " not found"));
     }
 
     @Override
@@ -60,7 +72,7 @@ public class RefundInMemRepository implements RefundRepository {
         var updated = new Refund(
                 existing.id(),
                 existing.paymentId(),
-                existing.amount(),
+                existing.externalId(), existing.amount(),
                 status,
                 existing.createdAt(),
                 Instant.now()

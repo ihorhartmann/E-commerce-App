@@ -7,7 +7,9 @@ import java.util.List;
 public interface RefundRepository {
     Refund create(Refund refund);
 
-    List<Refund> findByOrderId(long orderId);
+    List<Refund> findByPaymentId(long paymentId);
 
     Refund updateStatus(long refundId, RefundStatus status);
+
+    Refund getByExternalId(String externalId);
 }

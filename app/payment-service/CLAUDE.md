@@ -86,6 +86,29 @@ databases, kafka, third-party services.
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
 etc.
 
+##### Port-owned DTOs and exceptions
+
+This applies to both `application.port.in` and `application.port.out`. When a port needs DTOs or exceptions of its
+own (e.g. a service's result shape, a gateway's request/response shape, or some exception), place
+them in `dto` / `exception` subpackages next to that port interface, instead of next to the interface itself. This is
+not needed for every port — only when a port actually owns DTOs or exceptions of its own. 
+
+Examples:
+
+```text
+application/port/in/
+├── PaymentService.java
+└── dto/
+    └── SubmitPaymentResult.java
+
+application/port/out/http/
+├── PaymentGateway.java
+├── dto/
+│   └── PaymentIntentResult.java
+└── exception/
+    └── PaymentGatewayException.java
+```
+
 ##### application.service
 
 Services contain business logic that operates on domain objects.
@@ -150,11 +173,37 @@ Mapping must be implemented using Mapper classes.
 
 Method names must be:
 
-* `fromDomainModel`
-* `toDomainModel`
+* `fromDomain`
+* `toDomain`
 
 When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused
 mapping methods.
+
+#### Adapter-owned DTOs, entities and mappers
+
+When an adapter package needs DTOs, database entities, and/or mappers of its own, place them in `dto` / `entity` /
+`mapper` subpackages next to the class that uses them (controller, repository, etc.), instead of next to it directly.
+`entity` is for adapter-side database entities (e.g. a JPA/jOOQ record distinct from the domain model) — used by
+`adapter.out.repository` adapters, not by HTTP adapters. Database entities must never cross into the `Application`
+layer; repository adapters convert between entity and domain model internally. This is not needed for every
+adapter package — only when it actually owns DTOs, entities, or mappers of its own. Example:
+
+```text
+adapter/in/http/payment/
+├── PaymentController.java
+├── dto/
+│   ├── InitiatePaymentRequest.java
+│   └── PaymentResponse.java
+└── mapper/
+    └── PaymentMapper.java
+
+adapter/out/repository/payment/
+├── PostgresPaymentRepository.java
+├── entity/
+│   └── PaymentEntity.java
+└── mapper/
+    └── PaymentEntityMapper.java
+```
 
 ### Infrastructure
 
