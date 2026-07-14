@@ -1,4 +1,4 @@
-package com.hartmann.adapter.in.http.payment;
+package com.hartmann.adapter.in.http.payment.dto;
 
 import java.math.BigDecimal;
 

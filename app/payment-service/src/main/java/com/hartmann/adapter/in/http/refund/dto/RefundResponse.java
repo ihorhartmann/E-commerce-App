@@ -1,4 +1,4 @@
-package com.hartmann.adapter.in.http.refund;
+package com.hartmann.adapter.in.http.refund.dto;
 
 import java.math.BigDecimal;
 
