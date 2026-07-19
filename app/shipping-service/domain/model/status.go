@@ -1,22 +1,12 @@
 package model
 
-import "errors"
-
 type ShipmentStatus string
 
 const (
-	Delivered ShipmentStatus = "Delivered"
-	Cancelled ShipmentStatus = "Cancelled"
+	Created             ShipmentStatus = "Created"
+	InDelivery          ShipmentStatus = "In Delivery"
+	Delivered           ShipmentStatus = "Delivered"
+	Cancelled           ShipmentStatus = "Cancelled"           // client cancelled order or not at home
+	Lost                ShipmentStatus = "Lost"                // shipment lost
+	ReturnedToInventory ShipmentStatus = "ReturnedToInventory" // courier returned the goods to the inventory after cancellation
 )
-
-var statuses = map[ShipmentStatus]struct{}{
-	Delivered: {},
-	Cancelled: {},
-}
-
-func ToShipmentStatus(status string) (ShipmentStatus, error) {
-	if _, ok := statuses[ShipmentStatus(status)]; !ok {
-		return "", errors.New("invalid shipment status")
-	}
-	return ShipmentStatus(status), nil
-}

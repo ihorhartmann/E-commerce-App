@@ -109,6 +109,12 @@ application/port/out/http/
     └── PaymentGatewayException.java
 ```
 
+A DTO belongs in a port's `dto` package only if it is actually referenced in that port interface's
+own method signatures. A DTO used only by one adapter implementation (e.g. the exact JSON shape a
+Kafka producer serializes, or an HTTP client's request/response body) is adapter-owned and must be
+placed in that adapter's own `dto` subpackage instead, even if the DTO represents the same kind of
+event the port's methods deal with.
+
 ##### application.service
 
 Services contain business logic that operates on domain objects.

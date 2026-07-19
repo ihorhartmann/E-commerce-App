@@ -1,0 +1,31 @@
+package errors
+
+import (
+	"errors"
+	"net/http"
+
+	"inventoryservice/entities/model"
+	"inventoryservice/usecases/ports/repository"
+)
+
+var ErrInvalidProductID = errors.New("invalid product id")
+
+// HandleProductError classifies a product-related error into its HTTP
+// status by wrapping it in a StatusError. Unrecognized errors are returned
+// unchanged and are treated as unexpected by HandleError.
+func HandleProductError(err error) error {
+	if mapped, ok := handleCommonError(err); ok {
+		return mapped
+	}
+
+	switch {
+	case errors.Is(err, ErrInvalidProductID):
+		return WithStatus(http.StatusBadRequest, err)
+	case errors.Is(err, model.ErrInsufficientStock):
+		return WithStatus(http.StatusConflict, err)
+	case errors.Is(err, repository.ErrProductNotFound):
+		return WithStatus(http.StatusNotFound, err)
+	default:
+		return err
+	}
+}

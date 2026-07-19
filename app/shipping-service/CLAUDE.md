@@ -96,6 +96,11 @@ databases, kafka, third-party services.
 
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`, etc.
 
+A DTO belongs next to a port only if it is actually referenced in that port interface's own method
+signatures. A DTO used only by one adapter implementation (e.g. the exact JSON shape a Kafka producer
+or consumer serializes) is adapter-owned and must live in that adapter's own `dto` subpackage instead
+(under `adapter/in|out/...`), even if it represents the same kind of event the port deals with.
+
 ##### application/services
 
 Services contain business logic that operates on domain objects.

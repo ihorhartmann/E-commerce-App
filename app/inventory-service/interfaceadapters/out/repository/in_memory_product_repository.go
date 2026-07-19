@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"inventoryservice/entities/model"
+	"inventoryservice/entities/values"
 )
 
 type inMemoryProductRepository struct {
@@ -18,9 +19,9 @@ func NewInMemoryProductRepository() repository.ProductRepository {
 	products := make(map[uint64]*model.Product)
 
 	defaultProducts := []*model.Product{
-		checkError(model.NewExistingProduct(1, "Laptop", "Portable workstation", 1299.99, 10, 2)),
-		checkError(model.NewExistingProduct(2, "Keyboard", "Mechanical keyboard", 149.99, 25, 5)),
-		checkError(model.NewExistingProduct(3, "Mouse", "Wireless mouse", 79.99, 40, 4)),
+		checkError(model.NewExistingProduct(1, "Laptop", "Portable workstation", checkMoney(values.NewMoney(1299.99, values.USD)), 10)),
+		checkError(model.NewExistingProduct(2, "Keyboard", "Mechanical keyboard", checkMoney(values.NewMoney(149.99, values.USD)), 25)),
+		checkError(model.NewExistingProduct(3, "Mouse", "Wireless mouse", checkMoney(values.NewMoney(79.99, values.USD)), 40)),
 	}
 
 	for _, product := range defaultProducts {
@@ -42,8 +43,7 @@ func (r *inMemoryProductRepository) Create(_ context.Context, product *model.Pro
 		product.Name(),
 		product.Description(),
 		product.Price(),
-		product.OnHand(),
-		product.Reserved(),
+		product.Quantity(),
 	)
 	if err != nil {
 		return nil, err
@@ -79,6 +79,20 @@ func (r *inMemoryProductRepository) GetByID(_ context.Context, id uint64) (*mode
 	return product, nil
 }
 
+func (r *inMemoryProductRepository) FindByIDs(_ context.Context, ids []uint64) ([]*model.Product, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	found := make([]*model.Product, 0, len(ids))
+	for _, id := range ids {
+		if product, ok := r.products[id]; ok {
+			found = append(found, product)
+		}
+	}
+
+	return found, nil
+}
+
 func (r *inMemoryProductRepository) Delete(_ context.Context, id uint64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -97,4 +111,12 @@ func checkError(product *model.Product, err error) *model.Product {
 	}
 
 	return product
+}
+
+func checkMoney(money values.Money, err error) values.Money {
+	if err != nil {
+		panic(err)
+	}
+
+	return money
 }

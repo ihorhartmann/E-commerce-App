@@ -16,24 +16,27 @@ Order Service — оркестратор саги оформлення замо�
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: POST /orders/checkout
+    [*] --> CREATED: POST /orders/checkout
 
-    PENDING --> RESERVATION_FAILED: Inventory: недостатньо товару
-    PENDING --> AWAITING_PAYMENT: Резервація ОК + PaymentIntent створено
+    CREATED --> RESERVATION_FAILED: Inventory: недостатньо товару
+    CREATED --> STOCK_RESERVED: Резервація ОК
 
-    AWAITING_PAYMENT --> PAYMENT_FAILED: Stripe webhook: payment_failed
-    AWAITING_PAYMENT --> PAYMENT_CONFIRMED: Stripe webhook: succeeded
+    STOCK_RESERVED --> PAYMENT_FAILED: Payment service недоступний/впав\n(до PaymentIntent)
+    STOCK_RESERVED --> PAYMENT_SUBMITTED: PaymentIntent створено
+
+    PAYMENT_SUBMITTED --> PAYMENT_FAILED: Stripe webhook: payment_failed
+    PAYMENT_SUBMITTED --> PAYMENT_CONFIRMED: Stripe webhook: succeeded
 
     PAYMENT_CONFIRMED --> SHIPMENT_FAILED: Shipping: не вдалось створити відправлення
     PAYMENT_CONFIRMED --> SHIPMENT_CREATED: Shipment створено (status=Created)
 
-    SHIPMENT_CREATED --> IN_DELIVERY: Shipment status=InTransit\n(тригерить FulfillReservation)
+    SHIPMENT_CREATED --> IN_DELIVERY: Shipment status=InDelivery\n(тригерить FulfillReservation)
 
     IN_DELIVERY --> LOST: Shipment status=Failed
     IN_DELIVERY --> COMPLETED: Shipment status=Delivered
 
     RESERVATION_FAILED --> [*]
-    PAYMENT_FAILED --> CANCELLED
+    PAYMENT_FAILED --> [*]
     SHIPMENT_FAILED --> CANCELLED
     LOST --> REFUNDED
 
@@ -55,59 +58,70 @@ sequenceDiagram
     participant Sh as Shipping Service
 
     U->>O: REST: POST /orders/checkout
-    O->>I: REST: POST /reservations
+    O->>I: REST: POST /api/v1/reservations
 
     alt Недостатньо товару
         I-->>O: REST: 409 insufficient stock
         O-->>U: REST: 409 error
         Note over O: Order -> RESERVATION_FAILED
     else Резервація ОК
-        I-->>O: REST: 200 reserved
-        O->>P: REST: POST /payment-intents
-        P->>S: REST: create PaymentIntent
-        S-->>P: REST: client_secret
-        P-->>O: REST: client_secret
-        O-->>U: REST: 200 {orderId, client_secret}
-        Note over O: Order -> AWAITING_PAYMENT
+        I-->>O: REST: 200 reserved (reservationId на кожен item)
+        Note over O: Order -> STOCK_RESERVED
+        O->>P: REST: POST /api/v1/payments
 
-        U->>S: REST: confirmCardPayment (напряму, минаючи бекенд)
-        S->>P: REST: webhook POST /webhooks/stripe
+        alt Payment service недоступний / впав
+            O--)I: Kafka: CancelReservation
+            Note over O: Order -> PAYMENT_FAILED
+        else Payment service відповів
+            P->>S: REST: create PaymentIntent
+            S-->>P: REST: client_secret
+            P-->>O: REST: client_secret
+            O-->>U: REST: 200 {orderId, client_secret}
+            Note over O: Order -> PAYMENT_SUBMITTED
 
-        alt Оплата відхилена
-            P--)O: Kafka: PaymentFailed
-            O--)I: Kafka: CancelReservationMessage
-            Note over O: Order -> CANCELLED
-        else Оплата успішна
-            P--)O: Kafka: PaymentCompleted
-            Note over O: Order -> PAYMENT_CONFIRMED
-            O--)Sh: Kafka: CreateShipment
+            U->>S: REST: confirmCardPayment (напряму, минаючи бекенд)
+            S->>P: REST: webhook POST /webhooks/stripe
 
-            alt Не вдалось створити Shipment
-                Sh--)O: Kafka: ShipmentCreationFailed
-                O--)I: Kafka: CancelReservationMessage
-                O->>P: REST: POST /refunds
-                Note over O: Order -> CANCELLED
-            else Shipment створено
-                Sh--)O: Kafka: ShipmentStatusChanged(Created)
-                Note over O: Order -> SHIPMENT_CREATED
+            alt Оплата відхилена
+                P--)O: Kafka: PaymentFailed
+                O--)I: Kafka: CancelReservation
+                Note over O: Order -> PAYMENT_FAILED
+            else Оплата успішна
+                P--)O: Kafka: PaymentCompleted
+                Note over O: Order -> PAYMENT_CONFIRMED
+                O--)Sh: Kafka: CreateShipment
 
-                Sh--)O: Kafka: ShipmentStatusChanged(InTransit)
-                O--)I: Kafka: FulfillReservation
-                Note over I: onHand -= qty,\nрезервацію видалено
-                Note over O: Order -> IN_DELIVERY
+                alt Не вдалось створити Shipment
+                    Sh--)O: Kafka: ShipmentCreationFailed
+                    O--)I: Kafka: CancelReservation
+                    O--)P: Kafka: RefundRequested
+                    Note over O: Order -> CANCELLED
+                else Shipment створено
+                    Sh--)O: Kafka: ShipmentStatusChanged(Created)
+                    Note over O: Order -> SHIPMENT_CREATED
 
-                alt Посилку втрачено в дорозі
-                    Sh--)O: Kafka: ShipmentStatusChanged(Failed)
-                    O->>P: REST: POST /refunds
-                    Note over O: Order -> LOST -> REFUNDED
-                else Доставлено успішно
-                    Sh--)O: Kafka: ShipmentStatusChanged(Delivered)
-                    Note over O: Order -> COMPLETED
+                    Sh--)O: Kafka: ShipmentStatusChanged(InDelivery)
+                    O--)I: Kafka: FulfillReservation
+                    Note over I: quantity -= qty,\nрезервацію видалено
+                    Note over O: Order -> IN_DELIVERY
+
+                    alt Посилку втрачено в дорозі
+                        Sh--)O: Kafka: ShipmentStatusChanged(Failed)
+                        O--)P: Kafka: RefundRequested
+                        Note over O: Order -> LOST -> REFUNDED
+                    else Доставлено успішно
+                        Sh--)O: Kafka: ShipmentStatusChanged(Delivered)
+                        Note over O: Order -> COMPLETED
+                    end
                 end
             end
         end
     end
 ```
+
+Статус `Cancelled` у Shipping — валідний стан життєвого циклу посилки
+(доступний напряму через REST), але сама сага сьогодні в нього не переходить
+жодним із задокументованих кроків вище.
 
 ## Компенсаційні кроки — короткий підсумок
 
@@ -115,26 +129,59 @@ sequenceDiagram
 і до будь-якого списання коштів. Просто повертаємо помилку фронтенду,
 компенсувати нічого не треба.
 
-**Оплата відхилена.** Резервація вже існує, гроші не списані. Компенсація —
-одна дія: `CancelReservationMessage` в Inventory, звільняємо склад.
+**Payment service недоступний або впав.** Резервація вже існує (`STOCK_RESERVED`), запит
+`POST /api/v1/payments` кинув виняток ще до відповіді від Stripe. Компенсація — та сама дія:
+`CancelReservation` в Inventory, звільняємо склад, `Order -> PAYMENT_FAILED`. На
+відміну від решти компенсацій це відбувається синхронно, всередині `OrderServiceImpl`, а не
+через сагу.
+
+**Оплата відхилена (Stripe).** Резервація вже існує, гроші не списані. Компенсація —
+одна дія: `CancelReservation` в Inventory, звільняємо склад, `Order -> PAYMENT_FAILED`.
 
 **Не вдалось створити Shipment.** Гроші вже списані, резервація тримається.
 Компенсація подвійна: скасувати резервацію в Inventory **і** повернути кошти
-через Stripe refund у Payment Service.
+через Payment Service — обидва кроки йдуть через Kafka
+(`CancelReservation`, `RefundRequested`), REST тут більше не
+використовується.
 
 **Посилку втрачено вже після pickup.** Склад фізично зменшений
 (`FulfillReservation` уже виконано) — повертати товар на склад нема сенсу,
-компенсація тут не "відкат" попереднього кроку, а новий крок: refund через
-Payment. Це точка неповернення саги — до цього моменту всі збої
+компенсація тут не "відкат" попереднього кроку, а новий крок: `RefundRequested`
+через Kafka в Payment. Це точка неповернення саги — до цього моменту всі збої
 компенсуються поверненням до попереднього стану, після — лише грошовою
 компенсацією.
 
 ## REST vs Kafka — де і чому
 
-Резервація товару та створення Stripe PaymentIntent — синхронні REST-виклики
-з Order, бо фронтенд чекає на відповідь у межах одного HTTP-запиту
+Резервація товару (`POST /api/v1/reservations`) та створення Stripe
+PaymentIntent (`POST /api/v1/payments`) — синхронні REST-виклики з Order, бо
+фронтенд чекає на відповідь у межах одного HTTP-запиту
 (`POST /orders/checkout`) і має отримати або помилку "немає товару", або
 `client_secret` для форми оплати. Все, що відбувається після появи сторінки
 оплати — асинхронне через Kafka, бо ніхто синхронно не чекає на ці кроки:
 підтвердження оплати, створення відправлення, зміна статусу доставки,
-компенсації.
+компенсації (включно з refund — раніше refund йшов через REST `POST
+/refunds`, але жодна компенсація не є time-sensitive для фронтенду, тож
+`RefundRequested` тепер теж Kafka-подія, а не REST-виклик).
+
+## Kafka-топіки
+
+Топік на кожен домен-виробник + тип повідомлення (command/event), а не на
+кожен окремий тип події — див. обговорення переваг цього підходу окремо.
+Порядок повідомлень одного агрегату (замовлення/посилки) гарантується
+ключем партиціювання (`orderId`/`shipmentId`), а не розбиттям на топіки.
+
+| Топік | Продюсер | Консьюмер | Повідомлення |
+|---|---|---|---|
+| `inventory.commands` | Order | Inventory | `CancelReservation`, `FulfillReservation` |
+| `shipping.commands` | Order | Shipping | `CreateShipment` |
+| `payment.commands` | Order | Payment | `RefundRequested` |
+| `payment.events` | Payment | Order | `PaymentCompleted`, `PaymentFailed` |
+| `shipping.events` | Shipping | Order | `ShipmentCreationFailed`, `ShipmentStatusChanged` |
+
+Команди (`*.commands`) — наказ конкретному сервісу щось зробити, одна цільова
+дія. Події (`*.events`) — факт, що стався; сьогодні їх читає лише Order, але
+формат не прив'язаний до єдиного консьюмера. Кожне повідомлення несе
+конверт `eventType` + `correlationId` (+ `eventId`) поверх JSON-пейлоада, щоб
+консьюмер топіка з кількома типами повідомлень міг коректно розпізнати, що
+саме прийшло.

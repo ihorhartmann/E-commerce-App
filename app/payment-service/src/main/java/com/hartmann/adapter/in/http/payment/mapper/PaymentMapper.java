@@ -2,6 +2,7 @@ package com.hartmann.adapter.in.http.payment.mapper;
 
 import com.hartmann.adapter.in.http.payment.dto.PaymentResponse;
 import com.hartmann.adapter.in.http.payment.dto.SubmitPaymentResponse;
+import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.domain.model.Payment;
 import org.springframework.stereotype.Component;
 
@@ -19,11 +20,13 @@ public class PaymentMapper {
         );
     }
 
-    public SubmitPaymentResponse toSubmitPaymentResponse(Payment payment) {
+    public SubmitPaymentResponse toSubmitPaymentResponse(PaymentIntentResult result) {
+        var payment = result.payment();
         return new SubmitPaymentResponse(
                 payment.id(),
                 payment.orderId(),
                 payment.externalId(),
+                result.clientSecret(),
                 payment.status().name()
         );
     }

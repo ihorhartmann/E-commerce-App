@@ -87,6 +87,25 @@ databases, kafka, third-party services.
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
 etc.
 
+A DTO belongs next to a port only if it is actually referenced in that port interface's own method
+signatures, and must be placed in a `dto` subpackage next to the port (e.g.
+`application/port/out/http/dto/ReservationLine.kt` next to `InventoryClient.kt`). The same applies to
+exceptions thrown by a port's own contract — they belong in an `exception` subpackage next to the port
+(e.g. `application/port/out/http/exception/InsufficientStockException.kt`). A DTO used only by one
+adapter implementation (e.g. the exact JSON shape a Kafka producer serializes, or an HTTP client's
+request/response body) is adapter-owned and must live in that adapter's own `dto` subpackage instead
+(e.g. `infrastructure/http/dto/`) — even if it represents the same kind of event the port's methods deal
+with. Prefer ports with primitive/domain-typed parameters (e.g. `fun publishCreateShipment(correlationId: String, orderId: Long, address: Address)`)
+over a port method that takes a shared envelope type, so the payload shape stays entirely inside the
+adapter that needs it. `OrderEventProducer`'s methods all take `correlationId` as their first parameter —
+keep new methods on this port consistent with that ordering.
+
+Constants shared between an `Infrastructure` adapter and an `Interfaces` adapter (e.g. Kafka topic names,
+header names, event-type names) must not live inside either layer's own package, since `Infrastructure`
+and `Interfaces` are siblings and neither may depend on the other. Put them in a dedicated package under
+`application` (e.g. `application/kafka`) instead, since both layers are already allowed to depend on
+`Application`.
+
 ##### application/saga
 
 Contains saga orchestration logic for long-running business processes that span multiple services.

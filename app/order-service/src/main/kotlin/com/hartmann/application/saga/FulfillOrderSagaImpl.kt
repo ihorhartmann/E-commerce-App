@@ -2,60 +2,125 @@ package com.hartmann.application.saga
 
 import com.hartmann.application.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.application.port.out.kafka.OrderEventProducer
+import com.hartmann.application.port.out.kafka.dto.RestockItemDto
 import com.hartmann.application.port.out.repository.OrderRepository
-import com.hartmann.application.saga.event.*
+import com.hartmann.application.saga.event.PaymentCompleted
+import com.hartmann.application.saga.event.PaymentFailed
+import com.hartmann.application.saga.event.RefundCompleted
+import com.hartmann.application.saga.event.ShipmentCreationFailed
+import com.hartmann.domain.model.Order
 import com.hartmann.domain.model.OrderStatus
+import com.hartmann.domain.value.Currency
+import com.hartmann.domain.value.Money
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 
 @Component
 class FulfillOrderSagaImpl(
     private val orderRepository: OrderRepository,
     private val eventProducer: OrderEventProducer,
 ) : FulfillOrderSaga {
-    override fun onStockReserved(event: StockReserved) {
+
+    @Transactional
+    override fun onPaymentCompleted(event: PaymentCompleted, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.PENDING) return
-        val updated = order.copy(
-            reservationId = event.reservationId, status = OrderStatus.STOCK_RESERVED,
-            statusDescription = "Stock reserved")
-        orderRepository.save(updated)
-        eventProducer.publish(PaymentRequested(updated.id, event.reservationId))
+        val updatedOrder = order.confirmPayment(event.paymentId)
+
+        orderRepository.save(updatedOrder)
+        eventProducer.publishCreateShipment(correlationId, updatedOrder.id, updatedOrder.address)
     }
 
-    override fun onStockRejected(event: StockRejected) {
+    @Transactional
+    override fun onPaymentFailed(event: PaymentFailed, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.PENDING) return
-        orderRepository.save(order.copy(status = OrderStatus.CANCELLED, statusDescription = "Stock rejected"))
+        val updatedOrder = order.failPayment()
+
+        orderRepository.save(updatedOrder)
+        cancelReservations(updatedOrder, correlationId)
     }
 
-    override fun onPaymentCompleted(event: PaymentCompleted) {
+    @Transactional
+    override fun onShipmentCreationFailed(event: ShipmentCreationFailed, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.STOCK_RESERVED) return
-        val updated = order.copy(paymentId = event.paymentId, status = OrderStatus.PAID,
-            statusDescription = "Payment completed")
-        orderRepository.save(updated)
-        eventProducer.publish(ShipmentRequested(updated.id, event.paymentId))
+        val updatedOrder = order.failShipmentCreation()
+
+        orderRepository.save(updatedOrder)
+        cancelReservations(updatedOrder, correlationId)
+        requestRefund(updatedOrder, correlationId)
     }
 
-    override fun onPaymentFailed(event: PaymentFailed) {
-        val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.STOCK_RESERVED) return
-        orderRepository.save(order.copy(status = OrderStatus.CANCELLED, statusDescription = "Payment failed"))
-        eventProducer.publish(OrderCancelled(order.id))
+    @Transactional
+    override fun onShipmentCreated(orderId: Long, shipmentId: Long, trackingNumber: String, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val updatedOrder = order.createShipment(shipmentId, trackingNumber)
+
+        orderRepository.save(updatedOrder)
+        eventProducer.publishHoldReservation(correlationId, updatedOrder.id)
     }
 
-    override fun onShipmentCreated(event: ShipmentCreated) {
-        val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.PAID) return
-        orderRepository.save(order.copy(shipmentId = event.shipmentId,
-            status = OrderStatus.SHIPMENT_CREATED, statusDescription = "Shipment created"))
+    @Transactional
+    override fun onShipmentInDelivery(orderId: Long, shipmentId: Long, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val updatedOrder = order.startDelivery(shipmentId)
+
+        orderRepository.save(updatedOrder)
+        eventProducer.publishFulfillReservation(correlationId, updatedOrder.id)
     }
 
-    override fun onShipmentFailed(event: ShipmentFailed) {
+    @Transactional
+    override fun onShipmentDelivered(orderId: Long) {
+        val order = orderRepository.getOrder(orderId)
+        orderRepository.save(order.deliver())
+    }
+
+    @Transactional
+    override fun onShipmentCancelled(orderId: Long, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val wasInDelivery = order.status == OrderStatus.IN_DELIVERY
+        val updatedOrder = order.cancelShipment()
+
+        orderRepository.save(updatedOrder)
+        if (!wasInDelivery) {
+            cancelReservations(updatedOrder, correlationId)
+        }
+        requestRefund(updatedOrder, correlationId)
+    }
+
+    @Transactional
+    override fun onShipmentLost(orderId: Long, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val updatedOrder = order.loseShipment()
+
+        orderRepository.save(updatedOrder)
+        requestRefund(updatedOrder, correlationId)
+    }
+
+    @Transactional
+    override fun onShipmentReturnedToInventory(orderId: Long, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val updatedOrder = order.returnToStock()
+        orderRepository.save(updatedOrder)
+
+        requestRefund(updatedOrder, correlationId)
+        val items = updatedOrder.items.map { RestockItemDto(it.productId, it.quantity.toInt()) }
+        eventProducer.publishRestock(correlationId, updatedOrder.id, items)
+    }
+
+    @Transactional
+    override fun onRefundCompleted(event: RefundCompleted, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
-        if (order.status != OrderStatus.PAID) return
-        orderRepository.save(order.copy(status = OrderStatus.CANCELLED, statusDescription = "Shipment failed"))
-        eventProducer.publish(RefundRequested(order.id, requireNotNull(order.paymentId)))
-        eventProducer.publish(OrderCancelled(order.id))
+        val amount = Money(event.amount, Currency.fromCode(event.currency))
+
+        orderRepository.save(order.confirmRefund(amount))
+    }
+
+    private fun cancelReservations(order: Order, correlationId: String) {
+        eventProducer.publishCancelReservation(correlationId, order.id)
+    }
+
+    private fun requestRefund(order: Order, correlationId: String) {
+        val paymentId = requireNotNull(order.paymentId) { "order ${order.id} has no paymentId to refund" }
+        val total = order.totalPrice()
+        eventProducer.publishRefundRequested(correlationId, order.id, paymentId, total.amount, total.currency.name)
     }
 }

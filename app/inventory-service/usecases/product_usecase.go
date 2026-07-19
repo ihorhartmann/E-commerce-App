@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"inventoryservice/entities"
+	"inventoryservice/usecases/dto"
 	"inventoryservice/usecases/ports/repository"
 
 	"inventoryservice/entities/model"
@@ -38,4 +39,20 @@ func (uc *ProductUseCase) Delete(ctx context.Context, id uint64) error {
 	}
 
 	return uc.productRepository.Delete(ctx, id)
+}
+
+// TODO make it tx and try to bulk update products in the future
+func (uc *ProductUseCase) Restock(ctx context.Context, items []dto.ReservationDto) error {
+	for _, item := range items {
+		product, err := uc.productRepository.GetByID(ctx, item.ProductID)
+		if err != nil {
+			return err
+		}
+
+		if _, err = uc.productRepository.Update(ctx, product.Restock(item.Quantity)); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

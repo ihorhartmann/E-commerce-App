@@ -1,6 +1,8 @@
 package com.hartmann.domain.value
 
+import com.hartmann.domain.exception.DomainException
 import java.math.BigDecimal
+import java.util.*
 
 data class Money(
     val amount: BigDecimal,
@@ -12,5 +14,15 @@ data class Money(
 }
 
 enum class Currency {
-    EUR, USD, GBP
+    EUR, USD, GBP;
+
+    companion object {
+        fun fromCode(code: String): Currency {
+            try {
+                return valueOf(code.uppercase(Locale.getDefault()))
+            } catch (_: IllegalArgumentException) {
+                throw DomainException("Unsupported currency: $code")
+            }
+        }
+    }
 }

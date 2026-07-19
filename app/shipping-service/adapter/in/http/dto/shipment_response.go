@@ -17,7 +17,6 @@ type ShipmentResponse struct {
 }
 
 type AddressResponse struct {
-	Country    string `json:"country"`
 	City       string `json:"city"`
 	PostalCode string `json:"postalCode"`
 	Line1      string `json:"line1"`
@@ -38,7 +37,6 @@ func ToShipmentResponse(shipment *model.Shipment) ShipmentResponse {
 
 func toAddressResponse(address value.Address) AddressResponse {
 	return AddressResponse{
-		Country:    address.Country(),
 		City:       address.City(),
 		PostalCode: address.PostalCode(),
 		Line1:      address.Line1(),

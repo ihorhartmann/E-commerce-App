@@ -1,8 +1,10 @@
 package http
 
 import (
-	"inventoryservice/interfaceadapters/in/http/dto"
+	dto "inventoryservice/interfaceadapters/in/http/dto/product"
+	"inventoryservice/interfaceadapters/in/http/errors"
 	"inventoryservice/usecases"
+	"net/http"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -27,41 +29,41 @@ func (pc *ProductController) RegisterRoutes(router fiber.Router) {
 func (pc *ProductController) CreateProduct(c *fiber.Ctx) error {
 	var request dto.CreateProductRequest
 	if err := c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidRequestBody))
+		return errors.HandleProductError(errors.ErrInvalidRequestBody)
 	}
 
 	product, err := dto.FromCreateProductRequest(request)
 	if err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
 	createdProduct, err := pc.productUseCase.Create(c.Context(), product)
 	if err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(dto.ToProductResponse(createdProduct))
+	return c.Status(http.StatusCreated).JSON(dto.ToProductResponse(createdProduct))
 }
 
 func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 	id, err := parseIDParam(c, "id")
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidProductID))
+		return errors.HandleProductError(errors.ErrInvalidProductID)
 	}
 
 	var request dto.UpdateProductRequest
 	if err = c.BodyParser(&request); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidRequestBody))
+		return errors.HandleProductError(errors.ErrInvalidRequestBody)
 	}
 
 	product, err := dto.FromUpdateProductRequest(id, request)
 	if err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
 	updatedProduct, err := pc.productUseCase.Update(c.Context(), product)
 	if err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
 	return c.JSON(dto.ToProductResponse(updatedProduct))
@@ -70,12 +72,12 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 	id, err := parseIDParam(c, "id")
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidProductID))
+		return errors.HandleProductError(errors.ErrInvalidProductID)
 	}
 
 	product, err := pc.productUseCase.Get(c.Context(), id)
 	if err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
 	return c.JSON(dto.ToProductResponse(product))
@@ -84,12 +86,12 @@ func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 func (pc *ProductController) DeleteProduct(c *fiber.Ctx) error {
 	id, err := parseIDParam(c, "id")
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(errorResponse(ErrInvalidProductID))
+		return errors.HandleProductError(errors.ErrInvalidProductID)
 	}
 
 	if err = pc.productUseCase.Delete(c.Context(), id); err != nil {
-		return handleError(c, err)
+		return errors.HandleProductError(err)
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.SendStatus(http.StatusNoContent)
 }

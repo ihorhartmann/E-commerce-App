@@ -20,10 +20,12 @@ class OrderController(
     private val orderService: OrderService,
     private val orderMapper: OrderMapper,
 ) {
-    @PostMapping("/")
+    @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    fun placeOrder(@Valid @RequestBody request: PlaceOrderRequestDto): OrderResponse =
-        orderMapper.fromDomainModel(orderService.placeOrder(orderMapper.toDomainModel(request)))
+    fun placeOrder(@Valid @RequestBody request: PlaceOrderRequestDto): OrderResponse {
+        val result = orderService.placeOrder(orderMapper.toDomainModel(request))
+        return orderMapper.fromDomainModel(result.order, result.clientSecret)
+    }
 
     @GetMapping("/{orderId}")
     fun getOrderById(@PathVariable orderId: Long): OrderResponse =

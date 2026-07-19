@@ -37,10 +37,10 @@ public class PaymentController {
     @PostMapping
     public ResponseEntity<SubmitPaymentResponse> submitPayment(@RequestBody SubmitPaymentRequest request) {
         var amount = new Money(request.amount(), Currency.fromCode(request.currency()));
-        var payment = paymentService.submitPayment(request.orderId(), amount);
+        var result = paymentService.submitPayment(request.orderId(), amount);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(paymentMapper.toSubmitPaymentResponse(payment));
+                .body(paymentMapper.toSubmitPaymentResponse(result));
     }
 }

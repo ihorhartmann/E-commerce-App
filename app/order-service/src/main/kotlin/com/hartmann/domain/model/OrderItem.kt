@@ -7,7 +7,7 @@ data class OrderItem(
     val orderId: Long,
     val productId: Long,
     val quantity: UInt,
-    val price: Money
+    val price: Money,
 ) {
     init {
         require(productId > 0) { "productId must be positive" }
