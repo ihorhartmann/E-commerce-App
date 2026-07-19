@@ -21,6 +21,7 @@ object KafkaConst {
     const val PAYMENT_COMPLETED_EVENT_TYPE = "PaymentCompleted"
     const val PAYMENT_FAILED_EVENT_TYPE = "PaymentFailed"
     const val REFUND_COMPLETED_EVENT_TYPE = "RefundCompleted"
+    const val REFUND_FAILED_EVENT_TYPE = "RefundFailed"
     const val SHIPMENT_CREATION_FAILED_EVENT_TYPE = "ShipmentCreationFailed"
 
     const val SHIPMENT_CREATED_EVENT_TYPE = "ShipmentCreated"

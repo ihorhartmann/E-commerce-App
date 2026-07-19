@@ -4,20 +4,22 @@ import com.hartmann.domain.exception.DomainException
 import com.hartmann.domain.value.Address
 import com.hartmann.domain.value.Currency
 import com.hartmann.domain.value.Money
+import com.hartmann.domain.value.RefundInfo
+import com.hartmann.domain.value.ShipmentInfo
 import java.time.LocalDateTime
 import java.math.BigDecimal
 
 data class Order(
     val id: Long,
     val userId: Long,
-    val paymentId: Long? = null,
-    val shipmentId: Long? = null,
-    val trackingNumber: String? = null,
-    val cancellationReason: String? = null,
-    val refunded: Money? = null,
     val items: List<OrderItem>,
     val address: Address,
     val status: OrderStatus,
+    val paymentConfirmedAt: LocalDateTime? = null,
+    val shipment: ShipmentInfo? = null,
+    val cancellationReason: String? = null,
+    val awaitingReturn: Boolean = false,
+    val refund: RefundInfo? = null,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime? = null,
 ) {
@@ -38,84 +40,111 @@ data class Order(
 
     /** Reservation request failed for a reason other than insufficient stock (e.g. Inventory unreachable). */
     fun failReservation(): Order {
-        requireStatus("fail reservation", OrderStatus.CREATED)
+        requireStatus("fail reservation", OrderStatus.PLACED)
         return copy(status = OrderStatus.CANCELLED, cancellationReason = "Reservation failed")
     }
 
     /** Reservation request failed specifically because the requested quantity is not available. */
     fun outOfStock(): Order {
-        requireStatus("mark out of stock", OrderStatus.CREATED)
+        requireStatus("mark out of stock", OrderStatus.PLACED)
         return copy(status = OrderStatus.CANCELLED, cancellationReason = "Out of stock")
     }
 
-    fun reserveStock(): Order {
-        requireStatus("reserve stock", OrderStatus.CREATED)
-        return copy(status = OrderStatus.STOCK_RESERVED)
-    }
-
-    fun requestPayment(paymentId: Long): Order {
-        requireStatus("request payment", OrderStatus.STOCK_RESERVED)
-        return copy(status = OrderStatus.PAYMENT_SUBMITTED, paymentId = paymentId)
-    }
-
-    fun confirmPayment(paymentId: Long): Order {
-        requireStatus("confirm payment", OrderStatus.PAYMENT_SUBMITTED)
-        return copy(status = OrderStatus.PAYMENT_CONFIRMED, paymentId = paymentId)
-    }
-
+    /** No charge ever succeeded at this point, so there is nothing to refund. */
     fun failPayment(): Order {
-        requireStatus("fail payment", OrderStatus.STOCK_RESERVED, OrderStatus.PAYMENT_SUBMITTED)
+        requireStatus("fail payment", OrderStatus.PLACED)
         return copy(status = OrderStatus.CANCELLED, cancellationReason = "Payment failed")
     }
 
-    fun failShipmentCreation(): Order {
-        requireStatus("fail shipment creation", OrderStatus.PAYMENT_CONFIRMED)
-        return copy(status = OrderStatus.REFUND_SUBMITTED, cancellationReason = "Shipment creation failed")
+    fun confirmPayment(): Order {
+        requireStatus("confirm payment", OrderStatus.PLACED)
+        return copy(status = OrderStatus.PROCESSING, paymentConfirmedAt = LocalDateTime.now())
     }
 
-    fun createShipment(shipmentId: Long, trackingNumber: String): Order {
-        requireStatus("create shipment", OrderStatus.PAYMENT_CONFIRMED)
-        return copy(status = OrderStatus.SHIPMENT_CREATED, shipmentId = shipmentId, trackingNumber = trackingNumber)
+    fun createShipment(trackingNumber: String): Order {
+        requireStatus("create shipment", OrderStatus.PROCESSING)
+        return copy(shipment = ShipmentInfo.create(trackingNumber))
     }
 
-    fun startDelivery(shipmentId: Long): Order {
-        requireStatus("start delivery", OrderStatus.SHIPMENT_CREATED)
-        return copy(status = OrderStatus.IN_DELIVERY, shipmentId = shipmentId)
-    }
-
-    fun loseShipment(): Order {
-        requireStatus("lose shipment", OrderStatus.IN_DELIVERY)
-        return copy(status = OrderStatus.REFUND_SUBMITTED, cancellationReason = "Shipment lost")
-    }
-
-    /**
-     * Cancelling before the courier picked up the goods (SHIPMENT_CREATED) moves the order
-     * straight to REFUND_SUBMITTED, awaiting refund confirmation. Cancelling once the courier
-     * already has the goods (IN_DELIVERY) moves the order to IN_RETURN instead - it only reaches
-     * REFUND_SUBMITTED once [returnToStock] confirms the goods are physically back in the
-     * warehouse. Either way, the order only becomes CANCELLED once [confirmRefund] reports the
-     * refund actually went through.
-     */
-    fun cancelShipment(): Order {
-        requireStatus("cancel shipment", OrderStatus.SHIPMENT_CREATED, OrderStatus.IN_DELIVERY)
-        val nextStatus = if (status == OrderStatus.IN_DELIVERY) OrderStatus.IN_RETURN else OrderStatus.REFUND_SUBMITTED
-        return copy(status = nextStatus, cancellationReason = "Cancelled by customer")
-    }
-
-    fun returnToStock(): Order {
-        requireStatus("return to stock", OrderStatus.IN_RETURN)
-        return copy(status = OrderStatus.REFUND_SUBMITTED)
-    }
-
-    /** Payment service confirmed the refund actually went through; this is the only place `refunded` is set. */
-    fun confirmRefund(amount: Money): Order {
-        requireStatus("confirm refund", OrderStatus.REFUND_SUBMITTED)
-        return copy(status = OrderStatus.CANCELLED, refunded = amount)
+    fun startDelivery(): Order {
+        requireStatus("start delivery", OrderStatus.PROCESSING)
+        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to start delivery for" }
+        return copy(shipment = currentShipment.pickUp())
     }
 
     fun deliver(): Order {
-        requireStatus("deliver", OrderStatus.IN_DELIVERY)
-        return copy(status = OrderStatus.FULFILLED)
+        requireStatus("deliver", OrderStatus.PROCESSING)
+        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to deliver" }
+        return copy(status = OrderStatus.FULFILLED, shipment = currentShipment.deliver())
+    }
+
+    /** Shipment was never created, so there's nothing to physically return. */
+    fun failShipmentCreation(): Order {
+        requireStatus("fail shipment creation", OrderStatus.PROCESSING)
+        return copy(
+            status = OrderStatus.CANCEL_REQUESTED,
+            cancellationReason = "Shipment creation failed",
+            awaitingReturn = false
+        )
+    }
+
+    /** The goods are lost, not coming back - no return to wait for. */
+    fun loseShipment(): Order {
+        requireStatus("lose shipment", OrderStatus.PROCESSING)
+        return copy(status = OrderStatus.CANCEL_REQUESTED, cancellationReason = "Shipment lost", awaitingReturn = false)
+    }
+
+    /**
+     * Cancelling before the courier picked up the goods moves the order to CANCEL_REQUESTED with
+     * nothing left to physically return. Cancelling once the courier already has the goods also
+     * moves it to CANCEL_REQUESTED, but flags [awaitingReturn] - [returnToStock] and
+     * [confirmRefund] each check whether the other already completed (refund confirmation is
+     * typically much faster than the courier's physical trip back) before finalizing to CANCELLED.
+     */
+    fun cancelShipment(): Order {
+        requireStatus("cancel shipment", OrderStatus.PROCESSING)
+        return copy(
+            status = OrderStatus.CANCEL_REQUESTED,
+            cancellationReason = "Cancelled by customer",
+            awaitingReturn = wasPickedUp()
+        )
+    }
+
+    fun requestRefund(): Order {
+        requireStatus("request refund", OrderStatus.CANCEL_REQUESTED)
+        return copy(refund = RefundInfo.request())
+    }
+
+    /** The courier physically returned the goods. Finalizes to CANCELLED if the refund already confirmed. */
+    fun returnToStock(): Order {
+        requireStatus("return to stock", OrderStatus.CANCEL_REQUESTED)
+        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to return" }
+        val nextStatus = if (refund?.isConfirmed == true) OrderStatus.CANCELLED else OrderStatus.CANCEL_REQUESTED
+        return copy(status = nextStatus, shipment = currentShipment.returnToInventory(), awaitingReturn = false)
+    }
+
+    /**
+     * Payment service confirmed the refund actually went through. Finalizes to CANCELLED unless
+     * this cancellation still needs the goods to physically come back first ([awaitingReturn]) -
+     * in that case only the refund is recorded, and [returnToStock] finalizes the order once the
+     * goods arrive.
+     */
+    fun confirmRefund(amount: Money): Order {
+        requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
+        val currentRefund = requireNotNull(refund) { "order $id has no refund request to confirm" }
+        val nextStatus = if (awaitingReturn) OrderStatus.CANCEL_REQUESTED else OrderStatus.CANCELLED
+        return copy(status = nextStatus, refund = currentRefund.confirm(amount))
+    }
+
+    /** Payment service reported the refund failed; the order stays CANCEL_REQUESTED, flagged for follow-up. */
+    fun markRefundFailed(): Order {
+        requireStatus("mark refund failed", OrderStatus.CANCEL_REQUESTED)
+        val currentRefund = requireNotNull(refund) { "order $id has no refund request to fail" }
+        return copy(refund = currentRefund.markFailed())
+    }
+
+    fun wasPickedUp(): Boolean {
+        return shipment?.pickedUpAt != null
     }
 
     private fun requireStatus(action: String, vararg expected: OrderStatus) {
@@ -137,7 +166,7 @@ data class Order(
                 userId = userId,
                 items = items,
                 address = address,
-                status = OrderStatus.CREATED,
+                status = OrderStatus.PLACED,
                 createdAt = LocalDateTime.now(),
             )
         }
@@ -145,14 +174,9 @@ data class Order(
 }
 
 enum class OrderStatus {
-    CREATED,
-    STOCK_RESERVED,
-    PAYMENT_SUBMITTED,
-    PAYMENT_CONFIRMED,
-    SHIPMENT_CREATED,
-    IN_DELIVERY,
-    IN_RETURN,
-    REFUND_SUBMITTED,
+    PLACED,
+    PROCESSING,
+    CANCEL_REQUESTED,
     CANCELLED,
     FULFILLED,
 }

@@ -5,6 +5,7 @@ import com.hartmann.application.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.application.saga.event.PaymentCompleted
 import com.hartmann.application.saga.event.PaymentFailed
 import com.hartmann.application.saga.event.RefundCompleted
+import com.hartmann.application.saga.event.RefundFailed
 import com.hartmann.application.saga.event.ShipmentCreationFailed
 import com.hartmann.interfaces.kafka.dto.ShipmentEventMessage
 import org.slf4j.LoggerFactory
@@ -46,6 +47,11 @@ class FulfillOrderKafkaConsumer(
                     true
                 }
 
+                KafkaConst.REFUND_FAILED_EVENT_TYPE -> {
+                    saga.onRefundFailed(objectMapper.readValue(payload, RefundFailed::class.java), correlationId)
+                    true
+                }
+
                 else -> false
             }
         }
@@ -69,13 +75,13 @@ class FulfillOrderKafkaConsumer(
 
                 KafkaConst.SHIPMENT_CREATED_EVENT_TYPE -> {
                     val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentCreated(message.orderId, message.shipmentId, message.trackingNumber, correlationId)
+                    saga.onShipmentCreated(message.orderId, message.trackingNumber, correlationId)
                     true
                 }
 
                 KafkaConst.SHIPMENT_IN_DELIVERY_EVENT_TYPE -> {
                     val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentInDelivery(message.orderId, message.shipmentId, correlationId)
+                    saga.onShipmentInDelivery(message.orderId, correlationId)
                     true
                 }
 

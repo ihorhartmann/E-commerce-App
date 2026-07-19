@@ -59,14 +59,17 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public Refund updateStatusByExternalId(String externalId, RefundStatus status) {
         var refund = refundRepository.getByExternalId(externalId);
-        var updated = refundRepository.updateStatus(refund.id(), status);
+        var updatedRefund = refundRepository.updateStatus(refund.id(), status);
 
-        if (updated.status() == RefundStatus.SUCCEEDED) {
-            var payment = paymentRepository.getById(updated.paymentId());
-            paymentKafkaProducer.publishRefundCompleted(payment.orderId(), updated.paymentId(), updated.amount());
+        if (updatedRefund.status() == RefundStatus.SUCCEEDED) {
+            var payment = paymentRepository.getById(updatedRefund.paymentId());
+            paymentKafkaProducer.publishRefundCompleted(payment.orderId(), updatedRefund.amount());
+        } else if (updatedRefund.status() == RefundStatus.FAILED) {
+            var payment = paymentRepository.getById(updatedRefund.paymentId());
+            paymentKafkaProducer.publishRefundFailed(payment.orderId());
         }
 
-        return updated;
+        return updatedRefund;
     }
 
     //TODO replace it with join in real postgresql repo

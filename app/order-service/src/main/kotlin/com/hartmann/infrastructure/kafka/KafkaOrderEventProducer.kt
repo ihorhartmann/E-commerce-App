@@ -84,7 +84,6 @@ class KafkaOrderEventProducer(
     override fun publishRefundRequested(
         correlationId: String,
         orderId: Long,
-        paymentId: Long,
         amount: BigDecimal,
         currency: String,
     ) {
@@ -93,7 +92,7 @@ class KafkaOrderEventProducer(
             KafkaConst.REFUND_REQUESTED_EVENT_TYPE,
             correlationId,
             orderId,
-            RefundRequestedMessage(orderId, paymentId, amount, currency),
+            RefundRequestedMessage(orderId, amount, currency),
         )
     }
 

@@ -35,11 +35,10 @@ data class AddressRequestDto(
 data class OrderResponse(
     val id: Long,
     val userId: Long,
-    val paymentId: Long?,
-    val shipmentId: Long?,
-    val trackingNumber: String?,
+    val paymentConfirmedAt: LocalDateTime?,
+    val shipment: ShipmentResponseDto?,
     val cancellationReason: String?,
-    val refunded: MoneyResponseDto?,
+    val refund: RefundResponseDto?,
     val items: List<OrderItemResponseDto>,
     val totalPrice: MoneyResponseDto,
     val address: AddressResponseDto,
@@ -47,6 +46,20 @@ data class OrderResponse(
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime?,
     val clientSecret: String? = null,
+)
+
+data class ShipmentResponseDto(
+    val trackingNumber: String,
+    val pickedUpAt: LocalDateTime?,
+    val deliveredAt: LocalDateTime?,
+    val returnedAt: LocalDateTime?,
+)
+
+data class RefundResponseDto(
+    val requestedAt: LocalDateTime,
+    val amount: MoneyResponseDto?,
+    val confirmedAt: LocalDateTime?,
+    val failedAt: LocalDateTime?,
 )
 
 data class OrderItemResponseDto(val id: Long, val productId: Long, val quantity: UInt, val price: MoneyResponseDto)

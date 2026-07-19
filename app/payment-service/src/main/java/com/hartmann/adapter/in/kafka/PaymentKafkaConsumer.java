@@ -2,6 +2,7 @@ package com.hartmann.adapter.in.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.adapter.in.kafka.dto.RefundRequestedMessage;
+import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
@@ -20,10 +21,12 @@ public class PaymentKafkaConsumer {
     private static final Logger LOG = LoggerFactory.getLogger(PaymentKafkaConsumer.class);
 
     private final RefundService refundService;
+    private final PaymentService paymentService;
     private final ObjectMapper objectMapper;
 
-    public PaymentKafkaConsumer(RefundService refundService, ObjectMapper objectMapper) {
+    public PaymentKafkaConsumer(RefundService refundService, PaymentService paymentService, ObjectMapper objectMapper) {
         this.refundService = refundService;
+        this.paymentService = paymentService;
         this.objectMapper = objectMapper;
     }
 
@@ -45,9 +48,11 @@ public class PaymentKafkaConsumer {
         LOG.info("successfully processed {} eventType={} correlationId={}", KafkaConst.PAYMENT_COMMANDS_TOPIC, eventType, correlationId);
     }
 
+    //TODO getPayment should be done via repo, not here
     private void handleRefundRequested(String payload) {
         var message = objectMapper.readValue(payload, RefundRequestedMessage.class);
         var amount = new Money(message.amount(), Currency.fromCode(message.currency()));
-        refundService.submitRefund(message.paymentId(), amount);
+        var payment = paymentService.getByOrderId(message.orderId());
+        refundService.submitRefund(payment.id(), amount);
     }
 }

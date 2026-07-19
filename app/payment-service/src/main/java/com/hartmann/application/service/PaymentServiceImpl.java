@@ -51,14 +51,14 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public Payment updateStatusByExternalId(String externalId, PaymentStatus status) {
         var payment = paymentRepository.getByExternalId(externalId);
-        var updated = paymentRepository.updateStatus(payment.id(), status);
+        var updatedPayment = paymentRepository.updateStatus(payment.id(), status);
 
         if (status == PaymentStatus.COMPLETED) {
-            paymentKafkaProducer.publishPaymentCompleted(updated.orderId(), updated.id());
+            paymentKafkaProducer.publishPaymentCompleted(updatedPayment.orderId());
         } else if (status == PaymentStatus.FAILED) {
-            paymentKafkaProducer.publishPaymentFailed(updated.orderId(), updated.id());
+            paymentKafkaProducer.publishPaymentFailed(updatedPayment.orderId());
         }
 
-        return updated;
+        return updatedPayment;
     }
 }

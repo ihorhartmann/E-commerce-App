@@ -78,8 +78,31 @@ func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shi
 	return s.applyTransition(ctx, id, (*model.Shipment).Cancel)
 }
 
-func (s *ShipmentServiceImpl) ReturnToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, (*model.Shipment).ReturnToInventory)
+// ConfirmReturnedToInventory only changes the shipment's holder, not its status, so it publishes
+// PublishShipmentReturnedToInventory directly instead of going through applyTransition (which
+// always re-publishes the current status via PublishShipmentStatusChanged).
+func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
+	shipment, err := s.shipmentRepository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	transitioned, err := shipment.ConfirmReturnedToInventory()
+	if err != nil {
+		return nil, err
+	}
+
+	updated, err := s.shipmentRepository.Update(ctx, transitioned)
+	if err != nil {
+		return nil, err
+	}
+
+	correlationID := strconv.FormatUint(updated.OrderId(), 10)
+	if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, updated); err != nil {
+		return nil, err
+	}
+
+	return updated, nil
 }
 
 // applyTransition is triggered over REST, with no incoming saga correlationID to reuse - the

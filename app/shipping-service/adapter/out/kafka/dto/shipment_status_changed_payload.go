@@ -6,14 +6,12 @@ import "shippingservice/domain/model"
 // status Kafka event - the specific status is conveyed by the event's
 // eventType header, not by a field in this payload.
 type ShipmentStatusChangedDto struct {
-	ShipmentID     uint64 `json:"shipmentId"`
 	OrderID        uint64 `json:"orderId"`
 	TrackingNumber string `json:"trackingNumber"`
 }
 
 func ToShipmentStatusChangedDto(shipment *model.Shipment) ShipmentStatusChangedDto {
 	return ShipmentStatusChangedDto{
-		ShipmentID:     shipment.Id(),
 		OrderID:        shipment.OrderId(),
 		TrackingNumber: shipment.TrackingNumber(),
 	}

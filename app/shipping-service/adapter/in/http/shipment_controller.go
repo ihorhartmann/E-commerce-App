@@ -28,7 +28,7 @@ func (sc *ShipmentController) RegisterRoutes(router *gin.RouterGroup) {
 	sg.POST("/:id/deliver", sc.Deliver)
 	sg.POST("/:id/lose", sc.Lose)
 	sg.POST("/:id/cancel", sc.Cancel)
-	sg.POST("/:id/return", sc.ReturnToInventory)
+	sg.POST("/:id/return", sc.ConfirmReturnedToInventory)
 }
 
 func (sc *ShipmentController) GetByTrackingNumber(c *gin.Context) {
@@ -67,9 +67,10 @@ func (sc *ShipmentController) Cancel(c *gin.Context) {
 	sc.handleTransition(c, sc.shipmentService.Cancel)
 }
 
-// ReturnToInventory moves a shipment Cancelled -> ReturnedToInventory (кур'єр повернув товар на склад).
-func (sc *ShipmentController) ReturnToInventory(c *gin.Context) {
-	sc.handleTransition(c, sc.shipmentService.ReturnToInventory)
+// ConfirmReturnedToInventory records that the courier physically brought the goods back
+// (Cancelled shipment, holder Courier -> Inventory). Status stays Cancelled.
+func (sc *ShipmentController) ConfirmReturnedToInventory(c *gin.Context) {
+	sc.handleTransition(c, sc.shipmentService.ConfirmReturnedToInventory)
 }
 
 func (sc *ShipmentController) handleTransition(c *gin.Context, transition func(ctx context.Context, id uint64) (*model.Shipment, error)) {

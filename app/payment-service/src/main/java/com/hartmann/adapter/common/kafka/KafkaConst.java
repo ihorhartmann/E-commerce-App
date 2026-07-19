@@ -15,6 +15,7 @@ public final class KafkaConst {
     public static final String PAYMENT_FAILED_EVENT_TYPE = "PaymentFailed";
     public static final String REFUND_REQUESTED_EVENT_TYPE = "RefundRequested";
     public static final String REFUND_COMPLETED_EVENT_TYPE = "RefundCompleted";
+    public static final String REFUND_FAILED_EVENT_TYPE = "RefundFailed";
 
     private KafkaConst() {
     }

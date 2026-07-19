@@ -20,11 +20,19 @@ class OrderMapper {
     fun fromDomainModel(order: Order, clientSecret: String? = null): OrderResponse = OrderResponse(
         id = order.id,
         userId = order.userId,
-        paymentId = order.paymentId,
-        shipmentId = order.shipmentId,
-        trackingNumber = order.trackingNumber,
+        paymentConfirmedAt = order.paymentConfirmedAt,
+        shipment = order.shipment?.let {
+            ShipmentResponseDto(it.trackingNumber, it.pickedUpAt, it.deliveredAt, it.returnedAt)
+        },
         cancellationReason = order.cancellationReason,
-        refunded = order.refunded?.let { MoneyResponseDto(it.amount, it.currency.name) },
+        refund = order.refund?.let {
+            RefundResponseDto(
+                requestedAt = it.requestedAt,
+                amount = it.amount?.let { amount -> MoneyResponseDto(amount.amount, amount.currency.name) },
+                confirmedAt = it.confirmedAt,
+                failedAt = it.failedAt,
+            )
+        },
         items = order.items.map { OrderItemResponseDto(it.id, it.productId, it.quantity, MoneyResponseDto(it.price.amount, it.price.currency.name)) },
         totalPrice = MoneyResponseDto(order.totalPrice().amount, order.totalPrice().currency.name),
         address = AddressResponseDto(order.address.city, order.address.postalCode, order.address.line1, order.address.line2),

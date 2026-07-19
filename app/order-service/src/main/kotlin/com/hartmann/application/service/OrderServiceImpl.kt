@@ -33,19 +33,15 @@ class OrderServiceImpl(
             throw e
         }
 
-        val reservedOrder = orderRepository.save(createdOrder.reserveStock())
-
         val paymentIntent = try {
-            paymentClient.submitPayment(reservedOrder.id, reservedOrder.totalPrice())
+            paymentClient.submitPayment(createdOrder.id, createdOrder.totalPrice())
         } catch (e: Exception) {
-            orderRepository.save(reservedOrder.failPayment())
+            orderRepository.save(createdOrder.failPayment())
             eventProducer.publishCancelReservation(createdOrder.id.toString(), createdOrder.id)
             throw e
         }
 
-        val submittedPaymentOrder = orderRepository.save(reservedOrder.requestPayment(paymentIntent.paymentId))
-
-        return CheckoutResult(submittedPaymentOrder, paymentIntent.clientSecret)
+        return CheckoutResult(createdOrder, paymentIntent.clientSecret)
     }
 
     override fun getOrder(orderId: Long): Order = orderRepository.getOrder(orderId)

@@ -13,5 +13,5 @@ type ShipmentService interface {
 	Deliver(ctx context.Context, id uint64) (*model.Shipment, error)
 	Lose(ctx context.Context, id uint64) (*model.Shipment, error)
 	Cancel(ctx context.Context, id uint64) (*model.Shipment, error)
-	ReturnToInventory(ctx context.Context, id uint64) (*model.Shipment, error)
+	ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error)
 }

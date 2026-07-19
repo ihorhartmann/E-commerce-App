@@ -10,5 +10,5 @@ interface OrderEventProducer {
     fun publishHoldReservation(correlationId: String, orderId: Long)
     fun publishRestock(correlationId: String, orderId: Long, items: List<RestockItemDto>)
     fun publishCreateShipment(correlationId: String, orderId: Long, address: Address)
-    fun publishRefundRequested(correlationId: String, orderId: Long, paymentId: Long, amount: BigDecimal, currency: String)
+    fun publishRefundRequested(correlationId: String, orderId: Long, amount: BigDecimal, currency: String)
 }
