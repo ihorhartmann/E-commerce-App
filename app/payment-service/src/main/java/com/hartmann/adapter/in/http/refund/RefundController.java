@@ -33,7 +33,7 @@ public class RefundController {
     public List<RefundResponse> getByOrderId(@PathVariable("orderId") long orderId) {
         return refundService.getByOrderId(orderId)
                 .stream()
-                .map(refundMapper::fromDomain)
+                .map(refundMapper::toRefundResponse)
                 .toList();
     }
 
@@ -44,6 +44,6 @@ public class RefundController {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(refundMapper.fromDomain(refund));
+                .body(refundMapper.toRefundResponse(refund));
     }
 }

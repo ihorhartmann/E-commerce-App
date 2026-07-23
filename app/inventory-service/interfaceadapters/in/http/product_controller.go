@@ -10,11 +10,11 @@ import (
 )
 
 type ProductController struct {
-	productUseCase *usecases.ProductUseCase
+	productUseCases *usecases.ProductUseCases
 }
 
-func NewProductController(productUseCase *usecases.ProductUseCase) *ProductController {
-	return &ProductController{productUseCase: productUseCase}
+func NewProductController(productUseCases *usecases.ProductUseCases) *ProductController {
+	return &ProductController{productUseCases: productUseCases}
 }
 
 func (pc *ProductController) RegisterRoutes(router fiber.Router) {
@@ -37,7 +37,7 @@ func (pc *ProductController) CreateProduct(c *fiber.Ctx) error {
 		return errors.HandleProductError(err)
 	}
 
-	createdProduct, err := pc.productUseCase.Create(c.Context(), product)
+	createdProduct, err := pc.productUseCases.Create(c.Context(), product)
 	if err != nil {
 		return errors.HandleProductError(err)
 	}
@@ -61,7 +61,7 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 		return errors.HandleProductError(err)
 	}
 
-	updatedProduct, err := pc.productUseCase.Update(c.Context(), product)
+	updatedProduct, err := pc.productUseCases.Update(c.Context(), product)
 	if err != nil {
 		return errors.HandleProductError(err)
 	}
@@ -75,7 +75,7 @@ func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 		return errors.HandleProductError(errors.ErrInvalidProductID)
 	}
 
-	product, err := pc.productUseCase.Get(c.Context(), id)
+	product, err := pc.productUseCases.Get(c.Context(), id)
 	if err != nil {
 		return errors.HandleProductError(err)
 	}
@@ -89,7 +89,7 @@ func (pc *ProductController) DeleteProduct(c *fiber.Ctx) error {
 		return errors.HandleProductError(errors.ErrInvalidProductID)
 	}
 
-	if err = pc.productUseCase.Delete(c.Context(), id); err != nil {
+	if err = pc.productUseCases.Delete(c.Context(), id); err != nil {
 		return errors.HandleProductError(err)
 	}
 

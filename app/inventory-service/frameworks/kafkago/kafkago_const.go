@@ -1,9 +1,9 @@
 package kafkago
 
 const (
-	eventTypeHeader     = "eventType"
+	messageTypeHeader   = "messageType"
 	correlationIDHeader = "correlationId"
-	eventIDHeader       = "eventId"
+	messageIDHeader     = "messageId"
 
 	InventoryCommandsTopic = "inventory.commands"
 	ConsumerGroupID        = "inventory-service"

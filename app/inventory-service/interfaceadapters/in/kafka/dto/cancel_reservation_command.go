@@ -1,5 +1,5 @@
 package dto
 
-type HoldReservationMessage struct {
+type CancelReservationCommand struct {
 	OrderID uint64 `json:"orderId"`
 }

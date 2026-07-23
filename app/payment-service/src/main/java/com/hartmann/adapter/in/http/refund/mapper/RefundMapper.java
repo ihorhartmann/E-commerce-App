@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class RefundMapper {
-    public RefundResponse fromDomain(Refund refund) {
+    public RefundResponse toRefundResponse(Refund refund) {
         return new RefundResponse(
                 refund.id(),
                 refund.paymentId(),

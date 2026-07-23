@@ -67,7 +67,7 @@ public class StripePaymentGateway implements PaymentGateway {
             var refund = stripeClient.v1().refunds().create(params);
             LOG.info("successfully created Refund paymentIntentId={} refundId={}", paymentExternalId, refund.getId());
 
-            return new SubmitRefundResult(refund.getId(), StripeRefundStatusMapper.toDomain(refund.getStatus()));
+            return new SubmitRefundResult(refund.getId(), StripeRefundStatusMapper.fromPaymentRequest(refund.getStatus()));
         } catch (StripeException e) {
             throw new PaymentGatewayException(
                     "Failed to create Stripe Refund for PaymentIntent " + paymentExternalId, e);

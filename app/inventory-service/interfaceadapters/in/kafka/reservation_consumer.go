@@ -12,20 +12,20 @@ import (
 )
 
 type ReservationConsumer struct {
-	consumer           common.KafkaMessageConsumer
-	reservationUseCase *usecases.ReservationUseCase
-	productUseCase     *usecases.ProductUseCase
+	consumer            common.KafkaMessageConsumer
+	reservationUseCases *usecases.ReservationUseCases
+	productUseCases     *usecases.ProductUseCases
 }
 
 func NewReservationConsumer(
 	consumer common.KafkaMessageConsumer,
-	reservationUseCase *usecases.ReservationUseCase,
-	productUseCase *usecases.ProductUseCase,
+	reservationUseCases *usecases.ReservationUseCases,
+	productUseCases *usecases.ProductUseCases,
 ) *ReservationConsumer {
 	return &ReservationConsumer{
-		consumer:           consumer,
-		reservationUseCase: reservationUseCase,
-		productUseCase:     productUseCase,
+		consumer:            consumer,
+		reservationUseCases: reservationUseCases,
+		productUseCases:     productUseCases,
 	}
 }
 
@@ -37,32 +37,32 @@ func (cc *ReservationConsumer) Close() error {
 	return cc.consumer.Close()
 }
 
-func (cc *ReservationConsumer) handleMessage(eventType kafka.EventType, _ string, correlationID string, payload []byte) error {
-	switch eventType {
-	case kafka.CancelReservationEventType:
-		var message dto.CancelReservationMessage
-		if err := json.Unmarshal(payload, &message); err != nil {
+func (cc *ReservationConsumer) handleMessage(messageType kafka.MessageType, _ string, correlationID string, payload []byte) error {
+	switch messageType {
+	case kafka.CancelReservationCommand:
+		var command dto.CancelReservationCommand
+		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCase.Cancel(context.Background(), message.OrderID)
-	case kafka.FulfillReservationEventType:
-		var message dto.FulfillReservationMessage
-		if err := json.Unmarshal(payload, &message); err != nil {
+		return cc.reservationUseCases.Cancel(context.Background(), command.OrderID)
+	case kafka.FulfillReservationCommand:
+		var command dto.FulfillReservationCommand
+		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCase.Fulfill(context.Background(), message.OrderID)
-	case kafka.HoldReservationEventType:
-		var message dto.HoldReservationMessage
-		if err := json.Unmarshal(payload, &message); err != nil {
+		return cc.reservationUseCases.Fulfill(context.Background(), command.OrderID)
+	case kafka.HoldReservationCommand:
+		var command dto.HoldReservationCommand
+		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCase.HoldByCourier(context.Background(), message.OrderID)
-	case kafka.RestockEventType:
-		var message dto.RestockMessage
-		if err := json.Unmarshal(payload, &message); err != nil {
+		return cc.reservationUseCases.HoldByCourier(context.Background(), command.OrderID)
+	case kafka.RestockCommand:
+		var command dto.RestockCommand
+		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.productUseCase.Restock(context.Background(), toReservationDtos(message.Items))
+		return cc.productUseCases.Restock(context.Background(), toReservationDtos(command.Items))
 	default:
 		return nil
 	}

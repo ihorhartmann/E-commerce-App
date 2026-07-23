@@ -11,11 +11,11 @@ import (
 )
 
 type ReservationController struct {
-	reservationUseCase *usecases.ReservationUseCase
+	reservationUseCases *usecases.ReservationUseCases
 }
 
-func NewReservationController(reservationUseCase *usecases.ReservationUseCase) *ReservationController {
-	return &ReservationController{reservationUseCase: reservationUseCase}
+func NewReservationController(reservationUseCases *usecases.ReservationUseCases) *ReservationController {
+	return &ReservationController{reservationUseCases: reservationUseCases}
 }
 
 func (rc *ReservationController) RegisterRoutes(router fiber.Router) {
@@ -34,7 +34,7 @@ func (rc *ReservationController) CreateReservation(c *fiber.Ctx) error {
 		return errors.HandleReservationError(err)
 	}
 
-	if _, err = rc.reservationUseCase.CreateForOrder(c.Context(), request.OrderID, reservationDtos); err != nil {
+	if _, err = rc.reservationUseCases.CreateForOrder(c.Context(), request.OrderID, reservationDtos); err != nil {
 		return errors.HandleReservationError(err)
 	}
 

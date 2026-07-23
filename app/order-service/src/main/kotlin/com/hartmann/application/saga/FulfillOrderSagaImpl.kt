@@ -4,11 +4,11 @@ import com.hartmann.application.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.application.port.out.kafka.OrderEventProducer
 import com.hartmann.application.port.out.kafka.dto.RestockItemDto
 import com.hartmann.application.port.out.repository.OrderRepository
-import com.hartmann.application.saga.event.PaymentCompleted
-import com.hartmann.application.saga.event.PaymentFailed
-import com.hartmann.application.saga.event.RefundCompleted
-import com.hartmann.application.saga.event.RefundFailed
-import com.hartmann.application.saga.event.ShipmentCreationFailed
+import com.hartmann.application.saga.event.PaymentCompletedEvent
+import com.hartmann.application.saga.event.PaymentFailedEvent
+import com.hartmann.application.saga.event.RefundCompletedEvent
+import com.hartmann.application.saga.event.RefundFailedEvent
+import com.hartmann.application.saga.event.ShipmentCreationFailedEvent
 import com.hartmann.domain.model.Order
 import com.hartmann.domain.value.Currency
 import com.hartmann.domain.value.Money
@@ -22,7 +22,7 @@ class FulfillOrderSagaImpl(
 ) : FulfillOrderSaga {
 
     @Transactional
-    override fun onPaymentCompleted(event: PaymentCompleted, correlationId: String) {
+    override fun onPaymentCompleted(event: PaymentCompletedEvent, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
         val updatedOrder = order.confirmPayment()
 
@@ -31,7 +31,7 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
-    override fun onPaymentFailed(event: PaymentFailed, correlationId: String) {
+    override fun onPaymentFailed(event: PaymentFailedEvent, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
         val updatedOrder = order.failPayment()
 
@@ -40,7 +40,7 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
-    override fun onShipmentCreationFailed(event: ShipmentCreationFailed, correlationId: String) {
+    override fun onShipmentCreationFailed(event: ShipmentCreationFailedEvent, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
         val updatedOrder = order.failShipmentCreation().requestRefund()
 
@@ -106,7 +106,7 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
-    override fun onRefundCompleted(event: RefundCompleted, correlationId: String) {
+    override fun onRefundCompleted(event: RefundCompletedEvent, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
         val amount = Money(event.amount, Currency.fromCode(event.currency))
 
@@ -114,7 +114,7 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
-    override fun onRefundFailed(event: RefundFailed, correlationId: String) {
+    override fun onRefundFailed(event: RefundFailedEvent, correlationId: String) {
         val order = orderRepository.getOrder(event.orderId)
         orderRepository.save(order.markRefundFailed())
     }

@@ -33,9 +33,9 @@ func (c *ShipmentConsumer) Close() error {
 	return c.consumer.Close()
 }
 
-func (c *ShipmentConsumer) handleMessage(eventType commonkafka.EventType, _ string, correlationID string, payload []byte) error {
-	switch eventType {
-	case commonkafka.CreateShipmentEventType:
+func (c *ShipmentConsumer) handleMessage(messageType commonkafka.MessageType, _ string, correlationID string, payload []byte) error {
+	switch messageType {
+	case commonkafka.CreateShipmentCommand:
 		return c.handleCreateShipment(correlationID, payload)
 	default:
 		return nil
@@ -43,13 +43,13 @@ func (c *ShipmentConsumer) handleMessage(eventType commonkafka.EventType, _ stri
 }
 
 func (c *ShipmentConsumer) handleCreateShipment(correlationID string, payload []byte) error {
-	var message dto.CreateShipmentMessage
-	if err := json.Unmarshal(payload, &message); err != nil {
+	var command dto.CreateShipmentCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
 		return err
 	}
 
-	address := dto.FromAddressMessage(message.Address)
+	address := dto.FromAddressMessage(command.Address)
 
-	_, err := c.shipmentService.CreateShipment(context.Background(), correlationID, message.OrderID, address)
+	_, err := c.shipmentService.CreateShipment(context.Background(), correlationID, command.OrderID, address)
 	return err
 }

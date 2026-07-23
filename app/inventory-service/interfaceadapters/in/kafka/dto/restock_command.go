@@ -5,7 +5,7 @@ type RestockItem struct {
 	Quantity  uint   `json:"quantity"`
 }
 
-type RestockMessage struct {
+type RestockCommand struct {
 	OrderID uint64        `json:"orderId"`
 	Items   []RestockItem `json:"items"`
 }

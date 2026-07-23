@@ -9,22 +9,22 @@ import (
 	"inventoryservice/usecases/ports/repository"
 )
 
-type ReservationUseCase struct {
+type ReservationUseCases struct {
 	reservationRepository repository.ReservationRepository
 	productRepository     repository.ProductRepository
 }
 
-func NewReservationUseCase(
+func NewReservationUseCases(
 	reservationRepository repository.ReservationRepository,
 	productRepository repository.ProductRepository,
-) *ReservationUseCase {
-	return &ReservationUseCase{
+) *ReservationUseCases {
+	return &ReservationUseCases{
 		reservationRepository: reservationRepository,
 		productRepository:     productRepository,
 	}
 }
 
-func (uc *ReservationUseCase) CreateForOrder(
+func (uc *ReservationUseCases) CreateForOrder(
 	ctx context.Context,
 	orderID uint64,
 	reservationDtos []dto.ReservationDto,
@@ -52,7 +52,7 @@ func (uc *ReservationUseCase) CreateForOrder(
 	return uc.reservationRepository.CreateBatch(ctx, reservationsToInsert)
 }
 
-func (uc *ReservationUseCase) loadProducts(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
+func (uc *ReservationUseCases) loadProducts(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
 	products, err := uc.productRepository.FindByIDs(ctx, productIDs)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func (uc *ReservationUseCase) loadProducts(ctx context.Context, productIDs []uin
 	return productsByID, nil
 }
 
-func (uc *ReservationUseCase) loadReservations(ctx context.Context, productIDs []uint64) (map[uint64][]*model.StockReservation, error) {
+func (uc *ReservationUseCases) loadReservations(ctx context.Context, productIDs []uint64) (map[uint64][]*model.StockReservation, error) {
 	existingReservations, err := uc.reservationRepository.FindByProductIDs(ctx, productIDs)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func prepareReservations(
 }
 
 // Cancel deletes every stock reservation held for the given order, in one batch.
-func (uc *ReservationUseCase) Cancel(ctx context.Context, orderID uint64) error {
+func (uc *ReservationUseCases) Cancel(ctx context.Context, orderID uint64) error {
 	reservations, err := uc.reservationRepository.FindByOrderID(ctx, orderID)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (uc *ReservationUseCase) Cancel(ctx context.Context, orderID uint64) error 
 }
 
 // TODO make it tx and try to bulk update reservations in the future
-func (uc *ReservationUseCase) HoldByCourier(ctx context.Context, orderID uint64) error {
+func (uc *ReservationUseCases) HoldByCourier(ctx context.Context, orderID uint64) error {
 	reservations, err := uc.reservationRepository.FindByOrderID(ctx, orderID)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (uc *ReservationUseCase) HoldByCourier(ctx context.Context, orderID uint64)
 }
 
 // TODO make it tx and try to bulk update products in the future
-func (uc *ReservationUseCase) Fulfill(ctx context.Context, orderID uint64) error {
+func (uc *ReservationUseCases) Fulfill(ctx context.Context, orderID uint64) error {
 	reservations, err := uc.reservationRepository.FindByOrderID(ctx, orderID)
 	if err != nil {
 		return err

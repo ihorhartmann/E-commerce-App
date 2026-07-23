@@ -28,14 +28,14 @@ func main() {
 	}
 
 	productRepository := repository.NewInMemoryProductRepository()
-	productUseCase := usecases.NewProductUseCase(productRepository)
+	productUseCases := usecases.NewProductUseCases(productRepository)
 
 	reservationRepository := repository.NewInMemoryReservationRepository()
-	reservationUseCase := usecases.NewReservationUseCase(reservationRepository, productRepository)
+	reservationUseCases := usecases.NewReservationUseCases(reservationRepository, productRepository)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafkago.InventoryCommandsTopic, kafkago.ConsumerGroupID)
-	reservationConsumer := inkafka.NewReservationConsumer(kafkaConsumer, reservationUseCase, productUseCase)
+	reservationConsumer := inkafka.NewReservationConsumer(kafkaConsumer, reservationUseCases, productUseCases)
 	reservationConsumer.Start()
 
 	app := fiber.New(fiber.Config{
@@ -48,8 +48,8 @@ func main() {
 	})
 
 	apiV1 := app.Group("/api/v1")
-	inhttp.NewProductController(productUseCase).RegisterRoutes(apiV1)
-	inhttp.NewReservationController(reservationUseCase).RegisterRoutes(apiV1)
+	inhttp.NewProductController(productUseCases).RegisterRoutes(apiV1)
+	inhttp.NewReservationController(reservationUseCases).RegisterRoutes(apiV1)
 
 	go func() {
 		if err = app.Listen(":" + config.Port); err != nil {

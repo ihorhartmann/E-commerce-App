@@ -2,12 +2,12 @@ package com.hartmann.interfaces.kafka
 
 import com.hartmann.application.kafka.KafkaConst
 import com.hartmann.application.port.`in`.saga.FulfillOrderSaga
-import com.hartmann.application.saga.event.PaymentCompleted
-import com.hartmann.application.saga.event.PaymentFailed
-import com.hartmann.application.saga.event.RefundCompleted
-import com.hartmann.application.saga.event.RefundFailed
-import com.hartmann.application.saga.event.ShipmentCreationFailed
-import com.hartmann.interfaces.kafka.dto.ShipmentEventMessage
+import com.hartmann.application.saga.event.PaymentCompletedEvent
+import com.hartmann.application.saga.event.PaymentFailedEvent
+import com.hartmann.application.saga.event.RefundCompletedEvent
+import com.hartmann.application.saga.event.RefundFailedEvent
+import com.hartmann.application.saga.event.ShipmentCreationFailedEvent
+import com.hartmann.interfaces.kafka.dto.ShipmentStatusChangedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.messaging.handler.annotation.Header
@@ -24,31 +24,31 @@ class FulfillOrderKafkaConsumer(
         private val LOG = LoggerFactory.getLogger(FulfillOrderKafkaConsumer::class.java)
     }
 
-    @KafkaListener(topics = [KafkaConst.PAYMENT_EVENTS], groupId = "\${spring.kafka.consumer.group-id}")
+    @KafkaListener(topics = [KafkaConst.PAYMENT_EVENTS_TOPIC], groupId = "\${spring.kafka.consumer.group-id}")
     fun onPaymentEvent(
-        @Header(KafkaConst.EVENT_TYPE) eventType: String,
+        @Header(KafkaConst.MESSAGE_TYPE) messageType: String,
         @Header(KafkaConst.CORRELATION_ID) correlationId: String,
         @Payload payload: String,
     ) {
-        handleEvent(KafkaConst.PAYMENT_EVENTS, eventType, correlationId) {
-            when (eventType) {
-                KafkaConst.PAYMENT_COMPLETED_EVENT_TYPE -> {
-                    saga.onPaymentCompleted(objectMapper.readValue(payload, PaymentCompleted::class.java), correlationId)
+        handleMessage(KafkaConst.PAYMENT_EVENTS_TOPIC, messageType, correlationId) {
+            when (messageType) {
+                KafkaConst.PAYMENT_COMPLETED_EVENT -> {
+                    saga.onPaymentCompleted(objectMapper.readValue(payload, PaymentCompletedEvent::class.java), correlationId)
                     true
                 }
 
-                KafkaConst.PAYMENT_FAILED_EVENT_TYPE -> {
-                    saga.onPaymentFailed(objectMapper.readValue(payload, PaymentFailed::class.java), correlationId)
+                KafkaConst.PAYMENT_FAILED_EVENT -> {
+                    saga.onPaymentFailed(objectMapper.readValue(payload, PaymentFailedEvent::class.java), correlationId)
                     true
                 }
 
-                KafkaConst.REFUND_COMPLETED_EVENT_TYPE -> {
-                    saga.onRefundCompleted(objectMapper.readValue(payload, RefundCompleted::class.java), correlationId)
+                KafkaConst.REFUND_COMPLETED_EVENT -> {
+                    saga.onRefundCompleted(objectMapper.readValue(payload, RefundCompletedEvent::class.java), correlationId)
                     true
                 }
 
-                KafkaConst.REFUND_FAILED_EVENT_TYPE -> {
-                    saga.onRefundFailed(objectMapper.readValue(payload, RefundFailed::class.java), correlationId)
+                KafkaConst.REFUND_FAILED_EVENT -> {
+                    saga.onRefundFailed(objectMapper.readValue(payload, RefundFailedEvent::class.java), correlationId)
                     true
                 }
 
@@ -57,55 +57,55 @@ class FulfillOrderKafkaConsumer(
         }
     }
 
-    @KafkaListener(topics = [KafkaConst.SHIPPING_EVENTS], groupId = "\${spring.kafka.consumer.group-id}")
+    @KafkaListener(topics = [KafkaConst.SHIPPING_EVENTS_TOPIC], groupId = "\${spring.kafka.consumer.group-id}")
     fun onShippingEvent(
-        @Header(KafkaConst.EVENT_TYPE) eventType: String,
+        @Header(KafkaConst.MESSAGE_TYPE) messageType: String,
         @Header(KafkaConst.CORRELATION_ID) correlationId: String,
         @Payload payload: String,
     ) {
-        handleEvent(KafkaConst.SHIPPING_EVENTS, eventType, correlationId) {
-            when (eventType) {
-                KafkaConst.SHIPMENT_CREATION_FAILED_EVENT_TYPE -> {
+        handleMessage(KafkaConst.SHIPPING_EVENTS_TOPIC, messageType, correlationId) {
+            when (messageType) {
+                KafkaConst.SHIPMENT_CREATION_FAILED_EVENT -> {
                     saga.onShipmentCreationFailed(
-                        objectMapper.readValue(payload, ShipmentCreationFailed::class.java),
+                        objectMapper.readValue(payload, ShipmentCreationFailedEvent::class.java),
                         correlationId,
                     )
                     true
                 }
 
-                KafkaConst.SHIPMENT_CREATED_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentCreated(message.orderId, message.trackingNumber, correlationId)
+                KafkaConst.SHIPMENT_CREATED_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentCreated(event.orderId, event.trackingNumber, correlationId)
                     true
                 }
 
-                KafkaConst.SHIPMENT_IN_DELIVERY_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentInDelivery(message.orderId, correlationId)
+                KafkaConst.SHIPMENT_IN_DELIVERY_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentInDelivery(event.orderId, correlationId)
                     true
                 }
 
-                KafkaConst.SHIPMENT_DELIVERED_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentDelivered(message.orderId)
+                KafkaConst.SHIPMENT_DELIVERED_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentDelivered(event.orderId)
                     true
                 }
 
-                KafkaConst.SHIPMENT_CANCELLED_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentCancelled(message.orderId, correlationId)
+                KafkaConst.SHIPMENT_CANCELLED_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentCancelled(event.orderId, correlationId)
                     true
                 }
 
-                KafkaConst.SHIPMENT_LOST_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentLost(message.orderId, correlationId)
+                KafkaConst.SHIPMENT_LOST_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentLost(event.orderId, correlationId)
                     true
                 }
 
-                KafkaConst.SHIPMENT_RETURNED_TO_INVENTORY_EVENT_TYPE -> {
-                    val message = objectMapper.readValue(payload, ShipmentEventMessage::class.java)
-                    saga.onShipmentReturnedToInventory(message.orderId, correlationId)
+                KafkaConst.SHIPMENT_RETURNED_TO_INVENTORY_EVENT -> {
+                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    saga.onShipmentReturnedToInventory(event.orderId, correlationId)
                     true
                 }
 
@@ -116,16 +116,16 @@ class FulfillOrderKafkaConsumer(
 
     /**
      * Centralizes the receive/dispatch/success logging shared by every listener in this class,
-     * so each `@KafkaListener` method only has to describe its own event-type routing.
+     * so each `@KafkaListener` method only has to describe its own message-type routing.
      */
-    private fun handleEvent(topic: String, eventType: String, correlationId: String, dispatch: () -> Boolean) {
-        LOG.debug("received {} eventType={} correlationId={}", topic, eventType, correlationId)
+    private fun handleMessage(topic: String, messageType: String, correlationId: String, dispatch: () -> Boolean) {
+        LOG.debug("received {} messageType={} correlationId={}", topic, messageType, correlationId)
 
         if (!dispatch()) {
-            LOG.info("ignoring unhandled {} eventType={} correlationId={}", topic, eventType, correlationId)
+            LOG.info("ignoring unhandled {} messageType={} correlationId={}", topic, messageType, correlationId)
             return
         }
 
-        LOG.info("successfully processed {} eventType={} correlationId={}", topic, eventType, correlationId)
+        LOG.info("successfully processed {} messageType={} correlationId={}", topic, messageType, correlationId)
     }
 }

@@ -26,20 +26,20 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 	return &messageProducer{writer: writer}
 }
 
-func (p *messageProducer) Send(eventType kafka.EventType, correlationId string, key string, payload any) error {
+func (p *messageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
 	value, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	slog.Debug("sending kafka message", "eventType", eventType, "correlationId", correlationId, "key", key)
+	slog.Debug("sending kafka message", "messageType", messageType, "correlationId", correlationId, "key", key)
 
 	err = p.writer.WriteMessages(context.Background(), kafkago.Message{
 		Key: []byte(key),
 		Headers: []kafkago.Header{
-			{Key: eventTypeHeader, Value: []byte(eventType.String())},
+			{Key: messageTypeHeader, Value: []byte(messageType.String())},
 			{Key: correlationIDHeader, Value: []byte(correlationId)},
-			{Key: eventIDHeader, Value: []byte(uuid.New().String())},
+			{Key: messageIDHeader, Value: []byte(uuid.New().String())},
 		},
 		Value: value,
 	})
@@ -47,7 +47,7 @@ func (p *messageProducer) Send(eventType kafka.EventType, correlationId string, 
 		return err
 	}
 
-	slog.Info("successfully sent kafka message", "eventType", eventType, "correlationId", correlationId)
+	slog.Info("successfully sent kafka message", "messageType", messageType, "correlationId", correlationId)
 
 	return nil
 }

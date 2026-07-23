@@ -1,17 +1,17 @@
 package com.hartmann.application.port.`in`.saga
 
-import com.hartmann.application.saga.event.PaymentCompleted
-import com.hartmann.application.saga.event.PaymentFailed
-import com.hartmann.application.saga.event.RefundCompleted
-import com.hartmann.application.saga.event.RefundFailed
-import com.hartmann.application.saga.event.ShipmentCreationFailed
+import com.hartmann.application.saga.event.PaymentCompletedEvent
+import com.hartmann.application.saga.event.PaymentFailedEvent
+import com.hartmann.application.saga.event.RefundCompletedEvent
+import com.hartmann.application.saga.event.RefundFailedEvent
+import com.hartmann.application.saga.event.ShipmentCreationFailedEvent
 
 interface FulfillOrderSaga {
-    fun onPaymentCompleted(event: PaymentCompleted, correlationId: String)
-    fun onPaymentFailed(event: PaymentFailed, correlationId: String)
-    fun onShipmentCreationFailed(event: ShipmentCreationFailed, correlationId: String)
-    fun onRefundCompleted(event: RefundCompleted, correlationId: String)
-    fun onRefundFailed(event: RefundFailed, correlationId: String)
+    fun onPaymentCompleted(event: PaymentCompletedEvent, correlationId: String)
+    fun onPaymentFailed(event: PaymentFailedEvent, correlationId: String)
+    fun onShipmentCreationFailed(event: ShipmentCreationFailedEvent, correlationId: String)
+    fun onRefundCompleted(event: RefundCompletedEvent, correlationId: String)
+    fun onRefundFailed(event: RefundFailedEvent, correlationId: String)
     fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String)
     fun onShipmentInDelivery(orderId: Long, correlationId: String)
     fun onShipmentDelivered(orderId: Long)

@@ -2,7 +2,7 @@ package com.hartmann.infrastructure.kafka.dto
 
 import com.hartmann.domain.value.Address
 
-data class CreateShipmentMessage(val orderId: Long, val address: AddressDto)
+data class CreateShipmentCommand(val orderId: Long, val address: AddressDto)
 
 data class AddressDto(
     val city: String,

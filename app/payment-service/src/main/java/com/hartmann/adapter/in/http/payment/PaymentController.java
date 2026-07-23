@@ -30,7 +30,7 @@ public class PaymentController {
     @GetMapping("/{orderId}")
     public ResponseEntity<PaymentResponse> getByOrderId(@PathVariable("orderId") long orderId) {
         return ResponseEntity.ok(
-                paymentMapper.fromDomain(paymentService.getByOrderId(orderId))
+                paymentMapper.toPaymentResponse(paymentService.getByOrderId(orderId))
         );
     }
 

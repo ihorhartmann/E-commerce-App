@@ -22,45 +22,45 @@ func NewKafkaGoShipmentProducer(producer common.KafkaMessageProducer) *KafkaGoSh
 }
 
 func (p *KafkaGoShipmentProducer) PublishShipmentStatusChanged(_ context.Context, correlationID string, shipment *model.Shipment) error {
-	eventType, err := convertShipmentStatusEventType(shipment.Status())
+	messageType, err := convertShipmentStatusMessageType(shipment.Status())
 	if err != nil {
 		return err
 	}
 
-	payload := dto.ToShipmentStatusChangedDto(shipment)
+	payload := dto.ToShipmentStatusChangedEvent(shipment)
 	key := strconv.FormatUint(shipment.OrderId(), 10)
-	return p.producer.Send(eventType, correlationID, key, payload)
+	return p.producer.Send(messageType, correlationID, key, payload)
 }
 
-var shipmentStatusEventTypes = map[model.ShipmentStatus]commonkafka.EventType{
-	model.Created:    commonkafka.ShipmentCreatedEventType,
-	model.InDelivery: commonkafka.ShipmentInDeliveryEventType,
-	model.Delivered:  commonkafka.ShipmentDeliveredEventType,
-	model.Cancelled:  commonkafka.ShipmentCancelledEventType,
-	model.Lost:       commonkafka.ShipmentLostEventType,
+var shipmentStatusMessageTypes = map[model.ShipmentStatus]commonkafka.MessageType{
+	model.Created:    commonkafka.ShipmentCreatedEvent,
+	model.InDelivery: commonkafka.ShipmentInDeliveryEvent,
+	model.Delivered:  commonkafka.ShipmentDeliveredEvent,
+	model.Cancelled:  commonkafka.ShipmentCancelledEvent,
+	model.Lost:       commonkafka.ShipmentLostEvent,
 }
 
-func convertShipmentStatusEventType(status model.ShipmentStatus) (commonkafka.EventType, error) {
-	eventType, ok := shipmentStatusEventTypes[status]
+func convertShipmentStatusMessageType(status model.ShipmentStatus) (commonkafka.MessageType, error) {
+	messageType, ok := shipmentStatusMessageTypes[status]
 	if !ok {
-		return "", fmt.Errorf("no kafka event type mapped for shipment status %q", status)
+		return "", fmt.Errorf("no kafka message type mapped for shipment status %q", status)
 	}
 
-	return eventType, nil
+	return messageType, nil
 }
 
 // PublishShipmentReturnedToInventory is published outside of PublishShipmentStatusChanged
 // because it reflects a holder change, not a status change - the shipment's status stays
 // Cancelled throughout.
 func (p *KafkaGoShipmentProducer) PublishShipmentReturnedToInventory(_ context.Context, correlationID string, shipment *model.Shipment) error {
-	payload := dto.ToShipmentStatusChangedDto(shipment)
+	payload := dto.ToShipmentStatusChangedEvent(shipment)
 	key := strconv.FormatUint(shipment.OrderId(), 10)
-	return p.producer.Send(commonkafka.ShipmentReturnedToInventoryEventType, correlationID, key, payload)
+	return p.producer.Send(commonkafka.ShipmentReturnedToInventoryEvent, correlationID, key, payload)
 }
 
 func (p *KafkaGoShipmentProducer) PublishShipmentCreationFailed(_ context.Context, correlationID string, orderID uint64) error {
 	key := strconv.FormatUint(orderID, 10)
-	return p.producer.Send(commonkafka.ShipmentCreationFailedEventType, correlationID, key, dto.ToShipmentCreationFailedDto(orderID))
+	return p.producer.Send(commonkafka.ShipmentCreationFailedEvent, correlationID, key, dto.ToShipmentCreationFailedEvent(orderID))
 }
 
 func (p *KafkaGoShipmentProducer) Close() error {

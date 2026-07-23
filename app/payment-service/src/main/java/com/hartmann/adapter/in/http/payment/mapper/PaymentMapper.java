@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class PaymentMapper {
-    public PaymentResponse fromDomain(Payment payment) {
+    public PaymentResponse toPaymentResponse(Payment payment) {
         return new PaymentResponse(
                 payment.id(),
                 payment.orderId(),

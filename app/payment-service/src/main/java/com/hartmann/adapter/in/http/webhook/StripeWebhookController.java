@@ -107,7 +107,7 @@ public class StripeWebhookController {
     }
 
     private void updateRefundStatus(Event event, com.stripe.model.Refund stripeRefund) {
-        var status = StripeRefundStatusMapper.toDomain(stripeRefund.getStatus());
+        var status = StripeRefundStatusMapper.fromPaymentRequest(stripeRefund.getStatus());
         try {
             Refund refund = refundService.updateStatusByExternalId(stripeRefund.getId(), status);
             LOG.info(

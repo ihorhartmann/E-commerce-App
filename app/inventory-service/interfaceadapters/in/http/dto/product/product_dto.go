@@ -1,13 +1,16 @@
 package product
 
-import "inventoryservice/entities/model"
+import (
+	"inventoryservice/entities/model"
+	"inventoryservice/entities/values"
+)
 
 type MoneyDTO struct {
 	Amount   float64 `json:"amount"`
 	Currency string  `json:"currency"`
 }
 
-type ProductDTO struct {
+type ProductResponse struct {
 	ID          uint64   `json:"id"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -17,14 +20,25 @@ type ProductDTO struct {
 	Available   uint     `json:"available"`
 }
 
-func ToProductResponse(product *model.Product) *ProductDTO {
-	return &ProductDTO{
+func ToProductResponse(product *model.Product) *ProductResponse {
+	return &ProductResponse{
 		ID:          product.ID(),
 		Name:        product.Name(),
 		Description: product.Description(),
-		Price:       MoneyDTO{Amount: product.Price().Amount(), Currency: string(product.Price().Currency())},
+		Price:       toMoneyDTO(product.Price()),
 		Quantity:    product.Quantity(),
 		Reserved:    product.Reserved(),
 		Available:   product.Available(),
 	}
+}
+
+func toMoneyDTO(money values.Money) MoneyDTO {
+	return MoneyDTO{
+		Amount:   money.Amount(),
+		Currency: string(money.Currency()),
+	}
+}
+
+func fromMoneyDTO(money MoneyDTO) (values.Money, error) {
+	return values.NewMoney(money.Amount, values.Currency(money.Currency))
 }

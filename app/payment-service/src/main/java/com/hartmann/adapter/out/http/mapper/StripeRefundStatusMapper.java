@@ -7,7 +7,7 @@ public final class StripeRefundStatusMapper {
     private StripeRefundStatusMapper() {
     }
 
-    public static RefundStatus toDomain(String stripeStatus) {
+    public static RefundStatus fromPaymentRequest(String stripeStatus) {
         return switch (stripeStatus) {
             case "succeeded" -> RefundStatus.SUCCEEDED;
             case "pending" -> RefundStatus.PENDING;

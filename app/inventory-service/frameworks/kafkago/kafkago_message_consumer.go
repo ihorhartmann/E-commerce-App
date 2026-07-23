@@ -26,7 +26,7 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 	return &messageConsumer{reader: reader}
 }
 
-func (c *messageConsumer) ConsumeAsync(handle func(eventType kafka.EventType, eventId string, correlationId string, payload []byte) error) {
+func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
 	go func() {
 		ctx := context.Background()
 
@@ -40,19 +40,19 @@ func (c *messageConsumer) ConsumeAsync(handle func(eventType kafka.EventType, ev
 				continue
 			}
 
-			eventType, eventID, correlationID, err := parseHeaders(message.Headers)
+			messageType, messageID, correlationID, err := parseHeaders(message.Headers)
 			if err != nil {
 				slog.Error("kafka message header validation error", "error", err)
 				continue
 			}
 
-			slog.Debug("received kafka message", "eventType", eventType, "eventId", eventID, "correlationId", correlationID)
+			slog.Debug("received kafka message", "messageType", messageType, "messageId", messageID, "correlationId", correlationID)
 
-			if err = handle(eventType, eventID, correlationID, message.Value); err != nil {
-				slog.Error("kafka message handling error", "eventType", eventType, "correlationId", correlationID, "error", err)
+			if err = handle(messageType, messageID, correlationID, message.Value); err != nil {
+				slog.Error("kafka message handling error", "messageType", messageType, "correlationId", correlationID, "error", err)
 				continue
 			}
-			slog.Info("successfully processed kafka message", "eventType", eventType, "correlationId", correlationID)
+			slog.Info("successfully processed kafka message", "messageType", messageType, "correlationId", correlationID)
 
 			if err = c.reader.CommitMessages(ctx, message); err != nil {
 				slog.Error("kafka commit error", "error", err)
@@ -65,30 +65,30 @@ func (c *messageConsumer) Close() error {
 	return c.reader.Close()
 }
 
-// parseHeaders extracts the headers a handler actually relies on - eventType for routing and
-// correlationId for tracing, both required - and eventId, which is carried through as an opaque
+// parseHeaders extracts the headers a handler actually relies on - messageType for routing and
+// correlationId for tracing, both required - and messageId, which is carried through as an opaque
 // string without being validated as a UUID.
-func parseHeaders(headers []kafkago.Header) (eventType kafka.EventType, eventID string, correlationID string, err error) {
+func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, messageID string, correlationID string, err error) {
 	for _, header := range headers {
 		switch header.Key {
-		case eventTypeHeader:
-			eventType = kafka.EventType(header.Value)
-		case eventIDHeader:
-			eventID = string(header.Value)
+		case messageTypeHeader:
+			messageType = kafka.MessageType(header.Value)
+		case messageIDHeader:
+			messageID = string(header.Value)
 		case correlationIDHeader:
 			correlationID = string(header.Value)
 		}
 	}
 
-	if eventType == "" {
-		return "", "", "", errors.New("missing eventType header")
+	if messageType == "" {
+		return "", "", "", errors.New("missing messageType header")
 	}
-	if eventID == "" {
-		return "", "", "", errors.New("missing eventID header")
+	if messageID == "" {
+		return "", "", "", errors.New("missing messageID header")
 	}
 	if correlationID == "" {
 		return "", "", "", errors.New("missing correlationId header")
 	}
 
-	return eventType, eventID, correlationID, nil
+	return messageType, messageID, correlationID, nil
 }

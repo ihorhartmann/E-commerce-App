@@ -5,6 +5,6 @@ import (
 )
 
 type KafkaMessageConsumer interface {
-	ConsumeAsync(func(eventType kafka.EventType, eventId string, correlationId string, payload []byte) error)
+	ConsumeAsync(func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error)
 	Close() error
 }
