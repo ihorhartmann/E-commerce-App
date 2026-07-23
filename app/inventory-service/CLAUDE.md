@@ -22,8 +22,6 @@ Contains domain objects that represent business concepts and rules.
 
 This layer must not depend on any other layer.
 
-Errors in this layer must be declared in an `errors.go` file located next to the file where they are used.
-
 #### Package structure
 
 ```text
@@ -83,11 +81,6 @@ databases, kafka, third-party services.
 
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`, etc.
 
-A DTO belongs next to a port only if it is actually referenced in that port interface's own method
-signatures. A DTO used only by one adapter implementation (e.g. the exact JSON shape a Kafka producer
-or consumer serializes) is adapter-owned and must live in that adapter's own `dto` subpackage instead
-(under `interfaceadapters/in|out/...`), even if it represents the same kind of event the port deals with.
-
 ---
 
 ### Interface adapters
@@ -95,8 +88,6 @@ or consumer serializes) is adapter-owned and must live in that adapter's own `dt
 Contains adapters that connect the application core with external interfaces and infrastructure.
 
 This layer may depend on the `Use Cases` and `Entities` layers.
-
-Errors used by adapter must be declared in an `errors.go` file located next to the corresponding port interface in the `Application` layer.
 
 #### Package structure
 
@@ -151,18 +142,6 @@ HTTP error handling must be declared in an `errors.go` file located next to the 
 
 Controllers must be named like `EntityController`, for example `ShipmentController` and each controller must provide a `RegisterRoutes` function responsible for registering all controller routes.
 
-
-#### DTO mapping rules
-
-DTO packages are responsible for mapping between DTOs and domain models.
-
-Each adapter type contains dedicated DTO packages.
-
-Mapping must be implemented using package-level functions without receivers. Nested DTOs must also have dedicated functions responsible for mapping nested objects.
-
-Function names must be like `FromDtoName` and `ToDtoName`, for example `FromCreateOrderRequest`, `ToCreateOrderResponse`.
-
-When introducing a new DTO, implement only the mapping functions required by the current service. Do not create unused mapping functions.
 
 ### Frameworks
 
