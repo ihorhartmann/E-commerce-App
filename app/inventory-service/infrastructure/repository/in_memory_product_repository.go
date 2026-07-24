@@ -2,7 +2,8 @@ package repository
 
 import (
 	"context"
-	repository2 "inventoryservice/application/ports/out/repository"
+	"fmt"
+	"inventoryservice/application/ports/out/repository"
 	"sync"
 
 	"inventoryservice/domain/model"
@@ -15,7 +16,7 @@ type inMemoryProductRepository struct {
 	nextID   uint64
 }
 
-func NewInMemoryProductRepository() repository2.ProductRepository {
+func NewInMemoryProductRepository() repository.ProductRepository {
 	products := make(map[uint64]*model.Product)
 
 	defaultProducts := []*model.Product{
@@ -60,7 +61,7 @@ func (r *inMemoryProductRepository) Update(_ context.Context, product *model.Pro
 	defer r.mu.Unlock()
 
 	if _, ok := r.products[product.ID()]; !ok {
-		return nil, repository2.ErrProductNotFound
+		return nil, repository.ErrProductNotFound
 	}
 
 	r.products[product.ID()] = product
@@ -73,21 +74,24 @@ func (r *inMemoryProductRepository) GetByID(_ context.Context, id uint64) (*mode
 
 	product, ok := r.products[id]
 	if !ok {
-		return nil, repository2.ErrProductNotFound
+		return nil, repository.ErrProductNotFound
 	}
 
 	return product, nil
 }
 
-func (r *inMemoryProductRepository) FindByIDs(_ context.Context, ids []uint64) ([]*model.Product, error) {
+func (r *inMemoryProductRepository) GetByIDs(_ context.Context, ids []uint64) ([]*model.Product, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	found := make([]*model.Product, 0, len(ids))
 	for _, id := range ids {
-		if product, ok := r.products[id]; ok {
-			found = append(found, product)
+		product, ok := r.products[id]
+		if !ok {
+			return nil, fmt.Errorf("%w: product %d", repository.ErrProductNotFound, id)
 		}
+
+		found = append(found, product)
 	}
 
 	return found, nil
@@ -98,7 +102,7 @@ func (r *inMemoryProductRepository) Delete(_ context.Context, id uint64) error {
 	defer r.mu.Unlock()
 
 	if _, ok := r.products[id]; !ok {
-		return repository2.ErrProductNotFound
+		return repository.ErrProductNotFound
 	}
 
 	delete(r.products, id)

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"shippingservice/application/port/common/kafka"
 
-	"shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/out/kafka/common"
 
 	"github.com/google/uuid"
@@ -37,9 +37,9 @@ func (p *messageProducer) Send(messageType kafka.MessageType, correlationId stri
 	err = p.writer.WriteMessages(context.Background(), kafkago.Message{
 		Key: []byte(key),
 		Headers: []kafkago.Header{
-			{Key: messageTypeHeader, Value: []byte(messageType.String())},
-			{Key: correlationIDHeader, Value: []byte(correlationId)},
-			{Key: messageIDHeader, Value: []byte(uuid.New().String())},
+			{Key: kafka.MessageTypeHeader, Value: []byte(messageType.String())},
+			{Key: kafka.CorrelationIDHeader, Value: []byte(correlationId)},
+			{Key: kafka.MessageIDHeader, Value: []byte(uuid.New().String())},
 		},
 		Value: value,
 	})

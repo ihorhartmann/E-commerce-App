@@ -3,8 +3,8 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	commonkafka "shippingservice/application/port/common/kafka"
 
-	commonkafka "shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/in/kafka/common"
 	"shippingservice/adapter/in/kafka/dto"
 	portin "shippingservice/application/port/in"

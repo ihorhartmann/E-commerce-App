@@ -36,12 +36,12 @@ func (rs *ReservationServiceImpl) ReserveItems(
 		productIDs = append(productIDs, line.ProductID)
 	}
 
-	productsByID, err := rs.loadProducts(ctx, productIDs)
+	productsByID, err := rs.getProducts(ctx, productIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	reservationsByProductID, err := rs.loadReservations(ctx, productIDs)
+	reservationsByProductID, err := rs.findReservations(ctx, productIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +54,8 @@ func (rs *ReservationServiceImpl) ReserveItems(
 	return rs.reservationRepository.CreateBatch(ctx, reservationsToInsert)
 }
 
-func (rs *ReservationServiceImpl) loadProducts(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
-	products, err := rs.productRepository.FindByIDs(ctx, productIDs)
+func (rs *ReservationServiceImpl) getProducts(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
+	products, err := rs.productRepository.GetByIDs(ctx, productIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (rs *ReservationServiceImpl) loadProducts(ctx context.Context, productIDs [
 	return productsByID, nil
 }
 
-func (rs *ReservationServiceImpl) loadReservations(ctx context.Context, productIDs []uint64) (map[uint64][]*model.StockReservation, error) {
+func (rs *ReservationServiceImpl) findReservations(ctx context.Context, productIDs []uint64) (map[uint64][]*model.StockReservation, error) {
 	existingReservations, err := rs.reservationRepository.FindByProductIDs(ctx, productIDs)
 	if err != nil {
 		return nil, err
@@ -90,10 +90,7 @@ func prepareReservations(
 ) ([]*model.StockReservation, error) {
 	reservationsToInsert := make([]*model.StockReservation, 0, len(reservationDtos))
 	for _, reservationDto := range reservationDtos {
-		product, ok := productsByID[reservationDto.ProductID]
-		if !ok {
-			return nil, fmt.Errorf("%w: product %d", repository.ErrProductNotFound, reservationDto.ProductID)
-		}
+		product := productsByID[reservationDto.ProductID]
 
 		reservation, err := product.WithStockReservations(reservationsByProductID[reservationDto.ProductID]).
 			CreateReservation(orderID, reservationDto.Quantity, model.ReservationHolderBuyer)
@@ -110,13 +107,9 @@ func prepareReservations(
 
 // Cancel deletes every stock reservation held for the given order, in one batch.
 func (rs *ReservationServiceImpl) Cancel(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.FindByOrderID(ctx, orderID)
+	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 	if err != nil {
 		return err
-	}
-
-	if len(reservations) == 0 {
-		return nil
 	}
 
 	ids := make([]uint64, 0, len(reservations))
@@ -129,7 +122,7 @@ func (rs *ReservationServiceImpl) Cancel(ctx context.Context, orderID uint64) er
 
 // TODO make it tx and try to bulk update reservations in the future
 func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.FindByOrderID(ctx, orderID)
+	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 	if err != nil {
 		return err
 	}
@@ -150,13 +143,9 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, orderID uin
 
 // TODO make it tx and try to bulk update products in the future
 func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.FindByOrderID(ctx, orderID)
+	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 	if err != nil {
 		return err
-	}
-
-	if len(reservations) == 0 {
-		return nil
 	}
 
 	ids := make([]uint64, 0, len(reservations))

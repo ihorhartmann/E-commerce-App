@@ -5,15 +5,19 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"shippingservice/application/port/common/kafka"
+	"sync"
+	"sync/atomic"
 
-	"shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/in/kafka/common"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
 
 type messageConsumer struct {
-	reader *kafkago.Reader
+	reader  *kafkago.Reader
+	wg      sync.WaitGroup
+	closing atomic.Bool
 }
 
 func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.KafkaMessageConsumer {
@@ -27,13 +31,16 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 }
 
 func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
-	go func() {
+	c.wg.Go(func() {
 		ctx := context.Background()
 
 		for {
 			message, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, kafkago.ErrGroupClosed) {
+					if !c.closing.Load() {
+						slog.Error("kafka consumer closed unexpectedly", "error", err)
+					}
 					return
 				}
 				slog.Error("kafka consumer read error", "error", err)
@@ -58,11 +65,20 @@ func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType
 				slog.Error("kafka commit error", "error", err)
 			}
 		}
-	}()
+	})
 }
 
 func (c *messageConsumer) Close() error {
-	return c.reader.Close()
+	c.closing.Store(true)
+
+	err := c.reader.Close()
+	c.wg.Wait()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("kafka consumer closed successfully")
+	return nil
 }
 
 // parseHeaders extracts the headers a handler actually relies on - messageType for routing and
@@ -71,11 +87,11 @@ func (c *messageConsumer) Close() error {
 func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, messageID string, correlationID string, err error) {
 	for _, header := range headers {
 		switch header.Key {
-		case messageTypeHeader:
+		case kafka.MessageTypeHeader:
 			messageType = kafka.MessageType(header.Value)
-		case messageIDHeader:
+		case kafka.MessageIDHeader:
 			messageID = string(header.Value)
-		case correlationIDHeader:
+		case kafka.CorrelationIDHeader:
 			correlationID = string(header.Value)
 		}
 	}

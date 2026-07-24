@@ -1,9 +1,9 @@
-package kafkago
+package kafka
 
 const (
-	messageTypeHeader   = "messageType"
-	correlationIDHeader = "correlationId"
-	messageIDHeader     = "messageId"
+	MessageTypeHeader   = "messageType"
+	CorrelationIDHeader = "correlationId"
+	MessageIDHeader     = "messageId"
 
 	ShippingCommandsTopic = "shipping.commands"
 	ShippingEventsTopic   = "shipping.events"

@@ -3,10 +3,8 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	kafkaconst "inventoryservice/application/ports/out/kafka/common"
-
 	"inventoryservice/application"
-	applicationdto "inventoryservice/application/dto"
+	"inventoryservice/application/ports/common/kafka"
 	"inventoryservice/interfaces/kafka/common"
 	"inventoryservice/interfaces/kafka/dto"
 )
@@ -29,50 +27,41 @@ func NewReservationConsumer(
 	}
 }
 
-func (cc *ReservationConsumer) Start() {
-	cc.consumer.ConsumeAsync(cc.handleMessage)
+func (rc *ReservationConsumer) Start() {
+	rc.consumer.ConsumeAsync(rc.handleMessage)
 }
 
-func (cc *ReservationConsumer) Close() error {
-	return cc.consumer.Close()
+func (rc *ReservationConsumer) Close() error {
+	return rc.consumer.Close()
 }
 
-func (cc *ReservationConsumer) handleMessage(messageType kafkaconst.MessageType, _ string, correlationID string, payload []byte) error {
+func (rc *ReservationConsumer) handleMessage(messageType kafka.MessageType, _ string, _ string, payload []byte) error {
 	switch messageType {
-	case kafkaconst.CancelReservationCommand:
+	case kafka.CancelReservationCommand:
 		var command dto.CancelReservationCommand
 		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCases.Cancel(context.Background(), command.OrderID)
-	case kafkaconst.FulfillReservationCommand:
+		return rc.reservationUseCases.Cancel(context.Background(), command.OrderID)
+	case kafka.FulfillReservationCommand:
 		var command dto.FulfillReservationCommand
 		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCases.Fulfill(context.Background(), command.OrderID)
-	case kafkaconst.HoldReservationCommand:
+		return rc.reservationUseCases.Fulfill(context.Background(), command.OrderID)
+	case kafka.HoldReservationCommand:
 		var command dto.HoldReservationCommand
 		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.reservationUseCases.HoldByCourier(context.Background(), command.OrderID)
-	case kafkaconst.RestockCommand:
+		return rc.reservationUseCases.HoldByCourier(context.Background(), command.OrderID)
+	case kafka.RestockCommand:
 		var command dto.RestockCommand
 		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return cc.productUseCases.Restock(context.Background(), toReservationDtos(command.Items))
+		return rc.productUseCases.Restock(context.Background(), dto.ToReservationDtos(command.Items))
 	default:
 		return nil
 	}
-}
-
-func toReservationDtos(items []dto.RestockItem) []applicationdto.ReservationDto {
-	reservationDtos := make([]applicationdto.ReservationDto, 0, len(items))
-	for _, item := range items {
-		reservationDtos = append(reservationDtos, applicationdto.ReservationDto{ProductID: item.ProductID, Quantity: item.Quantity})
-	}
-
-	return reservationDtos
 }

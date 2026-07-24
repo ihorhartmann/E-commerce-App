@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"shippingservice/adapter/in/http/middleware"
+	kafka2 "shippingservice/application/port/common/kafka"
 	"syscall"
 	"time"
 
@@ -35,12 +36,12 @@ func main() {
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 
-	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkago.ShippingEventsTopic)
+	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafka2.ShippingEventsTopic)
 	shipmentProducer := outkafka.NewKafkaGoShipmentProducer(messageProducer)
 
 	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer)
 
-	messageConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafkago.ShippingCommandsTopic, kafkago.ConsumerGroupID)
+	messageConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka2.ShippingCommandsTopic, kafka2.ConsumerGroupID)
 	shipmentConsumer := kafka.NewShipmentConsumer(messageConsumer, shipmentService)
 	shipmentConsumer.Start()
 

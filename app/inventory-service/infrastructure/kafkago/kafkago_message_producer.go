@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"inventoryservice/application/ports/common/kafka"
-	kafkaconst "inventoryservice/application/ports/out/kafka/common"
 	"log/slog"
 
 	"inventoryservice/infrastructure/kafka/common"
@@ -27,7 +26,7 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 	return &messageProducer{writer: writer}
 }
 
-func (p *messageProducer) Send(messageType kafkaconst.MessageType, correlationId string, key string, payload any) error {
+func (p *messageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
 	value, err := json.Marshal(payload)
 	if err != nil {
 		return err

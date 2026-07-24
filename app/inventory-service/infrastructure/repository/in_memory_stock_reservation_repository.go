@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	repository2 "inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/ports/out/repository"
 	"sync"
 
 	"inventoryservice/domain/model"
@@ -14,7 +14,7 @@ type inMemoryReservationRepository struct {
 	nextID       uint64
 }
 
-func NewInMemoryReservationRepository() repository2.ReservationRepository {
+func NewInMemoryReservationRepository() repository.ReservationRepository {
 	return &inMemoryReservationRepository{
 		reservations: make(map[uint64]*model.StockReservation),
 		nextID:       1,
@@ -56,7 +56,7 @@ func (r *inMemoryReservationRepository) Update(_ context.Context, reservation *m
 	defer r.mu.Unlock()
 
 	if _, ok := r.reservations[reservation.ID()]; !ok {
-		return nil, repository2.ErrReservationNotFound
+		return nil, repository.ErrReservationNotFound
 	}
 
 	r.reservations[reservation.ID()] = reservation
@@ -69,7 +69,7 @@ func (r *inMemoryReservationRepository) GetByID(_ context.Context, reservationID
 
 	reservation, ok := r.reservations[reservationID]
 	if !ok {
-		return nil, repository2.ErrReservationNotFound
+		return nil, repository.ErrReservationNotFound
 	}
 
 	return reservation, nil
@@ -94,7 +94,7 @@ func (r *inMemoryReservationRepository) FindByProductIDs(_ context.Context, prod
 	return found, nil
 }
 
-func (r *inMemoryReservationRepository) FindByOrderID(_ context.Context, orderID uint64) ([]*model.StockReservation, error) {
+func (r *inMemoryReservationRepository) GetByOrderID(_ context.Context, orderID uint64) ([]*model.StockReservation, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -103,6 +103,10 @@ func (r *inMemoryReservationRepository) FindByOrderID(_ context.Context, orderID
 		if reservation.OrderID() == orderID {
 			found = append(found, reservation)
 		}
+	}
+
+	if len(found) == 0 {
+		return nil, repository.ErrReservationNotFound
 	}
 
 	return found, nil
@@ -114,7 +118,7 @@ func (r *inMemoryReservationRepository) DeleteByIDs(_ context.Context, reservati
 
 	for _, reservationID := range reservationIDs {
 		if _, ok := r.reservations[reservationID]; !ok {
-			return repository2.ErrReservationNotFound
+			return repository.ErrReservationNotFound
 		}
 
 		delete(r.reservations, reservationID)

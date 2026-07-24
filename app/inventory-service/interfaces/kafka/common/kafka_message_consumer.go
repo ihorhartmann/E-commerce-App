@@ -1,10 +1,10 @@
 package common
 
 import (
-	"inventoryservice/application/ports/out/kafka/common"
+	"inventoryservice/application/ports/common/kafka"
 )
 
 type KafkaMessageConsumer interface {
-	ConsumeAsync(func(messageType common.MessageType, messageId string, correlationId string, payload []byte) error)
+	ConsumeAsync(func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error)
 	Close() error
 }

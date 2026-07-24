@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"inventoryservice/application/ports/common/kafka"
-	common2 "inventoryservice/application/ports/out/kafka/common"
 	"io"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 
 	"inventoryservice/interfaces/kafka/common"
 
@@ -14,7 +15,9 @@ import (
 )
 
 type messageConsumer struct {
-	reader *kafkago.Reader
+	reader  *kafkago.Reader
+	wg      sync.WaitGroup
+	closing atomic.Bool
 }
 
 func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.KafkaMessageConsumer {
@@ -27,14 +30,17 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 	return &messageConsumer{reader: reader}
 }
 
-func (c *messageConsumer) ConsumeAsync(handle func(messageType common2.MessageType, messageId string, correlationId string, payload []byte) error) {
-	go func() {
+func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
+	c.wg.Go(func() {
 		ctx := context.Background()
 
 		for {
 			message, err := c.reader.FetchMessage(ctx)
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, kafkago.ErrGroupClosed) {
+					if !c.closing.Load() {
+						slog.Error("kafka consumer closed unexpectedly", "error", err)
+					}
 					return
 				}
 				slog.Error("kafka consumer read error", "error", err)
@@ -59,21 +65,30 @@ func (c *messageConsumer) ConsumeAsync(handle func(messageType common2.MessageTy
 				slog.Error("kafka commit error", "error", err)
 			}
 		}
-	}()
+	})
 }
 
 func (c *messageConsumer) Close() error {
-	return c.reader.Close()
+	c.closing.Store(true)
+
+	err := c.reader.Close()
+	c.wg.Wait()
+	if err != nil {
+		return err
+	}
+
+	slog.Info("kafka consumer closed successfully")
+	return nil
 }
 
 // parseHeaders extracts the headers a handler actually relies on - messageType for routing and
 // correlationId for tracing, both required - and messageId, which is carried through as an opaque
 // string without being validated as a UUID.
-func parseHeaders(headers []kafkago.Header) (messageType common2.MessageType, messageID string, correlationID string, err error) {
+func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, messageID string, correlationID string, err error) {
 	for _, header := range headers {
 		switch header.Key {
 		case kafka.MessageTypeHeader:
-			messageType = common2.MessageType(header.Value)
+			messageType = kafka.MessageType(header.Value)
 		case kafka.MessageIDHeader:
 			messageID = string(header.Value)
 		case kafka.CorrelationIDHeader:

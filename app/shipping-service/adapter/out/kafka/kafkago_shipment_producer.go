@@ -3,9 +3,9 @@ package kafka
 import (
 	"context"
 	"fmt"
+	commonkafka "shippingservice/application/port/common/kafka"
 	"strconv"
 
-	commonkafka "shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/out/kafka/common"
 	"shippingservice/adapter/out/kafka/dto"
 	portout "shippingservice/application/port/out/kafka"
