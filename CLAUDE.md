@@ -17,13 +17,13 @@ The **Order Service** acts as the orchestrator for the other services.
 
 1. **Inventory**
 
-* Architecture: Clean
+* Architecture: Onion
 * Language: Go
 * Technologies: GORM, Fiber, kafka-go
 
 2. **Order**
 
-* Architecture: Onion
+* Architecture: Clean
 * Language: Kotlin
 * Technologies: Spring Boot, Hibernate
 

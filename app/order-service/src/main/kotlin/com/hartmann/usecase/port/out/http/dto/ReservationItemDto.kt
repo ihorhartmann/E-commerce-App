@@ -1,0 +1,3 @@
+package com.hartmann.usecase.port.out.http.dto
+
+data class ReservationItemDto(val productId: Long, val quantity: Int)

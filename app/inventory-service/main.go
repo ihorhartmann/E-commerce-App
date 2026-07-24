@@ -1,19 +1,20 @@
 package main
 
 import (
-	"inventoryservice/interfaceadapters/in/http/middleware"
+	"inventoryservice/application/ports/common/kafka"
+	"inventoryservice/interfaces/http/middleware"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"inventoryservice/frameworks/env"
-	"inventoryservice/frameworks/kafkago"
-	inhttp "inventoryservice/interfaceadapters/in/http"
-	inkafka "inventoryservice/interfaceadapters/in/kafka"
-	"inventoryservice/interfaceadapters/out/repository"
-	"inventoryservice/usecases"
+	"inventoryservice/application"
+	"inventoryservice/infrastructure/env"
+	"inventoryservice/infrastructure/kafkago"
+	"inventoryservice/infrastructure/repository"
+	inhttp "inventoryservice/interfaces/http"
+	inkafka "inventoryservice/interfaces/kafka"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -28,13 +29,13 @@ func main() {
 	}
 
 	productRepository := repository.NewInMemoryProductRepository()
-	productUseCases := usecases.NewProductUseCases(productRepository)
+	productUseCases := application.NewProductService(productRepository)
 
 	reservationRepository := repository.NewInMemoryReservationRepository()
-	reservationUseCases := usecases.NewReservationUseCases(reservationRepository, productRepository)
+	reservationUseCases := application.NewReservationService(reservationRepository, productRepository)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
-	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafkago.InventoryCommandsTopic, kafkago.ConsumerGroupID)
+	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka.InventoryCommandsTopic, kafka.ConsumerGroupID)
 	reservationConsumer := inkafka.NewReservationConsumer(kafkaConsumer, reservationUseCases, productUseCases)
 	reservationConsumer.Start()
 

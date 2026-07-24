@@ -1,6 +1,6 @@
 # Order Service Architecture
 
-**Architecture:** Onion
+**Architecture:** Clean
 
 **Language:** Kotlin
 
@@ -8,7 +8,7 @@
 
 ## Layers and Packages
 
-### Domain
+### Entities
 
 Contains domain objects that represent business concepts and rules.
 
@@ -17,67 +17,82 @@ This layer must not depend on any other layer.
 #### Package structure
 
 ```text
-domain/
+entities/
+├── exception/
 ├── model/
-└── values/
+└── value/
 ```
 
-##### domain/model
+##### entities/model
 
 Domain models with their own identity.
 
 Examples:
 
-* `Product`
 * `Order`
+* `OrderItem`
 
-##### domain/values
+##### entities/value
 
 Value objects used by domain models.
 
 Value objects do not have their own identity.
 
-Example:
+Examples:
 
 * `Money`
+* `Address`
+
+##### entities/exception
+
+Exceptions raised by domain objects themselves (as opposed to exceptions raised by a specific use case or
+adapter), for example `DomainException`.
 
 ---
 
-### Application
+### Use cases
 
 Contains application business logic and ports that define how business logic interacts with external systems.
 
-This layer depends only on the `Domain` layer.
+This layer depends only on the `Entities` layer.
 
 #### Package structure
 
 ```text
-application/
+usecase/
 ├── port/
+│   ├── common/
+│   │   └── kafka/
 │   ├── in/
 │   │   ├── saga/
-│   │   └── service/
-│   │
+│   │   │   └── event/
+│   │   └── usecase/
+│   │       └── dto/
 │   └── out/
-│       ├── repository/
-│       ├── kafka/
 │       ├── http/
-│       └── ...
-│
+│       │   ├── dto/
+│       │   └── exception/
+│       ├── kafka/
+│       │   └── dto/
+│       └── repository/
+│           └── exception/
 ├── saga/
-├── service/
 └── ...
 ```
 
-##### application/ports/in
+##### usecase/port/in/usecase
 
-Inbound ports are interfaces that define how business logic is invoked by `Infrastructure` layer.
+Inbound ports are interfaces that define how business logic is invoked by the `Interface adapters` layer.
 
-It contains service and saga interfaces separated in different packages `saga` and `service`.
+Each interface exposes a single, specific application scenario as an `execute` method, and must be named
+`ActionEntityUseCase`, for example `PlaceOrderUseCase` or `GetOrderUseCase`.
 
-Inbound ports must be named like `EntityService` or `SagaNameSaga`, for example `ShipmentService` or `FulfillOrderSaga`.
+##### usecase/port/in/saga
 
-##### application/ports/out
+Inbound saga ports, named `SagaNameSaga`, for example `FulfillOrderSaga`. `usecase/port/in/saga/event` contains the
+event types a saga reacts to or emits.
+
+##### usecase/port/out
 
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
@@ -85,18 +100,20 @@ databases, kafka, third-party services.
 Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
 etc.
 
-Constants shared between an `Infrastructure` adapter and an `Interfaces` adapter (e.g. Kafka topic names,
-header names, event-type names) must not live inside either layer's own package, since `Infrastructure`
-and `Interfaces` are siblings and neither may depend on the other. Put them in a dedicated package under
-`application` (e.g. `application/kafka`) instead, since both layers are already allowed to depend on
-`Application`.
+##### usecase/port/common
 
-##### application/saga
+Classes shared between an `Interface adapters/out` adapter and an `Interface adapters/in` adapter (e.g. Kafka
+topic names, header names, event-type names) must not live inside either adapter's own package, since `in` and
+`out` adapters are siblings and neither may depend on the other. Put them in a dedicated package under
+`usecase/port/common` instead (e.g. `usecase/port/common/kafka`), since both are already allowed to depend on
+`Use cases`.
+
+##### usecase/saga
 
 Contains saga orchestration logic for long-running business processes that span multiple services.
 
 Classes in this package provide implementations of the inbound saga port interfaces defined in
-`application/ports/in/saga`.
+`usecase/port/in/saga`.
 
 Sagas coordinate multiple application steps by:
 
@@ -105,57 +122,78 @@ Sagas coordinate multiple application steps by:
 * Handling successful completion
 * Triggering compensating actions when a step fails
 
-##### application/services
+##### Use case implementations
 
-Services contain business logic that operates on domain objects.
-
-Classes in this package provide implementations of the inbound service port interfaces defined in
-`application/ports/in/service`.
+Classes implementing the inbound use case ports live directly in the `usecase` package, named `ActionEntityUseCaseImpl`,
+for example `PlaceOrderUseCaseImpl` or `GetOrderUseCaseImpl`.
 
 ---
 
-### Infrastructure
+### Interface adapters
 
-Contains implementations of ports from `Application` layer that integrate the application core with external systems and
-infrastructure. Also includes framework-specific code, drivers, and related configuration. Examples:
+Contains adapters that connect the application core with external interfaces and infrastructure.
 
-* Spring configuration
-* Database migrations
-* Environment configuration
-* Application configuration
-
-This layer may depend on the `Application` and `Domain` layers.
+This layer may depend on the `Use cases` and `Entities` layers.
 
 #### Package structure
 
-Packages are grouped by technical responsibility or external technology integration.
-
 ```text
-infrastructure/
-├── config/
-├── env/
-├── http/
-├── kafka/
-└── repository/
+interfaceadapter/
+├── in/
+│   ├── http/
+│   │   └── dto/
+│   └── kafka/
+│       └── dto/
+└── out/
+    ├── http/
+    │   └── dto/
+    ├── kafka/
+    │   └── dto/
+    └── repository/
 ```
 
+##### interfaceadapter/in
 
-### Interfaces
+Inbound adapters that invoke application logic and serve as entry points to the service.
 
-Contains entry points to the service and invoke the business logic in the `Application` layer.
+Examples:
 
-This layer may depend on the `Application` and `Domain` layers.
+* REST API controllers
+* Kafka consumers
 
-HTTP error handling must be declared in an `GlobalExceptionHandler` class located in the `interfaces.http` package.
+HTTP error handling must be declared in a `GlobalExceptionHandler` class located in the `interfaceadapter.in.http`
+package.
 
-Controllers must be named like `EntityController`, for example `ShipmentController`.
+Controllers must be named like `EntityController`, for example `OrderController`.
+
+##### interfaceadapter/out
+
+Outbound adapters that implement interfaces defined in `usecase/port/out`. Output adapter implementations must be
+named in format `TechnologyPortName`.
+
+Examples:
+
+* `RestInventoryClient`
+* `PostgresOrderRepository`
+
+---
+
+### Frameworks
+
+Contains frameworks, drivers, and their configuration.
+
+Examples:
+
+* Spring configuration
+* Kafka consumer/producer/error-handler configuration
+
+This layer may depend only on the `Interface adapters` layer.
+
+These implementations do not contain business-specific logic and are therefore implemented at the framework level.
 
 #### Package structure
 
-Packages are grouped by transport or technology type.
-
 ```text
-interfaces/
-├── http/
-└── kafka/
+frameworks/
+└── config/
 ```
