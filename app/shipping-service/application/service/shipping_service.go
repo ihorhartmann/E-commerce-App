@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
+	commonkafka "shippingservice/application/port/common/kafka"
 	portin "shippingservice/application/port/in"
 	portoutkafka "shippingservice/application/port/out/kafka"
 	"shippingservice/application/port/out/repository"
@@ -40,12 +40,12 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 	return s.shipmentRepository.GetByTrackingNumber(ctx, trackingNumber)
 }
 
-// CreateShipment is triggered by the CreateShipment Kafka command, so correlationID is the one
-// carried by that command - it already identifies the same saga instance as the rest of the
-// order/payment/shipping event chain.
 func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error) {
-	trackingNumber := fmt.Sprintf("TRK-%d-%s", orderID, strings.ToUpper(uuid.New().String()[:8]))
-	shipment := model.NewShipment(orderID, trackingNumber, address)
+	trackingNumber := fmt.Sprintf("%d%s", orderID, strings.ToUpper(uuid.New().String()[:8]))
+	shipment, err := model.NewShipment(orderID, trackingNumber, address)
+	if err != nil {
+		return nil, err
+	}
 
 	created, err := s.shipmentRepository.Create(ctx, shipment)
 	if err != nil {
@@ -80,7 +80,9 @@ func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shi
 
 // ConfirmReturnedToInventory only changes the shipment's holder, not its status, so it publishes
 // PublishShipmentReturnedToInventory directly instead of going through applyTransition (which
-// always re-publishes the current status via PublishShipmentStatusChanged).
+// always re-publishes the current status via PublishShipmentStatusChanged). It's triggered over
+// REST, with no incoming saga correlationID to reuse - the orderId is the only available
+// correlation point, so it's derived here instead.
 func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
 	shipment, err := s.shipmentRepository.GetByID(ctx, id)
 	if err != nil {
@@ -97,7 +99,7 @@ func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id
 		return nil, err
 	}
 
-	correlationID := strconv.FormatUint(updated.OrderId(), 10)
+	correlationID := commonkafka.FormatKafkaId(updated.OrderId())
 	if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, updated); err != nil {
 		return nil, err
 	}
@@ -127,7 +129,7 @@ func (s *ShipmentServiceImpl) applyTransition(
 		return nil, err
 	}
 
-	correlationID := strconv.FormatUint(updated.OrderId(), 10)
+	correlationID := commonkafka.FormatKafkaId(updated.OrderId())
 	if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, updated); err != nil {
 		return nil, err
 	}

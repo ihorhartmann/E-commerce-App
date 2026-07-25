@@ -48,8 +48,11 @@ func (c *ShipmentConsumer) handleCreateShipment(correlationID string, payload []
 		return err
 	}
 
-	address := dto.FromAddressMessage(command.Address)
+	address, err := dto.FromAddressMessage(command.Address)
+	if err != nil {
+		return err
+	}
 
-	_, err := c.shipmentService.CreateShipment(context.Background(), correlationID, command.OrderID, address)
+	_, err = c.shipmentService.CreateShipment(context.Background(), correlationID, command.OrderID, address)
 	return err
 }

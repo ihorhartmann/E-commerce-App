@@ -21,46 +21,46 @@ func NewInMemoryShipmentRepository() repository.ShipmentRepository {
 	now := time.Date(2026, time.July, 11, 10, 0, 0, 0, time.UTC)
 
 	defaultShipments := []*model.Shipment{
-		model.NewExistingShipment(
+		checkShipment(model.NewExistingShipment(
 			1,
 			101,
 			"TRK-1001",
-			value.NewAddress("Kyiv", "01001", "Khreshchatyk St 1", "Apt 12"),
+			checkAddress(value.NewAddress("Kyiv", "01001", "Khreshchatyk St 1", "Apt 12")),
 			model.Delivered,
 			model.HolderCourier,
 			now.Add(-96*time.Hour),
 			now.Add(-72*time.Hour),
-		),
-		model.NewExistingShipment(
+		)),
+		checkShipment(model.NewExistingShipment(
 			2,
 			102,
 			"TRK-1002",
-			value.NewAddress("Lviv", "79000", "Rynok Square 5", ""),
+			checkAddress(value.NewAddress("Lviv", "79000", "Rynok Square 5", "")),
 			model.Delivered,
 			model.HolderCourier,
 			now.Add(-72*time.Hour),
 			now.Add(-48*time.Hour),
-		),
-		model.NewExistingShipment(
+		)),
+		checkShipment(model.NewExistingShipment(
 			3,
 			103,
 			"TRK-1003",
-			value.NewAddress("Warsaw", "00-001", "Marszalkowska 10", "Floor 3"),
+			checkAddress(value.NewAddress("Warsaw", "00-001", "Marszalkowska 10", "Floor 3")),
 			model.Cancelled,
 			model.HolderInventory,
 			now.Add(-48*time.Hour),
 			now.Add(-24*time.Hour),
-		),
-		model.NewExistingShipment(
+		)),
+		checkShipment(model.NewExistingShipment(
 			4,
 			104,
 			"TRK-1004",
-			value.NewAddress("Berlin", "10115", "Invalidenstrasse 20", ""),
+			checkAddress(value.NewAddress("Berlin", "10115", "Invalidenstrasse 20", "")),
 			model.Delivered,
 			model.HolderCourier,
 			now.Add(-24*time.Hour),
 			now,
-		),
+		)),
 	}
 
 	shipments := make(map[uint64]*model.Shipment, len(defaultShipments))
@@ -81,7 +81,7 @@ func (r *InMemoryShipmentRepository) Create(_ context.Context, shipment *model.S
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	created := model.NewExistingShipment(
+	created, err := model.NewExistingShipment(
 		r.nextID,
 		shipment.OrderId(),
 		shipment.TrackingNumber(),
@@ -91,6 +91,9 @@ func (r *InMemoryShipmentRepository) Create(_ context.Context, shipment *model.S
 		shipment.CreatedAt(),
 		shipment.UpdatedAt(),
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	r.shipments[created.Id()] = created
 	r.byTrackingNumber[created.TrackingNumber()] = created.Id()
@@ -133,4 +136,20 @@ func (r *InMemoryShipmentRepository) Update(_ context.Context, shipment *model.S
 
 	r.shipments[shipment.Id()] = shipment
 	return shipment, nil
+}
+
+func checkShipment(shipment *model.Shipment, err error) *model.Shipment {
+	if err != nil {
+		panic(err)
+	}
+
+	return shipment
+}
+
+func checkAddress(address value.Address, err error) value.Address {
+	if err != nil {
+		panic(err)
+	}
+
+	return address
 }

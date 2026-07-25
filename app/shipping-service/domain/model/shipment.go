@@ -2,8 +2,10 @@ package model
 
 import (
 	"fmt"
+	"shippingservice/domain"
 	"shippingservice/domain/value"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -27,7 +29,14 @@ func NewExistingShipment(
 	holder ShipmentHolder,
 	createdAt time.Time,
 	updatedAt time.Time,
-) *Shipment {
+) (*Shipment, error) {
+	if id == 0 || !status.isValid() || !holder.isValid() {
+		return nil, domain.ErrInvalidInput
+	}
+	if err := validateShipment(orderId, trackingNumber); err != nil {
+		return nil, err
+	}
+
 	return &Shipment{
 		id:             id,
 		orderId:        orderId,
@@ -37,12 +46,16 @@ func NewExistingShipment(
 		holder:         holder,
 		createdAt:      createdAt,
 		updatedAt:      updatedAt,
-	}
+	}, nil
 }
 
 // NewShipment creates a brand-new shipment in the initial Created status, with the goods still
 // held by the inventory (not yet picked up by a courier).
-func NewShipment(orderId uint64, trackingNumber string, address value.Address) *Shipment {
+func NewShipment(orderId uint64, trackingNumber string, address value.Address) (*Shipment, error) {
+	if err := validateShipment(orderId, trackingNumber); err != nil {
+		return nil, err
+	}
+
 	now := time.Now()
 
 	return &Shipment{
@@ -53,7 +66,15 @@ func NewShipment(orderId uint64, trackingNumber string, address value.Address) *
 		holder:         HolderInventory,
 		createdAt:      now,
 		updatedAt:      now,
+	}, nil
+}
+
+func validateShipment(orderId uint64, trackingNumber string) error {
+	if orderId == 0 || strings.TrimSpace(trackingNumber) == "" {
+		return domain.ErrInvalidInput
 	}
+
+	return nil
 }
 
 func (s *Shipment) StartDelivery() (*Shipment, error) {

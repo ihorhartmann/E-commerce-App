@@ -8,3 +8,12 @@ const (
 	HolderInventory ShipmentHolder = "Inventory"
 	HolderCourier   ShipmentHolder = "Courier"
 )
+
+func (h ShipmentHolder) isValid() bool {
+	switch h {
+	case HolderInventory, HolderCourier:
+		return true
+	default:
+		return false
+	}
+}

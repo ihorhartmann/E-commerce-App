@@ -1,5 +1,10 @@
 package value
 
+import (
+	"shippingservice/domain"
+	"strings"
+)
+
 type Address struct {
 	city       string
 	postalCode string
@@ -7,13 +12,17 @@ type Address struct {
 	line2      string
 }
 
-func NewAddress(city, postalCode, line1, line2 string) Address {
+func NewAddress(city, postalCode, line1, line2 string) (Address, error) {
+	if strings.TrimSpace(city) == "" || strings.TrimSpace(postalCode) == "" || strings.TrimSpace(line1) == "" {
+		return Address{}, domain.ErrInvalidInput
+	}
+
 	return Address{
 		city:       city,
 		postalCode: postalCode,
 		line1:      line1,
 		line2:      line2,
-	}
+	}, nil
 }
 
 func (a Address) City() string {
