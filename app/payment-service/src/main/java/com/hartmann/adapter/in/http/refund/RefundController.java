@@ -4,8 +4,6 @@ import com.hartmann.adapter.in.http.refund.dto.SubmitRefundRequest;
 import com.hartmann.adapter.in.http.refund.dto.RefundResponse;
 import com.hartmann.adapter.in.http.refund.mapper.RefundMapper;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.domain.value.Currency;
-import com.hartmann.domain.value.Money;
 
 import java.util.List;
 
@@ -22,28 +20,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/refunds")
 public class RefundController {
     private final RefundService refundService;
-    private final RefundMapper refundMapper;
+    private final RefundMapper mapper;
 
-    public RefundController(RefundService refundService, RefundMapper refundMapper) {
+    public RefundController(RefundService refundService, RefundMapper mapper) {
         this.refundService = refundService;
-        this.refundMapper = refundMapper;
+        this.mapper = mapper;
     }
 
     @GetMapping("/{orderId}")
     public List<RefundResponse> getByOrderId(@PathVariable("orderId") long orderId) {
         return refundService.getByOrderId(orderId)
                 .stream()
-                .map(refundMapper::toRefundResponse)
+                .map(mapper::toRefundResponse)
                 .toList();
     }
 
     @PostMapping
     public ResponseEntity<RefundResponse> submitRefund(@RequestBody SubmitRefundRequest request) {
-        var amount = new Money(request.amount(), Currency.fromCode(request.currency()));
-        var refund = refundService.submitRefund(request.paymentId(), amount);
+        var refund = refundService.submitRefund(request.paymentId(),
+                mapper.fromSubmitRefundRequest(request));
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(refundMapper.toRefundResponse(refund));
+                .body(mapper.toRefundResponse(refund));
     }
 }

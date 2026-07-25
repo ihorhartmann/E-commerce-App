@@ -16,6 +16,30 @@ public record Payment(
         Instant createdAt,
         Instant updatedAt
 ) {
+    public Payment {
+        if (id < 0) {
+            throw new DomainException("Payment id must not be negative");
+        }
+        if (orderId <= 0) {
+            throw new DomainException("Payment orderId must be positive");
+        }
+        if (externalId == null || externalId.isBlank()) {
+            throw new DomainException("Payment externalId must not be blank");
+        }
+        if (amount == null) {
+            throw new DomainException("Payment amount must not be null");
+        }
+        if (status == null) {
+            throw new DomainException("Payment status must not be null");
+        }
+        if (refunds == null) {
+            throw new DomainException("Payment refunds must not be null");
+        }
+        if (createdAt == null || updatedAt == null) {
+            throw new DomainException("Payment createdAt/updatedAt must not be null");
+        }
+    }
+
     public Refund createRefund(Money amount) {
         if (status != PaymentStatus.COMPLETED) {
             throw new DomainException("Payment " + id + " is not completed and cannot be refunded");

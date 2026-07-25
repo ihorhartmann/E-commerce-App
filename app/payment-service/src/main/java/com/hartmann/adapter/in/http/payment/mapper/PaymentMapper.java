@@ -1,9 +1,12 @@
 package com.hartmann.adapter.in.http.payment.mapper;
 
 import com.hartmann.adapter.in.http.payment.dto.PaymentResponse;
+import com.hartmann.adapter.in.http.payment.dto.SubmitPaymentRequest;
 import com.hartmann.adapter.in.http.payment.dto.SubmitPaymentResponse;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.domain.model.Payment;
+import com.hartmann.domain.value.Currency;
+import com.hartmann.domain.value.Money;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -29,5 +32,9 @@ public class PaymentMapper {
                 result.clientSecret(),
                 payment.status().name()
         );
+    }
+
+    public Money fromSubmitPaymentRequest(SubmitPaymentRequest request) {
+        return new Money(request.amount(), Currency.fromCode(request.currency()));
     }
 }

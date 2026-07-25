@@ -48,7 +48,6 @@ public class PaymentKafkaConsumer {
         LOG.info("successfully processed {} messageType={} correlationId={}", KafkaConst.PAYMENT_COMMANDS_TOPIC, messageType, correlationId);
     }
 
-    //TODO getPayment should be done via repo, not here
     private void handleRefundRequested(String payload) {
         var command = objectMapper.readValue(payload, RefundRequestedCommand.class);
         var amount = new Money(command.amount(), Currency.fromCode(command.currency()));

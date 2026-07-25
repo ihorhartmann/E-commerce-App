@@ -36,8 +36,8 @@ public class PaymentController {
 
     @PostMapping
     public ResponseEntity<SubmitPaymentResponse> submitPayment(@RequestBody SubmitPaymentRequest request) {
-        var amount = new Money(request.amount(), Currency.fromCode(request.currency()));
-        var result = paymentService.submitPayment(request.orderId(), amount);
+        var result = paymentService.submitPayment(request.orderId(),
+                paymentMapper.fromSubmitPaymentRequest(request));
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)

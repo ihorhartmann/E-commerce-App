@@ -40,6 +40,7 @@ public class PaymentServiceImpl implements PaymentService {
         var result = paymentGateway.submitPayment(orderId, amount);
         var now = Instant.now();
 
+        //TODO create before submit, and then update with externalId
         var payment = paymentRepository.create(
                 new Payment(0L, orderId, result.externalId(), amount, PaymentStatus.PENDING, List.of(), now, now)
         );
