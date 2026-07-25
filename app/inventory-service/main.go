@@ -36,7 +36,7 @@ func main() {
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka.InventoryCommandsTopic, kafka.ConsumerGroupID)
-	reservationConsumer := inkafka.NewReservationConsumer(kafkaConsumer, reservationUseCases, productUseCases)
+	reservationConsumer := inkafka.NewReservationKafkaConsumer(kafkaConsumer, reservationUseCases, productUseCases)
 	reservationConsumer.Start()
 
 	app := fiber.New(fiber.Config{

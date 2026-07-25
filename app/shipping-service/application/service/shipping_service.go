@@ -19,13 +19,13 @@ import (
 type ShipmentServiceImpl struct {
 	portin.ShipmentService
 	shipmentRepository repository.ShipmentRepository
-	shipmentProducer   portoutkafka.ShipmentProducer
+	shipmentProducer   portoutkafka.ShipmentKafkaProducer
 }
 
 func NewShipmentServiceImpl(
 	shipmentRepository repository.ShipmentRepository,
-	shipmentProducer portoutkafka.ShipmentProducer,
-) *ShipmentServiceImpl {
+	shipmentProducer portoutkafka.ShipmentKafkaProducer,
+) portin.ShipmentService {
 	return &ShipmentServiceImpl{
 		shipmentRepository: shipmentRepository,
 		shipmentProducer:   shipmentProducer,

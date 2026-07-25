@@ -1,7 +1,7 @@
 package http
 
 import (
-	"inventoryservice/application"
+	"inventoryservice/application/ports/in"
 	dto "inventoryservice/interfaces/http/dto/product"
 	"inventoryservice/interfaces/http/errors"
 	"net/http"
@@ -10,10 +10,10 @@ import (
 )
 
 type ProductController struct {
-	productService *application.ProductServiceImpl
+	productService in.ProductService
 }
 
-func NewProductController(productService *application.ProductServiceImpl) *ProductController {
+func NewProductController(productService in.ProductService) *ProductController {
 	return &ProductController{productService: productService}
 }
 

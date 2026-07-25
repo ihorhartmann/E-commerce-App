@@ -8,24 +8,24 @@ import jakarta.validation.constraints.Positive
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
-data class PlaceOrderRequestDto(
+data class PlaceOrderRequest(
     @field:Positive val userId: Long,
-    @field:NotEmpty @field:Valid val items: List<OrderItemRequestDto>,
-    @field:NotNull @field:Valid val address: AddressRequestDto,
+    @field:NotEmpty @field:Valid val items: List<OrderItemRequest>,
+    @field:NotNull @field:Valid val address: AddressRequest,
 )
 
-data class OrderItemRequestDto(
+data class OrderItemRequest(
     @field:Positive val productId: Long,
     @field:Positive val quantity: Int,
-    @field:NotNull @field:Valid val price: MoneyRequestDto,
+    @field:NotNull @field:Valid val price: MoneyRequest,
 )
 
-data class MoneyRequestDto(
+data class MoneyRequest(
     @field:NotNull @field:Positive val amount: BigDecimal,
     @field:NotNull val currency: String,
 )
 
-data class AddressRequestDto(
+data class AddressRequest(
     @field:NotBlank val city: String,
     @field:NotBlank val postalCode: String,
     @field:NotBlank val line1: String,
@@ -62,6 +62,6 @@ data class RefundResponseDto(
     val failedAt: LocalDateTime?,
 )
 
-data class OrderItemResponseDto(val id: Long, val productId: Long, val quantity: UInt, val price: MoneyResponseDto)
+data class OrderItemResponseDto(val id: Long, val productId: Long, val quantity: Int, val price: MoneyResponseDto)
 data class MoneyResponseDto(val amount: BigDecimal, val currency: String)
 data class AddressResponseDto(val city: String, val postalCode: String, val line1: String, val line2: String)

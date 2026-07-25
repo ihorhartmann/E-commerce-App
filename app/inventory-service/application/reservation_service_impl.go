@@ -19,7 +19,7 @@ type ReservationServiceImpl struct {
 func NewReservationService(
 	reservationRepository repository.ReservationRepository,
 	productRepository repository.ProductRepository,
-) *ReservationServiceImpl {
+) in.ReservationService {
 	return &ReservationServiceImpl{
 		reservationRepository: reservationRepository,
 		productRepository:     productRepository,

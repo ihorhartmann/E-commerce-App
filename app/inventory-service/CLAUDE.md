@@ -8,11 +8,10 @@
 
 ## Generic code conventions
 
-* Use lowerCamelCase  identifiers by default.
+* Use lowerCamelCase identifiers by default.
 * Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
 * If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
 * HTTP status codes must always be taken from the `net/http` package.
-
 
 ## Layers and Packages
 
@@ -85,16 +84,16 @@ Inbound ports must be named like `EntityService`, for example `ProductService` o
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
 
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
-etc. Ports declared here are implemented exclusively by outbound adapters in the `Infrastructure` layer.
+Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
+`EntityKafkaProducer`, etc. Ports declared here are implemented exclusively by outbound adapters in the
+`Infrastructure` layer.
 
 ##### application/ports/common
 
-Code shared between an `Infrastructure` adapter and an `Interfaces` adapter (not limited to constants - e.g. Kafka
-topic names, header names, message-type names, or other shared types and utilities) must not live inside either
-layer's own package, since `Infrastructure` and `Interfaces` are siblings and neither may depend on the other. Put
-it in a dedicated package under `application/ports/common` instead, since both layers are already allowed to
-depend on `Application`.
+Code shared between an `Infrastructure` adapter and an `Interfaces` adapter (not limited to constants - e.g. Kafka topic
+names, header names, message-type names, or other shared types and utilities) must not live inside either layer's own
+package, since `Infrastructure` and `Interfaces` are siblings and neither may depend on the other. Put it in a dedicated
+package under `application/ports/common` instead, since both layers are already allowed to depend on `Application`.
 
 ##### Service implementations
 
@@ -105,8 +104,8 @@ for example `ProductServiceImpl` or `ReservationServiceImpl`.
 
 ### Infrastructure
 
-Contains implementations of ports from the `Application` layer that integrate the application core with external
-systems and infrastructure. Also includes framework-specific code, drivers, and related configuration.
+Contains implementations of ports from the `Application` layer that integrate the application core with external systems
+and infrastructure. Also includes framework-specific code, drivers, and related configuration.
 
 This layer may depend on the `Application` and `Domain` layers.
 
@@ -127,8 +126,8 @@ infrastructure/
     └── transaction/
 ```
 
-Outbound adapter implementations that implement the ports declared in `application/ports/out` must be named in
-format `TechnologyPortName`.
+Outbound adapter implementations that implement the ports declared in `application/ports/out` must be named in format
+`TechnologyPortName`.
 
 Examples:
 
@@ -147,8 +146,9 @@ This layer may depend on the `Application` and `Domain` layers.
 
 HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
 
-Controllers must be named like `EntityController`, for example `ProductController`, and each controller must
-provide a `RegisterRoutes` function responsible for registering all controller routes.
+Controllers must be named like `EntityController`, for example `ProductController`, and each controller must provide a
+`RegisterRoutes` function responsible for registering all controller routes. Kafka consumers must be named like
+`EntityKafkaConsumer`, for example `ReservationKafkaConsumer`.
 
 #### Package structure
 

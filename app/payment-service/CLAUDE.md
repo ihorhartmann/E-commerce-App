@@ -81,8 +81,8 @@ Inbound ports must be named like `EntityService`, for example `PaymentService`.
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
 
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
-etc.
+Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
+`EntityKafkaProducer`, etc.
 
 ##### application.service
 
@@ -135,7 +135,8 @@ Examples:
 
 HTTP error handling must be declared in an `GlobalExceptionHandler` class located in the `adapter.in.http` package.
 
-Controllers must be named like `EntityController`, for example `ShipmentController`.
+Controllers must be named like `EntityController`, for example `ShipmentController`. Kafka consumers must be named
+like `EntityKafkaConsumer`, for example `PaymentKafkaConsumer`.
 
 ### Infrastructure
 
@@ -149,7 +150,6 @@ Examples:
 * Application configuration
 
 This layer may depend only on the `Adapters` layer.
-
 
 #### Package structure
 

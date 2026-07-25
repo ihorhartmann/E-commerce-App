@@ -4,7 +4,7 @@ import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.entities.value.Address
 import java.math.BigDecimal
 
-interface OrderEventProducer {
+interface OrderKafkaProducer {
     fun publishCancelReservation(correlationId: String, orderId: Long)
     fun publishFulfillReservation(correlationId: String, orderId: Long)
     fun publishHoldReservation(correlationId: String, orderId: Long)

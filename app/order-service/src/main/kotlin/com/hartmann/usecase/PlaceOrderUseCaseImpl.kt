@@ -2,11 +2,11 @@ package com.hartmann.usecase
 
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
-import com.hartmann.usecase.port.out.http.InventoryClient
-import com.hartmann.usecase.port.out.http.PaymentClient
-import com.hartmann.usecase.port.out.http.dto.ReservationItemDto
-import com.hartmann.usecase.port.out.http.exception.InsufficientStockException
-import com.hartmann.usecase.port.out.kafka.OrderEventProducer
+import com.hartmann.usecase.port.out.internal.InventoryClient
+import com.hartmann.usecase.port.out.internal.PaymentClient
+import com.hartmann.usecase.port.out.internal.dto.ReservationItemDto
+import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
+import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import com.hartmann.entities.model.Order
 import org.springframework.stereotype.Service
@@ -16,12 +16,12 @@ class PlaceOrderUseCaseImpl(
     private val orderRepository: OrderRepository,
     private val inventoryClient: InventoryClient,
     private val paymentClient: PaymentClient,
-    private val eventProducer: OrderEventProducer,
+    private val kafkaProducer: OrderKafkaProducer,
 ) : PlaceOrderUseCase {
 
     override fun execute(order: Order): CheckoutResult {
         val createdOrder = orderRepository.save(order)
-        val reservationItems = createdOrder.items.map { ReservationItemDto(it.productId, it.quantity.toInt()) }
+        val reservationItems = createdOrder.items.map { ReservationItemDto(it.productId, it.quantity) }
 
         try {
             inventoryClient.reserve(createdOrder.id, reservationItems)
@@ -37,7 +37,7 @@ class PlaceOrderUseCaseImpl(
             paymentClient.submitPayment(createdOrder.id, createdOrder.totalPrice())
         } catch (e: Exception) {
             orderRepository.save(createdOrder.failPayment())
-            eventProducer.publishCancelReservation(createdOrder.id.toString(), createdOrder.id)
+            kafkaProducer.publishCancelReservation(createdOrder.id.toString(), createdOrder.id)
             throw e
         }
 

@@ -45,8 +45,8 @@ Examples:
 
 ##### entities/exception
 
-Exceptions raised by domain objects themselves (as opposed to exceptions raised by a specific use case or
-adapter), for example `DomainException`.
+Exceptions raised by domain objects themselves (as opposed to exceptions raised by a specific use case or adapter), for
+example `DomainException`.
 
 ---
 
@@ -97,13 +97,13 @@ event types a saga reacts to or emits.
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
 
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`,
-etc.
+Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
+`EntityKafkaProducer`, etc.
 
 ##### usecase/port/common
 
-Classes shared between an `Interface adapters/out` adapter and an `Interface adapters/in` adapter (e.g. Kafka
-topic names, header names, event-type names) must not live inside either adapter's own package, since `in` and
+Classes shared between an `Interface adapters/out` adapter and an `Interface adapters/in` adapter (e.g. Kafka topic
+names, header names, event-type names) must not live inside either adapter's own package, since `in` and
 `out` adapters are siblings and neither may depend on the other. Put them in a dedicated package under
 `usecase/port/common` instead (e.g. `usecase/port/common/kafka`), since both are already allowed to depend on
 `Use cases`.
@@ -164,16 +164,17 @@ Examples:
 HTTP error handling must be declared in a `GlobalExceptionHandler` class located in the `interfaceadapter.in.http`
 package.
 
-Controllers must be named like `EntityController`, for example `OrderController`.
+Controllers must be named like `EntityController`, for example `OrderController`. Kafka consumers must be named
+like `EntityKafkaConsumer`, for example `OrderKafkaConsumer`.
 
 ##### interfaceadapter/out
 
-Outbound adapters that implement interfaces defined in `usecase/port/out`. Output adapter implementations must be
-named in format `TechnologyPortName`.
+Outbound adapters that implement interfaces defined in `usecase/port/out`. Output adapter implementations must be named
+in format `TechnologyPortName`.
 
 Examples:
 
-* `RestInventoryClient`
+* `HttpInventoryClient`
 * `PostgresOrderRepository`
 
 ---

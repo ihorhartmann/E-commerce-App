@@ -42,7 +42,7 @@ func main() {
 	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer)
 
 	messageConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka2.ShippingCommandsTopic, kafka2.ConsumerGroupID)
-	shipmentConsumer := kafka.NewShipmentConsumer(messageConsumer, shipmentService)
+	shipmentConsumer := kafka.NewShipmentKafkaConsumer(messageConsumer, shipmentService)
 	shipmentConsumer.Start()
 
 	router := gin.Default()

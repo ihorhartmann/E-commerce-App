@@ -11,11 +11,11 @@ import (
 )
 
 type KafkaGoShipmentProducer struct {
-	portout.ShipmentProducer
+	portout.ShipmentKafkaProducer
 	producer common.KafkaMessageProducer
 }
 
-func NewKafkaGoShipmentProducer(producer common.KafkaMessageProducer) *KafkaGoShipmentProducer {
+func NewKafkaGoShipmentProducer(producer common.KafkaMessageProducer) portout.ShipmentKafkaProducer {
 	return &KafkaGoShipmentProducer{producer: producer}
 }
 

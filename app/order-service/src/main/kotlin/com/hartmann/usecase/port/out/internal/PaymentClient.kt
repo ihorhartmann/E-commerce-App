@@ -1,6 +1,6 @@
-package com.hartmann.usecase.port.out.http
+package com.hartmann.usecase.port.out.internal
 
-import com.hartmann.usecase.port.out.http.dto.SubmitPaymentResult
+import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
 import com.hartmann.entities.value.Money
 
 interface PaymentClient {

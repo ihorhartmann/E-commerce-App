@@ -1,7 +1,7 @@
 package com.hartmann.interfaceadapter.out.kafka
 
 import com.hartmann.usecase.port.common.kafka.KafkaConst
-import com.hartmann.usecase.port.out.kafka.OrderEventProducer
+import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.entities.value.Address
 import com.hartmann.interfaceadapter.out.kafka.dto.AddressDto
@@ -23,12 +23,12 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 @Component
-class KafkaOrderEventProducer(
+class OrderKafkaProducerImpl(
     private val kafkaTemplate: KafkaTemplate<String, String>,
     private val objectMapper: ObjectMapper,
-) : OrderEventProducer {
+) : OrderKafkaProducer {
     companion object {
-        private val LOG = LoggerFactory.getLogger(KafkaOrderEventProducer::class.java)
+        private val LOG = LoggerFactory.getLogger(OrderKafkaProducerImpl::class.java)
     }
 
     override fun publishCancelReservation(correlationId: String, orderId: Long) {
@@ -100,7 +100,7 @@ class KafkaOrderEventProducer(
     // service's convention happens to set correlationId to the same value) so partitioning stays
     // keyed to the aggregate, not to whatever tracing convention correlationId follows.
     private fun send(topic: String, messageType: String, correlationId: String, orderId: Long, payload: Any) {
-        val record = ProducerRecord<String, String>(topic, orderId.toString(), objectMapper.writeValueAsString(payload))
+        val record = ProducerRecord(topic, orderId.toString(), objectMapper.writeValueAsString(payload))
         record.headers()
             .add(RecordHeader(KafkaConst.MESSAGE_TYPE, messageType.toByteArray(StandardCharsets.UTF_8)))
             .add(RecordHeader(KafkaConst.CORRELATION_ID, correlationId.toByteArray(StandardCharsets.UTF_8)))

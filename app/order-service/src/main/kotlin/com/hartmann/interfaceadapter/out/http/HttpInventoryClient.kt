@@ -1,8 +1,8 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.usecase.port.out.http.InventoryClient
-import com.hartmann.usecase.port.out.http.dto.ReservationItemDto
-import com.hartmann.usecase.port.out.http.exception.InsufficientStockException
+import com.hartmann.usecase.port.out.internal.InventoryClient
+import com.hartmann.usecase.port.out.internal.dto.ReservationItemDto
+import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.interfaceadapter.out.http.dto.CreateReservationRequest
 import com.hartmann.interfaceadapter.out.http.dto.ReservationItemRequest
 import org.slf4j.LoggerFactory
@@ -13,12 +13,12 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
 
 @Component
-class RestInventoryClient(
+class HttpInventoryClient(
     @Value($$"${inventory-service.url}") baseUrl: String,
     loggingInterceptor: LoggingClientHttpRequestInterceptor,
 ) : InventoryClient {
     companion object {
-        private val LOG = LoggerFactory.getLogger(RestInventoryClient::class.java)
+        private val LOG = LoggerFactory.getLogger(HttpInventoryClient::class.java)
     }
 
     private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()

@@ -16,12 +16,12 @@ import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 
 @Component
-class FulfillOrderKafkaConsumer(
+class OrderKafkaConsumer(
     private val saga: FulfillOrderSaga,
     private val objectMapper: ObjectMapper,
 ) {
     companion object {
-        private val LOG = LoggerFactory.getLogger(FulfillOrderKafkaConsumer::class.java)
+        private val LOG = LoggerFactory.getLogger(OrderKafkaConsumer::class.java)
     }
 
     @KafkaListener(topics = [KafkaConst.PAYMENT_EVENTS_TOPIC], groupId = "\${spring.kafka.consumer.group-id}")

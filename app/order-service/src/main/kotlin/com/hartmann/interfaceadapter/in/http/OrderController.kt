@@ -4,7 +4,7 @@ import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.interfaceadapter.`in`.http.dto.OrderMapper
 import com.hartmann.interfaceadapter.`in`.http.dto.OrderResponse
-import com.hartmann.interfaceadapter.`in`.http.dto.PlaceOrderRequestDto
+import com.hartmann.interfaceadapter.`in`.http.dto.PlaceOrderRequest
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,8 +24,8 @@ class OrderController(
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    fun placeOrder(@Valid @RequestBody request: PlaceOrderRequestDto): OrderResponse {
-        val result = placeOrderUseCase.execute(orderMapper.toDomainModel(request))
+    fun placeOrder(@Valid @RequestBody request: PlaceOrderRequest): OrderResponse {
+        val result = placeOrderUseCase.execute(orderMapper.fromPlaceOrderRequest(request))
         return orderMapper.fromDomainModel(result.order, result.clientSecret)
     }
 

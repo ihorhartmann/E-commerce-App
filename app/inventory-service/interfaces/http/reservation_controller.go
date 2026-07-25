@@ -1,20 +1,19 @@
 package http
 
 import (
+	"inventoryservice/application/ports/in"
 	dto "inventoryservice/interfaces/http/dto/reservation"
 	"inventoryservice/interfaces/http/errors"
 	"net/http"
-
-	"inventoryservice/application"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 type ReservationController struct {
-	reservationService *application.ReservationServiceImpl
+	reservationService in.ReservationService
 }
 
-func NewReservationController(reservationService *application.ReservationServiceImpl) *ReservationController {
+func NewReservationController(reservationService in.ReservationService) *ReservationController {
 	return &ReservationController{reservationService: reservationService}
 }
 

@@ -1,7 +1,7 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.usecase.port.out.http.PaymentClient
-import com.hartmann.usecase.port.out.http.dto.SubmitPaymentResult
+import com.hartmann.usecase.port.out.internal.PaymentClient
+import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentRequest
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentResponse
@@ -12,7 +12,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.client.toEntity
 
 @Component
-class RestPaymentClient(
+class HttpPaymentClient(
     @Value($$"${payment-service.url}") baseUrl: String,
     loggingInterceptor: LoggingClientHttpRequestInterceptor,
 ) : PaymentClient {

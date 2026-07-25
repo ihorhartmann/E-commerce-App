@@ -15,7 +15,7 @@ type ProductServiceImpl struct {
 	productRepository repository.ProductRepository
 }
 
-func NewProductService(products repository.ProductRepository) *ProductServiceImpl {
+func NewProductService(products repository.ProductRepository) in.ProductService {
 	return &ProductServiceImpl{productRepository: products}
 }
 

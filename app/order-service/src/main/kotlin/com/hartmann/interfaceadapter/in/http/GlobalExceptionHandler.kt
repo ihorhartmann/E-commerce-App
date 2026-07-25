@@ -1,6 +1,6 @@
 package com.hartmann.interfaceadapter.`in`.http
 
-import com.hartmann.usecase.port.out.http.exception.InsufficientStockException
+import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.entities.exception.DomainException
 import org.slf4j.Logger
@@ -27,6 +27,10 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(DomainException::class, IllegalArgumentException::class)
     fun invalid(exception: RuntimeException) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")
+
+    @ExceptionHandler(IllegalStateException::class)
+    fun conflict(exception: IllegalStateException) =
+        error(HttpStatus.CONFLICT, exception.message ?: "Conflict")
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun invalidRequest(exception: MethodArgumentNotValidException): ResponseEntity<Map<String, Any>> =

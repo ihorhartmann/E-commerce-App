@@ -1,7 +1,7 @@
 package com.hartmann.usecase.saga
 
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
-import com.hartmann.usecase.port.out.kafka.OrderEventProducer
+import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import com.hartmann.usecase.port.`in`.saga.event.PaymentCompletedEvent
@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 class FulfillOrderSagaImpl(
     private val orderRepository: OrderRepository,
-    private val eventProducer: OrderEventProducer,
+    private val eventProducer: OrderKafkaProducer,
 ) : FulfillOrderSaga {
 
     @Transactional
@@ -101,7 +101,7 @@ class FulfillOrderSagaImpl(
         val updatedOrder = order.returnToStock()
         orderRepository.save(updatedOrder)
 
-        val items = updatedOrder.items.map { RestockItemDto(it.productId, it.quantity.toInt()) }
+        val items = updatedOrder.items.map { RestockItemDto(it.productId, it.quantity) }
         eventProducer.publishRestock(correlationId, updatedOrder.id, items)
     }
 
