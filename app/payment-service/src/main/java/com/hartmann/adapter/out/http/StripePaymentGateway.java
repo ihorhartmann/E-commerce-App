@@ -1,6 +1,6 @@
 package com.hartmann.adapter.out.http;
 
-import com.hartmann.adapter.common.http.mapper.StripeRefundStatusMapper;
+import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;

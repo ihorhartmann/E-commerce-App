@@ -4,7 +4,8 @@ import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.interfaceadapter.`in`.http.dto.OrderResponse
 import com.hartmann.interfaceadapter.`in`.http.dto.PlaceOrderRequest
-import com.hartmann.interfaceadapter.`in`.http.mapper.OrderMapper
+import com.hartmann.interfaceadapter.`in`.http.dto.fromPlaceOrderRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.toOrderResponse
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
@@ -20,16 +21,15 @@ import org.springframework.web.bind.annotation.RestController
 class OrderController(
     private val placeOrderUseCase: PlaceOrderUseCase,
     private val getOrderUseCase: GetOrderUseCase,
-    private val orderMapper: OrderMapper,
 ) {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun placeOrder(@Valid @RequestBody request: PlaceOrderRequest): OrderResponse {
-        val result = placeOrderUseCase.execute(orderMapper.fromPlaceOrderRequest(request))
-        return orderMapper.toOrderResponse(result.order, result.clientSecret)
+        val result = placeOrderUseCase.execute(fromPlaceOrderRequest(request))
+        return toOrderResponse(result.order, result.clientSecret)
     }
 
     @GetMapping("/{orderId}")
     fun getOrderById(@PathVariable orderId: Long): OrderResponse =
-        orderMapper.toOrderResponse(getOrderUseCase.execute(orderId))
+        toOrderResponse(getOrderUseCase.execute(orderId))
 }

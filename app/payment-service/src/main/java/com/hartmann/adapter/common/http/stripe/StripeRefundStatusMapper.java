@@ -1,4 +1,4 @@
-package com.hartmann.adapter.common.http.mapper;
+package com.hartmann.adapter.common.http.stripe;
 
 import com.hartmann.domain.model.RefundStatus;
 

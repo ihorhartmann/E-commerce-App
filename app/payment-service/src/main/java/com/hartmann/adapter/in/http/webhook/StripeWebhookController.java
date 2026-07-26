@@ -1,6 +1,6 @@
 package com.hartmann.adapter.in.http.webhook;
 
-import com.hartmann.adapter.common.http.mapper.StripeRefundStatusMapper;
+import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;

@@ -42,7 +42,7 @@ public class PaymentKafkaProducerImpl implements PaymentKafkaProducer {
 
     @Override
     public void publishRefundCompleted(long orderId, Money amount) {
-        var event = new RefundCompletedEvent(orderId, amount.amount(), amount.currency().name());
+        var event = RefundCompletedEvent.from(orderId, amount);
         send(KafkaConst.REFUND_COMPLETED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, event);
     }
 

@@ -3,8 +3,7 @@ package com.hartmann.interfaceadapter.out.http
 import com.hartmann.entities.model.OrderItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
-import com.hartmann.interfaceadapter.out.http.dto.CreateReservationRequest
-import com.hartmann.interfaceadapter.out.http.dto.ReservationItemRequest
+import com.hartmann.interfaceadapter.out.http.dto.toCreateReservationRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -25,7 +24,7 @@ class HttpInventoryClient(
     private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()
 
     override fun reserve(orderId: Long, items: List<OrderItem>) {
-        val request = CreateReservationRequest(orderId, items.map { ReservationItemRequest(it.productId, it.quantity) })
+        val request = toCreateReservationRequest(orderId, items)
 
         val response = try {
             restClient.post()

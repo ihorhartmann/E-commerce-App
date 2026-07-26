@@ -107,12 +107,21 @@ database connections and other resources if there are such.
   over a port method that takes a shared envelope/message type, so the payload shape stays entirely inside the adapter
   implementation that needs it, instead of leaking wire-format/serialization details into the application/domain layer
   calling the port.
-* Mapper functions/methods must be named `fromDtoName`/`toDtoName`, e.g.
-  `fromStripeStatus`, `toPaymentResponse`. The same convention applies to repository entity mappers, e.g.
-  `fromPaymentEntity`, `toPaymentEntity`.
-* In Go services, mappers (for both DTOs and repository entities) must be plain functions without receivers. In
-  Java/Kotlin services, mappers must be their own classes in a `mapper` package, at the same level as the `dto`/`entity`
-  package.
+* Mappers (functions/methods) must be named `fromDtoName`/`toDtoName`, e.g. `fromStripeStatus`, `toPaymentResponse`
+  (the same convention applies to repository entity mappers, e.g. `fromPaymentEntity`, `toPaymentEntity`), and by
+  default declared next to the DTO/entity they build (in the same file), rather than gathered into a dedicated
+  `mapper` class/package:
+    * In Go and Kotlin services: a plain top-level/package-level function without a receiver.
+    * In Java services (which has no top-level functions): a static method declared on the DTO/entity itself, for
+      both directions, so DTO instances stay pure data with zero attached instance behaviour - e.g.
+      `PaymentResponse.from(payment)` for the `to<Dto>` direction, and `SubmitPaymentRequest.toMoney(request)`
+      (taking the DTO as an explicit parameter, not `request.toMoney()`) for the `from<Dto>` direction. Never place
+      either on the domain class, since that would make the domain layer depend on DTOs.
+* Trivial DTOs built by direct 1:1 field copying (no nested DTOs, no list/collection transformation, no type
+  conversion or validation) do not need a mapping function at all - construct them directly at the call site, e.g.
+  `CancelReservationCommand(orderId)`. Add a `from`/`to` function only when skipping it would leave visible mapping
+  noise in the calling code: the DTO is composed of other DTOs, the mapping involves a list/collection
+  transformation, or there is real conversion/validation logic (e.g. parsing a string into an enum).
 * DTOs for HTTP controllers must be named `EndpointNameRequest`/`EndpointNameResponse`, e.g. `PlaceOrderRequest`,
   `PlaceOrderResponse`.
 * DTOs for Kafka must be named `MessageNameMessageType`, e.g. `CreateShipmentCommand`,

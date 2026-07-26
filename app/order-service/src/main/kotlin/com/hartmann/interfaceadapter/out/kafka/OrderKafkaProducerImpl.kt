@@ -4,14 +4,12 @@ import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.entities.value.Address
-import com.hartmann.interfaceadapter.out.kafka.dto.AddressDto
 import com.hartmann.interfaceadapter.out.kafka.dto.CancelReservationCommand
-import com.hartmann.interfaceadapter.out.kafka.dto.CreateShipmentCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.FulfillReservationCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.HoldReservationCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.RefundRequestedCommand
-import com.hartmann.interfaceadapter.out.kafka.dto.RestockCommand
-import com.hartmann.interfaceadapter.out.kafka.dto.RestockItem
+import com.hartmann.interfaceadapter.out.kafka.dto.toCreateShipmentCommand
+import com.hartmann.interfaceadapter.out.kafka.dto.toRestockCommand
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.slf4j.LoggerFactory
@@ -67,7 +65,7 @@ class OrderKafkaProducerImpl(
             KafkaConst.RESTOCK_COMMAND,
             correlationId,
             orderId,
-            RestockCommand(orderId, items.map { RestockItem(it.productId, it.quantity) }),
+            toRestockCommand(orderId, items),
         )
     }
 
@@ -77,7 +75,7 @@ class OrderKafkaProducerImpl(
             KafkaConst.CREATE_SHIPMENT_COMMAND,
             correlationId,
             orderId,
-            CreateShipmentCommand(orderId, AddressDto.toAddressDto(address)),
+            toCreateShipmentCommand(orderId, address),
         )
     }
 

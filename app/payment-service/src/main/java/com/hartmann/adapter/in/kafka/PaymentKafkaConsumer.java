@@ -4,8 +4,6 @@ import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.adapter.in.kafka.dto.RefundRequestedCommand;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.domain.value.Currency;
-import com.hartmann.domain.value.Money;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -50,8 +48,7 @@ public class PaymentKafkaConsumer {
 
     private void handleRefundRequested(String payload) {
         var command = objectMapper.readValue(payload, RefundRequestedCommand.class);
-        var amount = new Money(command.amount(), Currency.fromCode(command.currency()));
         var payment = paymentService.getByOrderId(command.orderId());
-        refundService.submitRefund(payment.id(), amount);
+        refundService.submitRefund(payment.id(), RefundRequestedCommand.toMoney(command));
     }
 }
