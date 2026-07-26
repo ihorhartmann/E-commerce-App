@@ -7,7 +7,7 @@ import (
 )
 
 type ReservationService interface {
-	ReserveItems(ctx context.Context, orderID uint64, reservationDtos []dto.ReservationDto) ([]*model.StockReservation, error)
+	ReserveItems(ctx context.Context, orderID uint64, reservationDTOs []dto.ReservationDTO) ([]*model.StockReservation, error)
 	Cancel(ctx context.Context, orderID uint64) error
 	HoldByCourier(ctx context.Context, orderID uint64) error
 	Fulfill(ctx context.Context, orderID uint64) error

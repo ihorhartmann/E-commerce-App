@@ -15,14 +15,14 @@ type CreateReservationRequest struct {
 	Items   []ReservationItemRequest `json:"items"`
 }
 
-func FromCreateReservationRequest(request CreateReservationRequest) ([]dto.ReservationDto, error) {
+func FromCreateReservationRequest(request CreateReservationRequest) ([]dto.ReservationDTO, error) {
 	if request.OrderID == 0 || len(request.Items) == 0 {
 		return nil, domain.ErrInvalidInput
 	}
 
-	reservations := make([]dto.ReservationDto, 0, len(request.Items))
+	reservations := make([]dto.ReservationDTO, 0, len(request.Items))
 	for _, item := range request.Items {
-		reservations = append(reservations, dto.ReservationDto{ProductID: item.ProductID, Quantity: item.Quantity})
+		reservations = append(reservations, dto.ReservationDTO{ProductID: item.ProductID, Quantity: item.Quantity})
 	}
 
 	return reservations, nil

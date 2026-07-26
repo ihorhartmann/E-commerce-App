@@ -1,7 +1,7 @@
 package common
 
 import (
-	"inventoryservice/application/ports/common/kafka"
+	"inventoryservice/application/port/common/kafka"
 )
 
 type KafkaMessageConsumer interface {

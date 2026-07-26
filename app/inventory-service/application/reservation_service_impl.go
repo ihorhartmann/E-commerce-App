@@ -3,8 +3,8 @@ package application
 import (
 	"context"
 	"fmt"
-	"inventoryservice/application/ports/in"
-	"inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/port/in"
+	"inventoryservice/application/port/out/repository"
 
 	"inventoryservice/application/dto"
 	"inventoryservice/domain/model"
@@ -29,10 +29,10 @@ func NewReservationService(
 func (rs *ReservationServiceImpl) ReserveItems(
 	ctx context.Context,
 	orderID uint64,
-	reservationDtos []dto.ReservationDto,
+	reservationDTOs []dto.ReservationDTO,
 ) ([]*model.StockReservation, error) {
-	productIDs := make([]uint64, 0, len(reservationDtos))
-	for _, line := range reservationDtos {
+	productIDs := make([]uint64, 0, len(reservationDTOs))
+	for _, line := range reservationDTOs {
 		productIDs = append(productIDs, line.ProductID)
 	}
 
@@ -46,7 +46,7 @@ func (rs *ReservationServiceImpl) ReserveItems(
 		return nil, err
 	}
 
-	reservationsToInsert, err := prepareReservations(orderID, reservationDtos, productsByID, reservationsByProductID)
+	reservationsToInsert, err := prepareReservations(orderID, reservationDTOs, productsByID, reservationsByProductID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,22 +84,22 @@ func (rs *ReservationServiceImpl) findReservations(ctx context.Context, productI
 
 func prepareReservations(
 	orderID uint64,
-	reservationDtos []dto.ReservationDto,
+	reservationDTOs []dto.ReservationDTO,
 	productsByID map[uint64]*model.Product,
 	reservationsByProductID map[uint64][]*model.StockReservation,
 ) ([]*model.StockReservation, error) {
-	reservationsToInsert := make([]*model.StockReservation, 0, len(reservationDtos))
-	for _, reservationDto := range reservationDtos {
-		product := productsByID[reservationDto.ProductID]
+	reservationsToInsert := make([]*model.StockReservation, 0, len(reservationDTOs))
+	for _, reservationDTO := range reservationDTOs {
+		product := productsByID[reservationDTO.ProductID]
 
-		reservation, err := product.WithStockReservations(reservationsByProductID[reservationDto.ProductID]).
-			CreateReservation(orderID, reservationDto.Quantity, model.ReservationHolderBuyer)
+		reservation, err := product.WithStockReservations(reservationsByProductID[reservationDTO.ProductID]).
+			CreateReservation(orderID, reservationDTO.Quantity, model.ReservationHolderBuyer)
 		if err != nil {
-			return nil, fmt.Errorf("%w: product %d", err, reservationDto.ProductID)
+			return nil, fmt.Errorf("%w: product %d", err, reservationDTO.ProductID)
 		}
 
 		reservationsToInsert = append(reservationsToInsert, reservation)
-		reservationsByProductID[reservationDto.ProductID] = append(reservationsByProductID[reservationDto.ProductID], reservation)
+		reservationsByProductID[reservationDTO.ProductID] = append(reservationsByProductID[reservationDTO.ProductID], reservation)
 	}
 
 	return reservationsToInsert, nil

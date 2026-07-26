@@ -1,7 +1,7 @@
 package http
 
 import (
-	"inventoryservice/application/ports/in"
+	"inventoryservice/application/port/in"
 	dto "inventoryservice/interfaces/http/dto/reservation"
 	"inventoryservice/interfaces/http/errors"
 	"net/http"
@@ -28,12 +28,12 @@ func (rc *ReservationController) CreateReservation(c *fiber.Ctx) error {
 		return errors.HandleReservationError(errors.ErrInvalidRequestBody)
 	}
 
-	reservationDtos, err := dto.FromCreateReservationRequest(request)
+	reservationDTOs, err := dto.FromCreateReservationRequest(request)
 	if err != nil {
 		return errors.HandleReservationError(err)
 	}
 
-	if _, err = rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDtos); err != nil {
+	if _, err = rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDTOs); err != nil {
 		return errors.HandleReservationError(err)
 	}
 

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"inventoryservice/application/ports/common/kafka"
+	"inventoryservice/application/port/common/kafka"
 	"inventoryservice/interfaces/http/middleware"
+	"inventoryservice/interfaces/kafka/kafkago"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"inventoryservice/application"
 	"inventoryservice/infrastructure/env"
-	"inventoryservice/infrastructure/kafkago"
 	"inventoryservice/infrastructure/repository"
 	inhttp "inventoryservice/interfaces/http"
 	inkafka "inventoryservice/interfaces/kafka"

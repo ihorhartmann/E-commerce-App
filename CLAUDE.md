@@ -58,6 +58,8 @@ interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
 * Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
 * If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
 * HTTP status codes must always be taken from the `net/http` package.
+* Acronyms/initialisms (e.g. `DTO`, `ID`, `URL`, `HTTP`) must stay fully uppercase in identifiers (standard Go style),
+  e.g. `MoneyDTO`, not `MoneyDto`.
 
 # Ports and adapters naming
 
@@ -88,7 +90,10 @@ database connections and other resources if there are such.
 
 * In Java/Kotlin services, exceptions must live in a separate `exception` package, located next to the file (s) that use
   them.
-* In Go services, errors must live in an `errors.go` file, located next to the file (s) that use them.
+* In Go services, errors must live in an `errors.go` file, located next to the file (s) that use them. If several
+  distinct entities/concerns share a package, split their errors into multiple logically-grouped files instead of one
+  catch-all `errors.go`, e.g. `product_errors.go`, `reservation_errors.go`, plus a `common_errors.go` for errors
+  shared across them.
 * DTOs (Java/Kotlin/Go) must live in a separate `dto` package, located next to the file (s) that use them.
 * Repository entities (the DB-row-shaped struct/class used by a repository adapter, distinct from the domain model) must
   live in a separate `entity` package, next to the repository that uses them. Entity class/struct names must match the
@@ -114,6 +119,8 @@ database connections and other resources if there are such.
   `PaymentConfirmedEvent`.
 * If a DTO is used for both the request and the response of the same resource, name it
   `NameDto` (e.g. `ProductDto`) instead of separate `Request`/`Response` names.
+* In Java/Kotlin services, acronyms/initialisms in identifiers are capitalized only on the first letter (standard
+  Java/Kotlin style), e.g. `MoneyDto`, not `MoneyDTO` - the opposite of the Go convention above.
 * If a DTO is composed of other DTOs, building those nested DTOs must be delegated to the mapper function/method
   responsible for mapping that specific nested DTO, rather than built inline by the outer mapper - each mapper stays the
   Information Expert for its own DTO.

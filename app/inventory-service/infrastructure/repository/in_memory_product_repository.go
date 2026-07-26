@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
-	"inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/port/out/repository"
 	"sync"
 
 	"inventoryservice/domain/model"
@@ -11,6 +11,7 @@ import (
 )
 
 type inMemoryProductRepository struct {
+	repository.ProductRepository
 	mu       sync.RWMutex
 	products map[uint64]*model.Product
 	nextID   uint64

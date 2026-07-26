@@ -1,7 +1,7 @@
 package http
 
 import (
-	"inventoryservice/application/ports/in"
+	"inventoryservice/application/port/in"
 	dto "inventoryservice/interfaces/http/dto/product"
 	"inventoryservice/interfaces/http/errors"
 	"net/http"

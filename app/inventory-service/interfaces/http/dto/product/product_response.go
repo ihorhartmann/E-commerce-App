@@ -2,13 +2,7 @@ package product
 
 import (
 	"inventoryservice/domain/model"
-	"inventoryservice/domain/values"
 )
-
-type MoneyDTO struct {
-	Amount   float64 `json:"amount"`
-	Currency string  `json:"currency"`
-}
 
 type ProductResponse struct {
 	ID          uint64   `json:"id"`
@@ -30,15 +24,4 @@ func ToProductResponse(product *model.Product) *ProductResponse {
 		Reserved:    product.Reserved(),
 		Available:   product.Available(),
 	}
-}
-
-func toMoneyDTO(money values.Money) MoneyDTO {
-	return MoneyDTO{
-		Amount:   money.Amount(),
-		Currency: string(money.Currency()),
-	}
-}
-
-func fromMoneyDTO(money MoneyDTO) (values.Money, error) {
-	return values.NewMoney(money.Amount, values.Currency(money.Currency))
 }

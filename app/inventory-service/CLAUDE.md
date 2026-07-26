@@ -57,7 +57,7 @@ Errors in this layer must be declared in an `errors.go` file located next to the
 
 ```text
 application/
-├── ports/
+├── port/
 │   ├── common/
 │   │   └── kafka/
 │   ├── in/
@@ -68,13 +68,13 @@ application/
 └── ...
 ```
 
-##### application/ports/in
+##### application/port/in
 
 Inbound ports are interfaces that define how business logic is invoked by the `Interfaces` layer.
 
 Inbound ports must be named like `EntityService`, for example `ProductService` or `ReservationService`.
 
-##### application/ports/out
+##### application/port/out
 
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
@@ -82,12 +82,12 @@ databases, kafka, third-party services.
 See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions. Ports declared here are
 implemented exclusively by outbound adapters in the `Infrastructure` layer.
 
-##### application/ports/common
+##### application/port/common
 
 Code shared between an `Infrastructure` adapter and an `Interfaces` adapter (not limited to constants - e.g. Kafka topic
 names, header names, message-type names, or other shared types and utilities) must not live inside either layer's own
 package, since `Infrastructure` and `Interfaces` are siblings and neither may depend on the other. Put it in a dedicated
-package under `application/ports/common` instead, since both layers are already allowed to depend on `Application`.
+package under `application/port/common` instead, since both layers are already allowed to depend on `Application`.
 
 ##### Service implementations
 
@@ -120,7 +120,7 @@ infrastructure/
     └── transaction/
 ```
 
-Outbound adapter implementations that implement the ports declared in `application/ports/out` follow the naming
+Outbound adapter implementations that implement the ports declared in `application/port/out` follow the naming
 conventions in the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming).
 
 `env`, `gorm`, and `kafkago` contain framework- and driver-level code (environment configuration, GORM setup and
@@ -151,5 +151,9 @@ interfaces/
 │   └── middleware/
 └── kafka/
     ├── common/
-    └── dto/
+    ├── dto/
+    └── kafkago/
 ```
+
+`interfaces/kafka/kafkago` holds the kafka-go-based implementation of `interfaces/kafka/common.KafkaMessageConsumer` -
+it lives here, not in `infrastructure/kafkago`, because that interface belongs to the `Interfaces` layer.

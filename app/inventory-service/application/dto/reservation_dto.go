@@ -1,6 +1,6 @@
 package dto
 
-type ReservationDto struct {
+type ReservationDTO struct {
 	ProductID uint64
 	Quantity  uint
 }

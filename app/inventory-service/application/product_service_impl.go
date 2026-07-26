@@ -3,8 +3,8 @@ package application
 import (
 	"context"
 	"inventoryservice/application/dto"
-	"inventoryservice/application/ports/in"
-	"inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/port/in"
+	"inventoryservice/application/port/out/repository"
 	"inventoryservice/domain"
 
 	"inventoryservice/domain/model"
@@ -44,7 +44,7 @@ func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
 }
 
 // TODO make it tx and try to bulk update products in the future
-func (ps *ProductServiceImpl) Restock(ctx context.Context, items []dto.ReservationDto) error {
+func (ps *ProductServiceImpl) Restock(ctx context.Context, items []dto.ReservationDTO) error {
 	for _, item := range items {
 		product, err := ps.productRepository.GetByID(ctx, item.ProductID)
 		if err != nil {

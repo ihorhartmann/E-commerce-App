@@ -3,7 +3,7 @@ package kafkago
 import (
 	"context"
 	"errors"
-	"inventoryservice/application/ports/common/kafka"
+	"inventoryservice/application/port/common/kafka"
 	"io"
 	"log/slog"
 	"sync"
@@ -14,7 +14,8 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 )
 
-type messageConsumer struct {
+type kafkaGoMessageConsumer struct {
+	common.KafkaMessageConsumer
 	reader  *kafkago.Reader
 	wg      sync.WaitGroup
 	closing atomic.Bool
@@ -27,10 +28,10 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 		GroupID: groupID,
 	})
 
-	return &messageConsumer{reader: reader}
+	return &kafkaGoMessageConsumer{reader: reader}
 }
 
-func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
+func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
 	c.wg.Go(func() {
 		ctx := context.Background()
 
@@ -68,7 +69,7 @@ func (c *messageConsumer) ConsumeAsync(handle func(messageType kafka.MessageType
 	})
 }
 
-func (c *messageConsumer) Close() error {
+func (c *kafkaGoMessageConsumer) Close() error {
 	c.closing.Store(true)
 
 	err := c.reader.Close()

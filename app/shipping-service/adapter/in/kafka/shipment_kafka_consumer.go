@@ -47,7 +47,7 @@ func (c *ShipmentKafkaConsumer) handleCreateShipment(correlationID string, paylo
 		return err
 	}
 
-	address, err := dto.FromAddressDto(command.Address)
+	address, err := dto.FromAddressDTO(command.Address)
 	if err != nil {
 		return err
 	}

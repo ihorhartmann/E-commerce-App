@@ -2,7 +2,6 @@ package product
 
 import (
 	"inventoryservice/domain/model"
-	"inventoryservice/domain/values"
 )
 
 type CreateProductRequest struct {
@@ -13,7 +12,7 @@ type CreateProductRequest struct {
 }
 
 func FromCreateProductRequest(request CreateProductRequest) (*model.Product, error) {
-	price, err := values.NewMoney(request.Price.Amount, values.Currency(request.Price.Currency))
+	price, err := fromMoneyDTO(request.Price)
 	if err != nil {
 		return nil, err
 	}

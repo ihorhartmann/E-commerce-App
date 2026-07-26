@@ -2,7 +2,7 @@ package errors
 
 import (
 	"errors"
-	"inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/port/out/repository"
 	"net/http"
 
 	"inventoryservice/domain/model"

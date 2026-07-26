@@ -3,8 +3,8 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"inventoryservice/application/ports/common/kafka"
-	"inventoryservice/application/ports/in"
+	"inventoryservice/application/port/common/kafka"
+	"inventoryservice/application/port/in"
 	"inventoryservice/interfaces/kafka/common"
 	"inventoryservice/interfaces/kafka/dto"
 )
@@ -60,7 +60,7 @@ func (rc *ReservationKafkaConsumer) handleMessage(messageType kafka.MessageType,
 		if err := json.Unmarshal(payload, &command); err != nil {
 			return err
 		}
-		return rc.productService.Restock(context.Background(), dto.ToReservationDtos(command.Items))
+		return rc.productService.Restock(context.Background(), dto.ToReservationDTOs(command.Items))
 	default:
 		return nil
 	}

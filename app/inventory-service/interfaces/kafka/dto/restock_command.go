@@ -12,11 +12,11 @@ type RestockCommand struct {
 	Items   []RestockItem `json:"items"`
 }
 
-func ToReservationDtos(items []RestockItem) []applicationdto.ReservationDto {
-	reservationDtos := make([]applicationdto.ReservationDto, 0, len(items))
+func ToReservationDTOs(items []RestockItem) []applicationdto.ReservationDTO {
+	reservationDTOs := make([]applicationdto.ReservationDTO, 0, len(items))
 	for _, item := range items {
-		reservationDtos = append(reservationDtos, applicationdto.ReservationDto{ProductID: item.ProductID, Quantity: item.Quantity})
+		reservationDTOs = append(reservationDTOs, applicationdto.ReservationDTO{ProductID: item.ProductID, Quantity: item.Quantity})
 	}
 
-	return reservationDtos
+	return reservationDTOs
 }

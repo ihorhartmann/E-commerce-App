@@ -2,13 +2,14 @@ package repository
 
 import (
 	"context"
-	"inventoryservice/application/ports/out/repository"
+	"inventoryservice/application/port/out/repository"
 	"sync"
 
 	"inventoryservice/domain/model"
 )
 
 type inMemoryReservationRepository struct {
+	repository.ReservationRepository
 	mu           sync.RWMutex
 	reservations map[uint64]*model.StockReservation
 	nextID       uint64
