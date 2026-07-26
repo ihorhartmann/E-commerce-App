@@ -1,4 +1,4 @@
-package com.hartmann.interfaceadapter.`in`.http.dto
+package com.hartmann.interfaceadapter.`in`.http.mapper
 
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
@@ -7,6 +7,16 @@ import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
+import com.hartmann.interfaceadapter.`in`.http.dto.AddressRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.AddressResponseDto
+import com.hartmann.interfaceadapter.`in`.http.dto.MoneyRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.MoneyResponseDto
+import com.hartmann.interfaceadapter.`in`.http.dto.OrderItemRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.OrderItemResponseDto
+import com.hartmann.interfaceadapter.`in`.http.dto.OrderResponse
+import com.hartmann.interfaceadapter.`in`.http.dto.PlaceOrderRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.RefundResponseDto
+import com.hartmann.interfaceadapter.`in`.http.dto.ShipmentResponseDto
 import org.springframework.stereotype.Component
 
 @Component
@@ -17,7 +27,7 @@ class OrderMapper {
         address = fromAddressRequest(request.address),
     )
 
-    fun fromDomainModel(order: Order, clientSecret: String? = null): OrderResponse = OrderResponse(
+    fun toOrderResponse(order: Order, clientSecret: String? = null): OrderResponse = OrderResponse(
         id = order.id,
         userId = order.userId,
         paymentConfirmedAt = order.paymentConfirmedAt,

@@ -77,7 +77,7 @@ class OrderKafkaProducerImpl(
             KafkaConst.CREATE_SHIPMENT_COMMAND,
             correlationId,
             orderId,
-            CreateShipmentCommand(orderId, AddressDto.fromDomain(address)),
+            CreateShipmentCommand(orderId, AddressDto.toAddressDto(address)),
         )
     }
 

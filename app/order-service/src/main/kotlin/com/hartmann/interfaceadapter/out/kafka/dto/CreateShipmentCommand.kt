@@ -11,7 +11,7 @@ data class AddressDto(
     val line2: String
 ) {
     companion object {
-        fun fromDomain(address: Address): AddressDto {
+        fun toAddressDto(address: Address): AddressDto {
             return AddressDto(address.city, address.postalCode, address.line1, address.line2)
         }
     }

@@ -7,6 +7,7 @@ import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentRequest
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.toEntity
@@ -14,7 +15,7 @@ import org.springframework.web.client.toEntity
 @Component
 class HttpPaymentClient(
     @Value($$"${payment-service.url}") baseUrl: String,
-    loggingInterceptor: LoggingClientHttpRequestInterceptor,
+    loggingInterceptor: ClientHttpRequestInterceptor,
 ) : PaymentClient {
     private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()
 

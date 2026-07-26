@@ -116,7 +116,9 @@ database connections and other resources if there are such.
 * DTOs for HTTP controllers must be named `EndpointNameRequest`/`EndpointNameResponse`, e.g. `PlaceOrderRequest`,
   `PlaceOrderResponse`.
 * DTOs for Kafka must be named `MessageNameMessageType`, e.g. `CreateShipmentCommand`,
-  `PaymentConfirmedEvent`.
+  `PaymentConfirmedEvent`. Exception: if several message types carry an identical payload shape (e.g. a family of
+  status-changed events that all just carry an id), a single shared DTO may be reused across them instead of
+  duplicating structurally-identical structs/classes per message type.
 * If a DTO is used for both the request and the response of the same resource, name it
   `NameDto` (e.g. `ProductDto`) instead of separate `Request`/`Response` names.
 * In Java/Kotlin services, acronyms/initialisms in identifiers are capitalized only on the first letter (standard

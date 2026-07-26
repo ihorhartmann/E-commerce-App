@@ -69,7 +69,7 @@ usecase/
 │   │   └── usecase/
 │   │       └── dto/
 │   └── out/
-│       ├── http/
+│       ├── internal/
 │       │   ├── dto/
 │       │   └── exception/
 │       ├── kafka/
@@ -79,6 +79,12 @@ usecase/
 ├── saga/
 └── ...
 ```
+
+`usecase/port/out/internal` holds outbound ports for synchronous calls to this system's own sibling services
+(Inventory, Payment) - named `internal`, not `http`, because the transport (HTTP today, potentially gRPC later) is
+an adapter-level detail the port itself stays agnostic to. Ports for third-party/vendor integrations that need
+translation between our domain and a foreign API belong in their own package instead (e.g. `usecase/port/out/gateway`),
+not here.
 
 ##### usecase/port/in/usecase
 
