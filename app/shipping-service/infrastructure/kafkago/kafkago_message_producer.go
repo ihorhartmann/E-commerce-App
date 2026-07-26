@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"shippingservice/application/port/common/kafka"
-
+	"shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/out/kafka/common"
 
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
-type messageProducer struct {
+type kafkaGoMessageProducer struct {
+	common.KafkaMessageProducer
 	writer *kafkago.Writer
 }
 
@@ -23,10 +23,10 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 		Balancer: &kafkago.LeastBytes{},
 	}
 
-	return &messageProducer{writer: writer}
+	return &kafkaGoMessageProducer{writer: writer}
 }
 
-func (p *messageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
+func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
 	value, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -52,6 +52,6 @@ func (p *messageProducer) Send(messageType kafka.MessageType, correlationId stri
 	return nil
 }
 
-func (p *messageProducer) Close() error {
+func (p *kafkaGoMessageProducer) Close() error {
 	return p.writer.Close()
 }

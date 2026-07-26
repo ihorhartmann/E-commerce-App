@@ -14,6 +14,6 @@ type CreateShipmentCommand struct {
 	Address AddressDto `json:"address"`
 }
 
-func FromAddressMessage(message AddressDto) (value.Address, error) {
+func FromAddressDto(message AddressDto) (value.Address, error) {
 	return value.NewAddress(message.City, message.PostalCode, message.Line1, message.Line2)
 }

@@ -2,7 +2,8 @@ package kafka
 
 import (
 	"context"
-	commonkafka "shippingservice/application/port/common/kafka"
+	kafkaconst "shippingservice/adapter/common/kafka"
+	kafkautil "shippingservice/application/port/common/kafka"
 
 	"shippingservice/adapter/out/kafka/common"
 	"shippingservice/adapter/out/kafka/dto"
@@ -20,13 +21,13 @@ func NewKafkaGoShipmentProducer(producer common.KafkaMessageProducer) portout.Sh
 }
 
 func (p *KafkaGoShipmentProducer) PublishShipmentStatusChanged(_ context.Context, correlationID string, shipment *model.Shipment) error {
-	messageType, err := commonkafka.ConvertShipmentStatusMessageType(shipment.Status())
+	messageType, err := kafkaconst.ConvertShipmentStatusMessageType(shipment.Status())
 	if err != nil {
 		return err
 	}
 
 	payload := dto.ToShipmentStatusChangedEvent(shipment)
-	key := commonkafka.FormatKafkaId(shipment.OrderId())
+	key := kafkautil.FormatKafkaId(shipment.OrderId())
 	return p.producer.Send(messageType, correlationID, key, payload)
 }
 
@@ -35,13 +36,13 @@ func (p *KafkaGoShipmentProducer) PublishShipmentStatusChanged(_ context.Context
 // Cancelled throughout.
 func (p *KafkaGoShipmentProducer) PublishShipmentReturnedToInventory(_ context.Context, correlationID string, shipment *model.Shipment) error {
 	payload := dto.ToShipmentStatusChangedEvent(shipment)
-	key := commonkafka.FormatKafkaId(shipment.OrderId())
-	return p.producer.Send(commonkafka.ShipmentReturnedToInventoryEvent, correlationID, key, payload)
+	key := kafkautil.FormatKafkaId(shipment.OrderId())
+	return p.producer.Send(kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, key, payload)
 }
 
 func (p *KafkaGoShipmentProducer) PublishShipmentCreationFailed(_ context.Context, correlationID string, orderID uint64) error {
-	key := commonkafka.FormatKafkaId(orderID)
-	return p.producer.Send(commonkafka.ShipmentCreationFailedEvent, correlationID, key, dto.ToShipmentCreationFailedEvent(orderID))
+	key := kafkautil.FormatKafkaId(orderID)
+	return p.producer.Send(kafkaconst.ShipmentCreationFailedEvent, correlationID, key, dto.ToShipmentCreationFailedEvent(orderID))
 }
 
 func (p *KafkaGoShipmentProducer) Close() error {

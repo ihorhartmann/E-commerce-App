@@ -1,7 +1,7 @@
 package common
 
 import (
-	"shippingservice/application/port/common/kafka"
+	"shippingservice/adapter/common/kafka"
 )
 
 type KafkaMessageConsumer interface {

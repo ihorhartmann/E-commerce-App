@@ -68,6 +68,9 @@ interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
   format `TechnologyPortName`, e.g. `HttpInventoryClient`, `PostgresOrderRepository`. Exception: Kafka producer/consumer
   adapters just get an `Impl` suffix instead (e.g. `PaymentKafkaProducerImpl`), since the port name already states the
   technology (`EntityKafkaProducer`/`EntityKafkaConsumer`), making a `Kafka`-prefixed adapter name redundant.
+  Alternatively, if the technology name itself already contains "Kafka" (e.g. `KafkaGo` for the kafka-go library),
+  `TechnologyPortName` can be kept as-is by dropping the redundant `Kafka` from the port-name portion instead, e.g.
+  `KafkaGoShipmentProducer` implementing `ShipmentKafkaProducer`.
 * HTTP controllers must be named like `EntityController`, e.g. `OrderController`. If a controller doesn't map to a
   single domain entity (e.g. a third-party webhook handler, a health check), name it `PurposeController` instead,
   e.g. `StripeWebhookController`, `HealthController`.

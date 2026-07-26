@@ -21,7 +21,7 @@ This layer must not depend on any other layer.
 ```text
 domain/
 ├── model/
-└── values/
+└── value/
 ```
 
 ##### domain/model
@@ -33,7 +33,7 @@ Examples:
 * `Product`
 * `Order`
 
-##### domain/values
+##### domain/value
 
 Value objects used by domain models.
 
@@ -103,7 +103,7 @@ This layer may depend on the `Application` and `Domain` layers.
 #### Package structure
 
 ```text
-adapters/
+adapter/
 ├── common/
 │   ├── kafka/
 │   └── ...
@@ -119,23 +119,25 @@ adapters/
     └── ...
 ```
 
-##### adapters/common
+##### adapter/common
 
 Shared code used by both incoming and outgoing adapters.
 
 Examples:
 
-* Kafka event types
+* Kafka message types
 * Shared adapter utilities
 
-Kafka adapters also use shared producer and consumer interfaces defined under the `common` package.
+Kafka producer and consumer interfaces do NOT live here, since neither is actually used by both directions:
+`KafkaMessageProducer` lives in `adapter/out/kafka/common` (used only by outbound Kafka adapters) and
+`KafkaMessageConsumer` lives in `adapter/in/kafka/common` (used only by inbound Kafka adapters).
 
-##### adapters/out
+##### adapter/out
 
 Outbound adapters that implement interfaces defined in `application/ports/out`. See the
 [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
-##### adapters/in
+##### adapter/in
 
 Inbound adapters that invoke application logic and serve as entry points to the service.
 
@@ -163,10 +165,8 @@ Examples:
 
 This layer may depend only on the `Adapters` layer.
 
-This layer contains the implementations of:
-
-* `CommonKafkaProducer`
-* `CommonKafkaConsumer`
+This layer contains the kafka-go-based implementations of the `KafkaMessageProducer`/`KafkaMessageConsumer`
+interfaces declared in `adapter/out/kafka/common`/`adapter/in/kafka/common`.
 
 These implementations do not contain business-specific logic and are therefore implemented at the infrastructure level.
 
