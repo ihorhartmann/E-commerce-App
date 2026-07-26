@@ -16,11 +16,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class RefundInMemRepository implements RefundRepository {
+public class InMemRefundRepository implements RefundRepository {
     private final Map<Long, Refund> refunds = new HashMap<>();
     private final AtomicLong idSequence = new AtomicLong(4);
 
-    public RefundInMemRepository() {
+    public InMemRefundRepository() {
         var now = Instant.now();
         List.of(
                 new Refund(1L, 1L, "re_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),

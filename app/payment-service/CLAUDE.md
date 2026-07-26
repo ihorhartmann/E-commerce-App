@@ -19,7 +19,7 @@ This layer must not depend on any other layer.
 ```text
 domain/
 ├── model/
-└── values/
+└── value/
 ```
 
 ##### domain.model
@@ -31,7 +31,7 @@ Examples:
 * `Product`
 * `Order`
 
-##### domain.values
+##### domain.value
 
 Value objects used by domain models.
 

@@ -65,8 +65,12 @@ interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
   third-party services) are grouped by transport or technology type and must be named like `EntityRepository`,
   `EntityKafkaProducer`, etc.
 * Outbound adapter implementations (the concrete classes/structs that implement those ports) must be named in the
-  format `TechnologyPortName`, e.g. `RestInventoryClient`, `PostgresOrderRepository`.
-* HTTP controllers must be named like `EntityController`, e.g. `OrderController`.
+  format `TechnologyPortName`, e.g. `HttpInventoryClient`, `PostgresOrderRepository`. Exception: Kafka producer/consumer
+  adapters just get an `Impl` suffix instead (e.g. `PaymentKafkaProducerImpl`), since the port name already states the
+  technology (`EntityKafkaProducer`/`EntityKafkaConsumer`), making a `Kafka`-prefixed adapter name redundant.
+* HTTP controllers must be named like `EntityController`, e.g. `OrderController`. If a controller doesn't map to a
+  single domain entity (e.g. a third-party webhook handler, a health check), name it `PurposeController` instead,
+  e.g. `StripeWebhookController`, `HealthController`.
 * Kafka consumers must be named like `EntityKafkaConsumer`, e.g. `PaymentKafkaConsumer`.
 
 # Start, shutdown
@@ -96,7 +100,7 @@ database connections and other resources if there are such.
   implementation that needs it, instead of leaking wire-format/serialization details into the application/domain layer
   calling the port.
 * Mapper functions/methods must be named `fromDtoName`/`toDtoName`, e.g.
-  `fromPaymentRequest`, `toPaymentResponse`. The same convention applies to repository entity mappers, e.g.
+  `fromStripeStatus`, `toPaymentResponse`. The same convention applies to repository entity mappers, e.g.
   `fromPaymentEntity`, `toPaymentEntity`.
 * In Go services, mappers (for both DTOs and repository entities) must be plain functions without receivers. In
   Java/Kotlin services, mappers must be their own classes in a `mapper` package, at the same level as the `dto`/`entity`

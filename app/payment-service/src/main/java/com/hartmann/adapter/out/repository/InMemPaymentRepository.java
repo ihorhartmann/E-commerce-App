@@ -16,11 +16,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class PaymentInMemRepository implements PaymentRepository {
+public class InMemPaymentRepository implements PaymentRepository {
     private final Map<Long, Payment> payments = new HashMap<>();
     private final AtomicLong idSequence = new AtomicLong(5);
 
-    public PaymentInMemRepository() {
+    public InMemPaymentRepository() {
         var now = Instant.now();
         List.of(
                 new Payment(1L, 1001L, "pi_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), PaymentStatus.COMPLETED, List.of(), now, now),

@@ -1,10 +1,10 @@
 package com.hartmann.adapter.out.http;
 
-import com.hartmann.adapter.out.http.mapper.StripeRefundStatusMapper;
+import com.hartmann.adapter.common.http.mapper.StripeRefundStatusMapper;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
-import com.hartmann.application.port.out.http.exception.PaymentGatewayException;
+import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.domain.value.Money;
 import com.stripe.StripeClient;
 import com.stripe.exception.StripeException;
@@ -67,7 +67,7 @@ public class StripePaymentGateway implements PaymentGateway {
             var refund = stripeClient.v1().refunds().create(params);
             LOG.info("successfully created Refund paymentIntentId={} refundId={}", paymentExternalId, refund.getId());
 
-            return new SubmitRefundResult(refund.getId(), StripeRefundStatusMapper.fromPaymentRequest(refund.getStatus()));
+            return new SubmitRefundResult(refund.getId(), StripeRefundStatusMapper.fromStripeStatus(refund.getStatus()));
         } catch (StripeException e) {
             throw new PaymentGatewayException(
                     "Failed to create Stripe Refund for PaymentIntent " + paymentExternalId, e);
