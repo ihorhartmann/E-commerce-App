@@ -95,10 +95,8 @@ event types a saga reacts to or emits.
 ##### usecase/port/out
 
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
-databases, kafka, third-party services.
-
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
-`EntityKafkaProducer`, etc.
+databases, kafka, third-party services. See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for
+naming conventions.
 
 ##### usecase/port/common
 
@@ -164,18 +162,12 @@ Examples:
 HTTP error handling must be declared in a `GlobalExceptionHandler` class located in the `interfaceadapter.in.http`
 package.
 
-Controllers must be named like `EntityController`, for example `OrderController`. Kafka consumers must be named
-like `EntityKafkaConsumer`, for example `OrderKafkaConsumer`.
+See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
 ##### interfaceadapter/out
 
-Outbound adapters that implement interfaces defined in `usecase/port/out`. Output adapter implementations must be named
-in format `TechnologyPortName`.
-
-Examples:
-
-* `HttpInventoryClient`
-* `PostgresOrderRepository`
+Outbound adapters that implement interfaces defined in `usecase/port/out`. See the
+[root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
 ---
 

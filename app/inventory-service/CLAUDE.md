@@ -6,12 +6,7 @@
 
 **Technologies:** GORM, Fiber, kafka-go
 
-## Generic code conventions
-
-* Use lowerCamelCase identifiers by default.
-* Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
-* If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
-* HTTP status codes must always be taken from the `net/http` package.
+See the [root CLAUDE.md](../../CLAUDE.md#go-specific-conventions) for Go-specific code conventions.
 
 ## Layers and Packages
 
@@ -84,9 +79,8 @@ Inbound ports must be named like `EntityService`, for example `ProductService` o
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
 
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
-`EntityKafkaProducer`, etc. Ports declared here are implemented exclusively by outbound adapters in the
-`Infrastructure` layer.
+See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions. Ports declared here are
+implemented exclusively by outbound adapters in the `Infrastructure` layer.
 
 ##### application/ports/common
 
@@ -126,12 +120,8 @@ infrastructure/
     └── transaction/
 ```
 
-Outbound adapter implementations that implement the ports declared in `application/ports/out` must be named in format
-`TechnologyPortName`.
-
-Examples:
-
-* `PostgresProductRepository`
+Outbound adapter implementations that implement the ports declared in `application/ports/out` follow the naming
+conventions in the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming).
 
 `env`, `gorm`, and `kafkago` contain framework- and driver-level code (environment configuration, GORM setup and
 migrations, the raw kafka-go client wrapper) that contains no business-specific logic.
@@ -146,9 +136,8 @@ This layer may depend on the `Application` and `Domain` layers.
 
 HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
 
-Controllers must be named like `EntityController`, for example `ProductController`, and each controller must provide a
-`RegisterRoutes` function responsible for registering all controller routes. Kafka consumers must be named like
-`EntityKafkaConsumer`, for example `ReservationKafkaConsumer`.
+Each controller must provide a `RegisterRoutes` function responsible for registering all controller routes. See the
+[root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
 #### Package structure
 

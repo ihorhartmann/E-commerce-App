@@ -79,10 +79,8 @@ Inbound ports must be named like `EntityService`, for example `PaymentService`.
 ##### application.port.out
 
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
-databases, kafka, third-party services.
-
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`,
-`EntityKafkaProducer`, etc.
+databases, kafka, third-party services. See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for
+naming conventions.
 
 ##### application.service
 
@@ -117,12 +115,8 @@ adapter/
 
 ##### adapter.out
 
-Outbound adapters that implement interfaces defined in `application.port.out`. Output adapter implementations must be
-named in format `TechnologyPortName`.
-
-Examples:
-
-* `PostgresShipmentRepository`
+Outbound adapters that implement interfaces defined in `application.port.out`. See the
+[root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
 ##### adapter.in
 
@@ -135,8 +129,7 @@ Examples:
 
 HTTP error handling must be declared in an `GlobalExceptionHandler` class located in the `adapter.in.http` package.
 
-Controllers must be named like `EntityController`, for example `ShipmentController`. Kafka consumers must be named
-like `EntityKafkaConsumer`, for example `PaymentKafkaConsumer`.
+See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
 ### Infrastructure
 

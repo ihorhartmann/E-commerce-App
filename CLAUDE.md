@@ -52,6 +52,23 @@ implements it), and a constructor function/factory (e.g. Go's `NewXxx`) must ret
 struct pointer. It does not apply to dependencies or return values that are inherently concrete and have no meaningful
 interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
 
+# Go-specific conventions
+
+* Use lowerCamelCase identifiers by default.
+* Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
+* If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
+* HTTP status codes must always be taken from the `net/http` package.
+
+# Ports and adapters naming
+
+* Outbound ports (interfaces that define how business logic interacts with external systems - databases, Kafka,
+  third-party services) are grouped by transport or technology type and must be named like `EntityRepository`,
+  `EntityKafkaProducer`, etc.
+* Outbound adapter implementations (the concrete classes/structs that implement those ports) must be named in the
+  format `TechnologyPortName`, e.g. `RestInventoryClient`, `PostgresOrderRepository`.
+* HTTP controllers must be named like `EntityController`, e.g. `OrderController`.
+* Kafka consumers must be named like `EntityKafkaConsumer`, e.g. `PaymentKafkaConsumer`.
+
 # Start, shutdown
 
 All services receive the environment variables required to connect to Kafka, database, etc. via env vars. If a variable
