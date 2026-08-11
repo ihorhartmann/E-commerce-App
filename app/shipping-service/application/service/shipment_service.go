@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	commonkafka "shippingservice/application/port/common/kafka"
@@ -12,8 +11,6 @@ import (
 	"shippingservice/application/port/out/repository"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
-
-	"github.com/google/uuid"
 )
 
 type ShipmentServiceImpl struct {
@@ -41,13 +38,7 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 }
 
 func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error) {
-	trackingNumber := fmt.Sprintf("%d%s", orderID, strings.ToUpper(uuid.New().String()[:8]))
-	shipment, err := model.NewShipment(orderID, trackingNumber, address)
-	if err != nil {
-		return nil, err
-	}
-
-	created, err := s.shipmentRepository.Create(ctx, shipment)
+	created, err := s.shipmentRepository.Create(ctx, orderID, address)
 	if err != nil {
 		if pubErr := s.shipmentProducer.PublishShipmentCreationFailed(ctx, correlationID, orderID); pubErr != nil {
 			return nil, errors.Join(err, pubErr)

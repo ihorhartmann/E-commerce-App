@@ -2,11 +2,15 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"shippingservice/application/port/out/repository"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type InMemoryShipmentRepository struct {
@@ -77,9 +81,15 @@ func NewInMemoryShipmentRepository() repository.ShipmentRepository {
 	}
 }
 
-func (r *InMemoryShipmentRepository) Create(_ context.Context, shipment *model.Shipment) (*model.Shipment, error) {
+func (r *InMemoryShipmentRepository) Create(_ context.Context, orderID uint64, address value.Address) (*model.Shipment, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	trackingNumber := fmt.Sprintf("%d%s", orderID, strings.ToUpper(uuid.New().String()[:8]))
+	shipment, err := model.NewShipment(orderID, trackingNumber, address)
+	if err != nil {
+		return nil, err
+	}
 
 	created, err := model.NewExistingShipment(
 		r.nextID,

@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.TestInstance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,6 +12,7 @@ private fun testAddress(
     line2: String = "",
 ) = Address(city = city, postalCode = postalCode, line1 = line1, line2 = line2)
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class AddressTest {
 
     @Test

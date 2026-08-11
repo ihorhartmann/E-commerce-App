@@ -137,3 +137,36 @@ database connections and other resources if there are such.
   Information Expert for its own DTO.
 * When introducing a new DTO, implement only the mapping methods required by the current service. Do not create unused
   mapping methods.
+
+# Tests
+
+* In Java/Kotlin services (JUnit5), every test class must be explicitly annotated
+  `@TestInstance(TestInstance.Lifecycle.PER_METHOD)`, even though it is JUnit5's default. Test isolation (mocks,
+  captured state) typically relies on a fresh instance being created per test method; leaving the lifecycle implicit
+  means a later change to `PER_CLASS` (e.g. to share expensive `@BeforeAll` setup) can silently break that isolation.
+  Making the choice explicit on every class prevents that.
+* Application-layer unit test names must follow a `MethodName` + separator + `TestDescription` pattern: the exact
+  name of the production method under test, then a description of the scenario. The separator depends on what the
+  language's test-name syntax allows:
+    * In Kotlin, backtick-quoted test names allow most characters but not `:` (illegal in a JVM method name), so use
+      a literal ` - ` between the method name and a plain-language description, e.g.
+      `` `execute - places the order, reserves stock, and submits payment` ``.
+    * In Java, method names can't contain spaces or `:`, so use an underscore followed by a camelCase description,
+      e.g. `submitPayment_createsAPendingPaymentFromTheGatewayResult`.
+    * In Go, the existing `TestType_MethodName` top-level function combined with `t.Run("test description")`
+      subtests already satisfies this pattern (the subtest path reads as `TestType_MethodName/test_description`) -
+      no different convention is needed there.
+* Application-layer tests must cover every distinct branch a method defines: each happy-path outcome (e.g. an
+  `if`/`when` picking a different action per state or flag - not just one representative "sunny day" case) and
+  each catch/error-handling branch with its own logic (a Java/Kotlin `catch`, a Go `if err != nil`, doing a state
+  transition, a compensating action, a rethrow with a side effect, etc). Skip calls whose error isn't caught -
+  it just propagates by default, which is language behavior, not application logic, and no test can protect it
+  from regressing.
+* Tests must verify the number of times each mock/collaborator method is called (`Mockito.verify(mock, times(n))`
+  or `verifyNoInteractions`/`verifyNoMoreInteractions` in Java, `verify(exactly = n)` in Kotlin/MockK,
+  `.Times(n)` in Go/gomock), not just assert on the method's return value. This is what actually distinguishes
+  one branch from another (e.g. two happy-path branches that return the same shape of result but publish a
+  different number of Kafka messages, or none at all, are indistinguishable by a return-value assertion alone).
+* Application-layer unit tests must not re-verify domain business-rule validation (e.g. a domain method rejecting
+  an invalid state or amount). That validation is owned and already covered by the
+  domain layer's own unit tests; duplicating it at the application layer tests the domain, not the use case.

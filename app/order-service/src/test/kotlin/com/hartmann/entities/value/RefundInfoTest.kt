@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,6 +12,7 @@ import kotlin.test.assertTrue
 
 private fun testAmount() = Money(BigDecimal("10.00"), Currency.USD)
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class RefundInfoTest {
 
     @Test

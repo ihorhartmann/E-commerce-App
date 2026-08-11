@@ -6,6 +6,8 @@ import (
 	"inventoryservice/domain/model"
 )
 
+//go:generate go run go.uber.org/mock/mockgen -source=product_repository.go -destination=mocks/mock_product_repository.go -package=mocks
+
 type ProductRepository interface {
 	Create(ctx context.Context, product *model.Product) (*model.Product, error)
 	Update(ctx context.Context, product *model.Product) (*model.Product, error)

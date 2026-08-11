@@ -1,10 +1,12 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class MoneyTest {
 
     @Test

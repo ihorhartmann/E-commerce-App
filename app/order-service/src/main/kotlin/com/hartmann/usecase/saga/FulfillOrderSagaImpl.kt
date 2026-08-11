@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 class FulfillOrderSagaImpl(
     private val orderRepository: OrderRepository,
-    private val eventProducer: OrderKafkaProducer,
+    private val orderKafkaProducer: OrderKafkaProducer,
 ) : FulfillOrderSaga {
 
     @Transactional
@@ -27,7 +27,7 @@ class FulfillOrderSagaImpl(
         val updatedOrder = order.confirmPayment()
 
         orderRepository.save(updatedOrder)
-        eventProducer.publishCreateShipment(correlationId, updatedOrder.id, updatedOrder.address)
+        orderKafkaProducer.publishCreateShipment(correlationId, updatedOrder.id, updatedOrder.address)
     }
 
     @Transactional
@@ -55,7 +55,7 @@ class FulfillOrderSagaImpl(
         val updatedOrder = order.createShipment(trackingNumber)
 
         orderRepository.save(updatedOrder)
-        eventProducer.publishHoldReservation(correlationId, updatedOrder.id)
+        orderKafkaProducer.publishHoldReservation(correlationId, updatedOrder.id)
     }
 
     @Transactional
@@ -64,7 +64,7 @@ class FulfillOrderSagaImpl(
         val updatedOrder = order.startDelivery()
 
         orderRepository.save(updatedOrder)
-        eventProducer.publishFulfillReservation(correlationId, updatedOrder.id)
+        orderKafkaProducer.publishFulfillReservation(correlationId, updatedOrder.id)
     }
 
     @Transactional
@@ -102,7 +102,7 @@ class FulfillOrderSagaImpl(
         orderRepository.save(updatedOrder)
 
         val items = updatedOrder.items.map { RestockItemDto(it.productId, it.quantity) }
-        eventProducer.publishRestock(correlationId, updatedOrder.id, items)
+        orderKafkaProducer.publishRestock(correlationId, updatedOrder.id, items)
     }
 
     @Transactional
@@ -120,11 +120,11 @@ class FulfillOrderSagaImpl(
     }
 
     private fun cancelReservations(order: Order, correlationId: String) {
-        eventProducer.publishCancelReservation(correlationId, order.id)
+        orderKafkaProducer.publishCancelReservation(correlationId, order.id)
     }
 
     private fun publishRefundRequested(order: Order, correlationId: String) {
         val total = order.totalPrice()
-        eventProducer.publishRefundRequested(correlationId, order.id, total.amount, total.currency.name)
+        orderKafkaProducer.publishRefundRequested(correlationId, order.id, total.amount, total.currency.name)
     }
 }

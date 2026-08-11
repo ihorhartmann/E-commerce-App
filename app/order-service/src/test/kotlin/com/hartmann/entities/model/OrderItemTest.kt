@@ -2,6 +2,7 @@ package com.hartmann.entities.model
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,6 +16,7 @@ private fun testOrderItem(
     price: Money = Money(BigDecimal("10.00"), Currency.USD),
 ) = OrderItem(id = id, orderId = orderId, productId = productId, quantity = quantity, price = price)
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderItemTest {
 
     @Test

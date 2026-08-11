@@ -4,6 +4,7 @@ import com.hartmann.entities.exception.DomainException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,6 +37,7 @@ private fun cancelRequestedAfterPickup() = orderInDelivery().cancelShipment()
 
 private fun cancelRequestedBeforePickup() = orderWithShipment().cancelShipment()
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderTest {
 
     // --- create / totalPrice ---

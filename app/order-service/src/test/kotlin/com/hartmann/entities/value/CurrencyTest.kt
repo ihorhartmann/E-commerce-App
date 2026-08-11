@@ -1,10 +1,12 @@
 package com.hartmann.entities.value
 
 import com.hartmann.entities.exception.DomainException
+import org.junit.jupiter.api.TestInstance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class CurrencyTest {
 
     @Test
