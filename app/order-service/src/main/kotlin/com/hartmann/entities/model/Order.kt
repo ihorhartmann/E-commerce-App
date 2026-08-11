@@ -17,7 +17,7 @@ data class Order(
     val status: OrderStatus,
     val paymentConfirmedAt: LocalDateTime? = null,
     val shipment: ShipmentInfo? = null,
-    val cancellationReason: String? = null,
+    val cancellationReason: CancellationReason? = null,
     val awaitingReturn: Boolean = false,
     val refund: RefundInfo? = null,
     val createdAt: LocalDateTime,
@@ -42,19 +42,19 @@ data class Order(
     /** Reservation request failed for a reason other than insufficient stock (e.g. Inventory unreachable). */
     fun failReservation(): Order {
         requireStatus("fail reservation", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = "Reservation failed")
+        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.RESERVATION_FAILED)
     }
 
     /** Reservation request failed specifically because the requested quantity is not available. */
     fun outOfStock(): Order {
         requireStatus("mark out of stock", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = "Out of stock")
+        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.OUT_OF_STOCK)
     }
 
     /** No charge ever succeeded at this point, so there is nothing to refund. */
     fun failPayment(): Order {
         requireStatus("fail payment", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = "Payment failed")
+        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.PAYMENT_FAILED)
     }
 
     fun confirmPayment(): Order {
@@ -84,7 +84,7 @@ data class Order(
         requireStatus("fail shipment creation", OrderStatus.PROCESSING)
         return copy(
             status = OrderStatus.CANCEL_REQUESTED,
-            cancellationReason = "Shipment creation failed",
+            cancellationReason = CancellationReason.SHIPMENT_CREATION_FAILED,
             awaitingReturn = false
         )
     }
@@ -92,7 +92,11 @@ data class Order(
     /** The goods are lost, not coming back - no return to wait for. */
     fun loseShipment(): Order {
         requireStatus("lose shipment", OrderStatus.PROCESSING)
-        return copy(status = OrderStatus.CANCEL_REQUESTED, cancellationReason = "Shipment lost", awaitingReturn = false)
+        return copy(
+            status = OrderStatus.CANCEL_REQUESTED,
+            cancellationReason = CancellationReason.SHIPMENT_LOST,
+            awaitingReturn = false,
+        )
     }
 
     /**
@@ -106,7 +110,7 @@ data class Order(
         requireStatus("cancel shipment", OrderStatus.PROCESSING)
         return copy(
             status = OrderStatus.CANCEL_REQUESTED,
-            cancellationReason = "Cancelled by customer",
+            cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
             awaitingReturn = wasPickedUp()
         )
     }
@@ -180,4 +184,13 @@ enum class OrderStatus {
     CANCEL_REQUESTED,
     CANCELLED,
     FULFILLED,
+}
+
+enum class CancellationReason {
+    RESERVATION_FAILED,
+    OUT_OF_STOCK,
+    PAYMENT_FAILED,
+    SHIPMENT_CREATION_FAILED,
+    SHIPMENT_LOST,
+    CANCELLED_BY_CUSTOMER,
 }

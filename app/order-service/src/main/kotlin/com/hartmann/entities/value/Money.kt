@@ -9,7 +9,7 @@ data class Money(
     val currency: Currency
 ) {
     init {
-        require(amount > BigDecimal.ZERO) { "price must be positive" }
+        require(amount >= BigDecimal.ZERO) { "amount must not be negative" }
     }
 }
 

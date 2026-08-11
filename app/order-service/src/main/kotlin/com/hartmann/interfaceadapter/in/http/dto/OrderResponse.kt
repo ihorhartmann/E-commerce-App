@@ -30,7 +30,7 @@ fun toOrderResponse(order: Order, clientSecret: String? = null): OrderResponse =
     userId = order.userId,
     paymentConfirmedAt = order.paymentConfirmedAt,
     shipment = order.shipment?.let { toShipmentResponseDto(it) },
-    cancellationReason = order.cancellationReason,
+    cancellationReason = order.cancellationReason?.name,
     refund = order.refund?.let { toRefundResponseDto(it) },
     items = order.items.map { toOrderItemResponseDto(it) },
     totalPrice = toMoneyResponseDto(order.totalPrice()),
