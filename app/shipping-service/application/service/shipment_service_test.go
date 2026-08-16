@@ -37,12 +37,11 @@ func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder m
 func TestShipmentServiceImpl_GetByTrackingNumber(t *testing.T) {
 	t.Run("returns the shipment from the repository", func(t *testing.T) {
 		trackingNumber := "TRACK-1"
-		ctrl := gomock.NewController(t)
 		shipment := testShipment(t, 1, model.Created, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		shipmentRepo.EXPECT().GetByTrackingNumber(gomock.Any(), trackingNumber).Return(shipment, nil).Times(1)
 
-		service := NewShipmentServiceImpl(shipmentRepo, kafkamocks.NewMockShipmentKafkaProducer(ctrl))
+		service := NewShipmentServiceImpl(shipmentRepo, kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t)))
 
 		got, err := service.GetByTrackingNumber(context.Background(), trackingNumber)
 
@@ -55,11 +54,10 @@ func TestShipmentServiceImpl_GetByTrackingNumber(t *testing.T) {
 	})
 
 	t.Run("rejects a blank tracking number without calling the repository", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		shipmentRepo.EXPECT().GetByTrackingNumber(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewShipmentServiceImpl(shipmentRepo, kafkamocks.NewMockShipmentKafkaProducer(ctrl))
+		service := NewShipmentServiceImpl(shipmentRepo, kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t)))
 
 		_, err := service.GetByTrackingNumber(context.Background(), "   ")
 
@@ -73,11 +71,10 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 	t.Run("persists a new shipment via the repository, then publishes the status change", func(t *testing.T) {
 		orderID := uint64(100)
 		correlationID := "corr-1"
-		ctrl := gomock.NewController(t)
 		address := testAddress(t)
 		persisted := testShipment(t, 1, model.Created, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().Create(gomock.Any(), orderID, address).Return(persisted, nil).Times(1)
 		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), correlationID, persisted).Return(nil).Times(1)
@@ -97,11 +94,10 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 	t.Run("publishes creation-failed and returns the original error when persisting fails", func(t *testing.T) {
 		orderID := uint64(100)
 		correlationID := "corr-1"
-		ctrl := gomock.NewController(t)
 		address := testAddress(t)
 		wantErr := errors.New("db down")
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().Create(gomock.Any(), orderID, address).Return(nil, wantErr).Times(1)
 		producer.EXPECT().PublishShipmentCreationFailed(gomock.Any(), correlationID, orderID).Return(nil).Times(1)
@@ -119,12 +115,11 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 	t.Run("joins both errors when the creation-failed publish also fails", func(t *testing.T) {
 		orderID := uint64(100)
 		correlationID := "corr-1"
-		ctrl := gomock.NewController(t)
 		address := testAddress(t)
 		createErr := errors.New("db down")
 		pubErr := errors.New("kafka down")
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().Create(gomock.Any(), orderID, address).Return(nil, createErr).Times(1)
 		producer.EXPECT().PublishShipmentCreationFailed(gomock.Any(), correlationID, orderID).Return(pubErr).Times(1)
@@ -144,12 +139,11 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 	t.Run("propagates an error publishing the status change after a successful create", func(t *testing.T) {
 		orderID := uint64(100)
 		correlationID := "corr-1"
-		ctrl := gomock.NewController(t)
 		address := testAddress(t)
 		wantErr := errors.New("kafka down")
 		persisted := testShipment(t, 1, model.Created, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().Create(gomock.Any(), orderID, address).Return(persisted, nil).Times(1)
 		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), correlationID, persisted).Return(wantErr).Times(1)
@@ -167,10 +161,9 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 	t.Run("starts delivery, persists, and publishes the status change", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		shipment := testShipment(t, id, model.Created, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
@@ -200,10 +193,9 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 	t.Run("propagates an error fetching the shipment", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(nil, wantErr).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
@@ -220,10 +212,9 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 	t.Run("propagates a domain error when the shipment is not in a startable status", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		shipment := testShipment(t, id, model.Delivered, model.HolderCourier) // already terminal
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
@@ -240,11 +231,10 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 	t.Run("propagates an error persisting the transitioned shipment", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		shipment := testShipment(t, id, model.Created, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
@@ -261,12 +251,11 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 	t.Run("propagates an error publishing the status change", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("kafka down")
 		shipment := testShipment(t, id, model.Created, model.HolderInventory)
 		updated := testShipment(t, id, model.InDelivery, model.HolderCourier)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(updated, nil).Times(1)
@@ -284,10 +273,9 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 func TestShipmentServiceImpl_Deliver(t *testing.T) {
 	id := uint64(1)
-	ctrl := gomock.NewController(t)
 	shipment := testShipment(t, id, model.InDelivery, model.HolderCourier)
-	shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-	producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
@@ -317,10 +305,9 @@ func TestShipmentServiceImpl_Deliver(t *testing.T) {
 
 func TestShipmentServiceImpl_Lose(t *testing.T) {
 	id := uint64(1)
-	ctrl := gomock.NewController(t)
 	shipment := testShipment(t, id, model.InDelivery, model.HolderCourier)
-	shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-	producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
@@ -350,10 +337,9 @@ func TestShipmentServiceImpl_Lose(t *testing.T) {
 
 func TestShipmentServiceImpl_Cancel(t *testing.T) {
 	id := uint64(1)
-	ctrl := gomock.NewController(t)
 	shipment := testShipment(t, id, model.Created, model.HolderInventory)
-	shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-	producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
@@ -384,10 +370,9 @@ func TestShipmentServiceImpl_Cancel(t *testing.T) {
 func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 	t.Run("moves the holder back to inventory and publishes the returned event", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
@@ -418,10 +403,9 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 	t.Run("propagates an error fetching the shipment", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(nil, wantErr).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
@@ -438,10 +422,9 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 	t.Run("propagates a domain error when the goods were never picked up by a courier", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		shipment := testShipment(t, id, model.Cancelled, model.HolderInventory) // never left the warehouse
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
@@ -458,11 +441,10 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 	t.Run("propagates an error persisting the transitioned shipment", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
@@ -479,12 +461,11 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 	t.Run("propagates an error publishing the returned-to-inventory event", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("kafka down")
 		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
 		updated := testShipment(t, id, model.Cancelled, model.HolderInventory)
-		shipmentRepo := repomocks.NewMockShipmentRepository(ctrl)
-		producer := kafkamocks.NewMockShipmentKafkaProducer(ctrl)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(updated, nil).Times(1)

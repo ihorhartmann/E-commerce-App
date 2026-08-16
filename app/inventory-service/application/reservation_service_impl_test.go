@@ -55,10 +55,9 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 	t.Run("creates reservations when enough stock is available", func(t *testing.T) {
 		productID := uint64(1)
 		quantity := uint(4)
-		ctrl := gomock.NewController(t)
 		product := testProduct(t, productID, 10)
-		productRepo := mocks.NewMockProductRepository(ctrl)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
@@ -85,10 +84,9 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 
 	t.Run("fails when requested quantity exceeds available stock", func(t *testing.T) {
 		productID := uint64(1)
-		ctrl := gomock.NewController(t)
 		product := testProduct(t, productID, 3)
-		productRepo := mocks.NewMockProductRepository(ctrl)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
@@ -105,10 +103,9 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 
 	t.Run("propagates an error from fetching products", func(t *testing.T) {
 		productID := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		productRepo := mocks.NewMockProductRepository(ctrl)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), gomock.Any()).Times(0)
@@ -125,11 +122,10 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 
 	t.Run("propagates an error from fetching existing reservations", func(t *testing.T) {
 		productID := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		product := testProduct(t, productID, 10)
-		productRepo := mocks.NewMockProductRepository(ctrl)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
@@ -148,15 +144,14 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 func TestReservationServiceImpl_Cancel(t *testing.T) {
 	t.Run("deletes every reservation held for the order", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
 		r2 := testReservation(t, 2, 11, orderID, 3, model.ReservationHolderBuyer)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1, 2}).Return(nil).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(ctrl))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
 
 		if err := service.Cancel(context.Background(), orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -165,14 +160,13 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 
 	t.Run("propagates an error from fetching reservations", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(ctrl))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
 
 		err := service.Cancel(context.Background(), orderID)
 
@@ -185,10 +179,9 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 	t.Run("moves every reservation for the order to the courier", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
 		r2 := testReservation(t, 2, 11, orderID, 3, model.ReservationHolderBuyer)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 
@@ -200,7 +193,7 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 			},
 		)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(ctrl))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
 
 		if err := service.HoldByCourier(context.Background(), orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -218,14 +211,13 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 
 	t.Run("propagates an error from fetching reservations", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(ctrl))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
 
 		err := service.HoldByCourier(context.Background(), orderID)
 
@@ -236,15 +228,14 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 
 	t.Run("propagates an error updating a reservation's holder", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(ctrl))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
 
 		err := service.HoldByCourier(context.Background(), orderID)
 
@@ -258,11 +249,10 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 	t.Run("removes on-hand stock and deletes the fulfilled reservations", func(t *testing.T) {
 		orderID := uint64(100)
 		productID := uint64(10)
-		ctrl := gomock.NewController(t)
 		r1 := testReservation(t, 1, productID, orderID, 2, model.ReservationHolderCourier)
 		product := testProduct(t, productID, 10)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(product, nil).Times(1)
@@ -288,13 +278,12 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 
 	t.Run("propagates an error from fetching reservations", func(t *testing.T) {
 		orderID := uint64(100)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo)
@@ -309,11 +298,10 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 	t.Run("propagates an error fetching the product and does not delete the reservation", func(t *testing.T) {
 		orderID := uint64(100)
 		productID := uint64(10)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		r1 := testReservation(t, 1, productID, orderID, 2, model.ReservationHolderCourier)
-		reservationRepo := mocks.NewMockReservationRepository(ctrl)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(nil, wantErr).Times(1)

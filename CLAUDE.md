@@ -182,3 +182,7 @@ database connections and other resources if there are such.
   or a correlation id passed into the call under test and then repeated in a `verify`/`EXPECT` call. Scope the
   variable to that one method only; do not hoist it to a shared file-level constant, and do not extract a value
   that only appears once.
+* REST controller tests must assert on the response body's required fields (`jsonPath` in Java/Kotlin, decoded JSON
+  in Go), not just the HTTP status code - a status-only assertion can't catch a wrong/missing field or a malformed
+  body. Exception: responses with no body by design (e.g. `204 No Content`, or a `2xx` endpoint that intentionally
+  returns no payload) have nothing to assert on and are exempt.

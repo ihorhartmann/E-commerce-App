@@ -26,7 +26,7 @@ class GlobalExceptionHandler {
         error(HttpStatus.CONFLICT, exception.message ?: "Insufficient stock")
 
     @ExceptionHandler(DomainException::class, IllegalArgumentException::class)
-    fun invalid(exception: RuntimeException) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")
+    fun invalid(exception: Exception) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")
 
     @ExceptionHandler(IllegalStateException::class)
     fun conflict(exception: IllegalStateException) =
@@ -44,7 +44,7 @@ class GlobalExceptionHandler {
         )
 
     @ExceptionHandler(Exception::class)
-    fun internalError(exception: RuntimeException): ResponseEntity<Map<String, Any>> {
+    fun internalError(exception: Exception): ResponseEntity<Map<String, Any>> {
         LOG.error(exception.message, exception)
         return error(HttpStatus.INTERNAL_SERVER_ERROR,  "Internal server error")
     }

@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const InternalServerErrorMessage = "Internal server error"
+
 func ErrorHandlerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
@@ -27,7 +29,7 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 
 		if status >= http.StatusInternalServerError {
 			slog.Error("request failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
-			c.JSON(status, inhttp.ErrorResponse("Internal server error"))
+			c.JSON(status, inhttp.ErrorResponse(InternalServerErrorMessage))
 			return
 		}
 

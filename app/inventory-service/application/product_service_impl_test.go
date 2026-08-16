@@ -15,10 +15,9 @@ import (
 )
 
 func TestProductServiceImpl_Create(t *testing.T) {
-	ctrl := gomock.NewController(t)
 	newProduct := testNewProduct(t, 10)     // not yet persisted, id 0
 	createdProduct := testProduct(t, 1, 10) // what the repository returns once it assigns an id
-	productRepo := mocks.NewMockProductRepository(ctrl)
+	productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 	productRepo.EXPECT().Create(gomock.Any(), newProduct).Return(createdProduct, nil).Times(1)
 
 	service := NewProductService(productRepo)
@@ -34,10 +33,9 @@ func TestProductServiceImpl_Create(t *testing.T) {
 }
 
 func TestProductServiceImpl_Update(t *testing.T) {
-	ctrl := gomock.NewController(t)
 	input := testProduct(t, 1, 10)
 	updatedProduct := testProduct(t, 1, 20) // what the repository actually persisted and returned
-	productRepo := mocks.NewMockProductRepository(ctrl)
+	productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 	productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
 
 	service := NewProductService(productRepo)
@@ -55,9 +53,8 @@ func TestProductServiceImpl_Update(t *testing.T) {
 func TestProductServiceImpl_Get(t *testing.T) {
 	t.Run("returns the product from the repository", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
 		product := testProduct(t, id, 10)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(product, nil).Times(1)
 
 		service := NewProductService(productRepo)
@@ -73,8 +70,7 @@ func TestProductServiceImpl_Get(t *testing.T) {
 	})
 
 	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewProductService(productRepo)
@@ -90,8 +86,7 @@ func TestProductServiceImpl_Get(t *testing.T) {
 func TestProductServiceImpl_Delete(t *testing.T) {
 	t.Run("deletes the product by id", func(t *testing.T) {
 		id := uint64(1)
-		ctrl := gomock.NewController(t)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().Delete(gomock.Any(), id).Return(nil).Times(1)
 
 		service := NewProductService(productRepo)
@@ -102,8 +97,7 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 	})
 
 	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().Delete(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewProductService(productRepo)
@@ -120,10 +114,9 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 	t.Run("adds the requested quantity back to each product", func(t *testing.T) {
 		p1ID := uint64(1)
 		p2ID := uint64(2)
-		ctrl := gomock.NewController(t)
 		p1 := testProduct(t, p1ID, 5)
 		p2 := testProduct(t, p2ID, 8)
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByID(gomock.Any(), p1ID).Return(p1, nil).Times(1)
 		productRepo.EXPECT().GetByID(gomock.Any(), p2ID).Return(p2, nil).Times(1)
@@ -156,9 +149,8 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 
 	t.Run("propagates an error fetching a product and stops", func(t *testing.T) {
 		productID := uint64(1)
-		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
-		productRepo := mocks.NewMockProductRepository(ctrl)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"inventoryservice/application/port/out/repository"
 	"net/http"
+
+	"inventoryservice/domain/model"
 )
 
 // HandleReservationError classifies a reservation-related error into its
@@ -17,6 +19,8 @@ func HandleReservationError(err error) error {
 	switch {
 	case errors.Is(err, repository.ErrReservationNotFound):
 		return WithStatus(http.StatusNotFound, err)
+	case errors.Is(err, model.ErrInsufficientStock):
+		return WithStatus(http.StatusConflict, err)
 	default:
 		return err
 	}

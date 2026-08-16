@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -82,7 +83,7 @@ class PaymentServiceImplTest {
         assertThat(result).isEqualTo(new PaymentIntentResult(createdPayment, "secret_123"));
 
         var captor = ArgumentCaptor.forClass(Payment.class);
-        verify(paymentRepository).create(captor.capture());
+        verify(paymentRepository, times(1)).create(captor.capture());
         assertThat(captor.getValue().orderId()).isEqualTo(orderId);
         assertThat(captor.getValue().externalId()).isEqualTo(externalId);
         assertThat(captor.getValue().status()).isEqualTo(status);
@@ -102,7 +103,7 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(completedPayment);
-        verify(paymentKafkaProducer).publishPaymentCompleted(orderId);
+        verify(paymentKafkaProducer, times(1)).publishPaymentCompleted(orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
@@ -120,7 +121,7 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(failedPayment);
-        verify(paymentKafkaProducer).publishPaymentFailed(orderId);
+        verify(paymentKafkaProducer, times(1)).publishPaymentFailed(orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 

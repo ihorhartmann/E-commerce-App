@@ -9,6 +9,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+const InternalServerErrorMessage = "Internal server error"
+
 // HandleError is the central Fiber error handler (wired via fiber.Config).
 // It logs every error that reaches it and resolves the HTTP status from a
 // wrapped errors.StatusError when present, defaulting to 500 otherwise.
@@ -22,7 +24,7 @@ func HandleError(c *fiber.Ctx, err error) error {
 
 	if status >= http.StatusInternalServerError {
 		slog.Error("request failed", "err", err, "method", c.Method(), "path", c.Path())
-		return c.Status(status).JSON(httperr.ErrorResponse("Internal server error"))
+		return c.Status(status).JSON(httperr.ErrorResponse(InternalServerErrorMessage))
 	}
 
 	slog.Warn("request failed", "err", err, "status", status, "method", c.Method(), "path", c.Path())

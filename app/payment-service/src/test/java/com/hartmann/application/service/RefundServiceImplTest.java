@@ -25,6 +25,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -96,7 +97,7 @@ class RefundServiceImplTest {
         assertThat(result).isEqualTo(savedRefund);
 
         var captor = ArgumentCaptor.forClass(Refund.class);
-        verify(refundRepository).create(captor.capture());
+        verify(refundRepository, times(1)).create(captor.capture());
         assertThat(captor.getValue().paymentId()).isEqualTo(paymentId);
         assertThat(captor.getValue().externalId()).isEqualTo("re_new");
         assertThat(captor.getValue().status()).isEqualTo(RefundStatus.PENDING);
@@ -118,7 +119,7 @@ class RefundServiceImplTest {
 
         refundService.updateStatusByExternalId("re_test", status);
 
-        verify(paymentKafkaProducer).publishRefundCompleted(orderId, money(amount));
+        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
@@ -138,7 +139,7 @@ class RefundServiceImplTest {
 
         refundService.updateStatusByExternalId("re_test", status);
 
-        verify(paymentKafkaProducer).publishRefundFailed(orderId);
+        verify(paymentKafkaProducer, times(1)).publishRefundFailed(orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
