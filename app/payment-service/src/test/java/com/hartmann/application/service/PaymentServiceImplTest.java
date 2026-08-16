@@ -53,72 +53,87 @@ class PaymentServiceImplTest {
 
     private Payment testPayment(long id, long orderId, PaymentStatus status) {
         var now = Instant.now();
-        return new Payment(id, orderId, "pi_test", testAmount(), status, List.of(), now, now);
+        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, List.of(), now, now);
     }
 
     @Test
     void getByOrderId_returnsThePaymentFromTheRepository() {
-        var payment = testPayment(1L, 100L, PaymentStatus.COMPLETED);
-        when(paymentRepository.getByOrderId(100L)).thenReturn(payment);
+        var orderId = 100L;
+        var payment = testPayment(1L, orderId, PaymentStatus.COMPLETED);
+        when(paymentRepository.getByOrderId(orderId)).thenReturn(payment);
 
-        var result = paymentService.getByOrderId(100L);
+        var result = paymentService.getByOrderId(orderId);
 
         assertThat(result).isEqualTo(payment);
     }
 
     @Test
     void submitPayment_createsAPendingPaymentFromTheGatewayResult() {
-        when(paymentGateway.submitPayment(100L, testAmount()))
-                .thenReturn(new SubmitPaymentResult("pi_new", "secret_123"));
-        var createdPayment = testPayment(1L, 100L, PaymentStatus.PENDING);
+        var orderId = 100L;
+        var externalId = "pi_new";
+        var status = PaymentStatus.PENDING;
+        when(paymentGateway.submitPayment(orderId, testAmount()))
+                .thenReturn(new SubmitPaymentResult(externalId, "secret_123"));
+        var createdPayment = testPayment(1L, orderId, status);
         when(paymentRepository.create(any())).thenReturn(createdPayment);
 
-        var result = paymentService.submitPayment(100L, testAmount());
+        var result = paymentService.submitPayment(orderId, testAmount());
 
         assertThat(result).isEqualTo(new PaymentIntentResult(createdPayment, "secret_123"));
 
         var captor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository).create(captor.capture());
-        assertThat(captor.getValue().orderId()).isEqualTo(100L);
-        assertThat(captor.getValue().externalId()).isEqualTo("pi_new");
-        assertThat(captor.getValue().status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(captor.getValue().orderId()).isEqualTo(orderId);
+        assertThat(captor.getValue().externalId()).isEqualTo(externalId);
+        assertThat(captor.getValue().status()).isEqualTo(status);
     }
 
     @Test
     void updateStatusByExternalId_publishesPaymentCompletedWhenStatusBecomesCompleted() {
-        var payment = testPayment(1L, 100L, PaymentStatus.PENDING);
-        var completedPayment = testPayment(1L, 100L, PaymentStatus.COMPLETED);
-        when(paymentRepository.getByExternalId("pi_test")).thenReturn(payment);
-        when(paymentRepository.updateStatus(1L, PaymentStatus.COMPLETED)).thenReturn(completedPayment);
+        var id = 1L;
+        var orderId = 100L;
+        var externalId = "pi_test";
+        var status = PaymentStatus.COMPLETED;
+        var payment = testPayment(id, orderId, PaymentStatus.PENDING);
+        var completedPayment = testPayment(id, orderId, status);
+        when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
+        when(paymentRepository.updateStatus(id, status)).thenReturn(completedPayment);
 
-        var result = paymentService.updateStatusByExternalId("pi_test", PaymentStatus.COMPLETED);
+        var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(completedPayment);
-        verify(paymentKafkaProducer).publishPaymentCompleted(100L);
+        verify(paymentKafkaProducer).publishPaymentCompleted(orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
     void updateStatusByExternalId_publishesPaymentFailedWhenStatusBecomesFailed() {
-        var payment = testPayment(1L, 100L, PaymentStatus.PENDING);
-        var failedPayment = testPayment(1L, 100L, PaymentStatus.FAILED);
-        when(paymentRepository.getByExternalId("pi_test")).thenReturn(payment);
-        when(paymentRepository.updateStatus(1L, PaymentStatus.FAILED)).thenReturn(failedPayment);
+        var id = 1L;
+        var orderId = 100L;
+        var externalId = "pi_test";
+        var status = PaymentStatus.FAILED;
+        var payment = testPayment(id, orderId, PaymentStatus.PENDING);
+        var failedPayment = testPayment(id, orderId, status);
+        when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
+        when(paymentRepository.updateStatus(id, status)).thenReturn(failedPayment);
 
-        var result = paymentService.updateStatusByExternalId("pi_test", PaymentStatus.FAILED);
+        var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(failedPayment);
-        verify(paymentKafkaProducer).publishPaymentFailed(100L);
+        verify(paymentKafkaProducer).publishPaymentFailed(orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
     void updateStatusByExternalId_publishesNothingWhenStatusIsPending() {
-        var payment = testPayment(1L, 100L, PaymentStatus.PENDING);
-        when(paymentRepository.getByExternalId("pi_test")).thenReturn(payment);
-        when(paymentRepository.updateStatus(1L, PaymentStatus.PENDING)).thenReturn(payment);
+        var id = 1L;
+        var externalId = "pi_test";
+        var status = PaymentStatus.PENDING;
+        var payment = testPayment(id, 100L, status);
+        when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
+        when(paymentRepository.updateStatus(id, status)).thenReturn(payment);
 
-        var result = paymentService.updateStatusByExternalId("pi_test", PaymentStatus.PENDING);
+        var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(payment);
         verifyNoInteractions(paymentKafkaProducer);

@@ -9,32 +9,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CurrencyTest {
 
     @Test
-    void fromCodeResolvesAnUppercaseCode() {
+    void fromCode_resolvesAnUppercaseCode() {
         assertThat(Currency.fromCode("USD")).isEqualTo(Currency.USD);
     }
 
     @Test
-    void fromCodeResolvesALowercaseCode() {
+    void fromCode_resolvesALowercaseCode() {
         assertThat(Currency.fromCode("eur")).isEqualTo(Currency.EUR);
     }
 
     @Test
-    void fromCodeResolvesAMixedCaseCode() {
+    void fromCode_resolvesAMixedCaseCode() {
         assertThat(Currency.fromCode("GbP")).isEqualTo(Currency.GBP);
     }
 
     @Test
-    void fromCodeThrowsOnANullCode() {
+    void fromCode_throwsOnANullCode() {
         assertThatThrownBy(() -> Currency.fromCode(null)).isInstanceOf(DomainException.class);
     }
 
     @Test
-    void fromCodeThrowsOnAnUnsupportedCode() {
+    void fromCode_throwsOnAnUnsupportedCode() {
         assertThatThrownBy(() -> Currency.fromCode("JPY")).isInstanceOf(DomainException.class);
     }
 
     @Test
-    void fromCodeThrowsOnABlankCode() {
+    void fromCode_throwsOnABlankCode() {
         assertThatThrownBy(() -> Currency.fromCode("")).isInstanceOf(DomainException.class);
     }
 }

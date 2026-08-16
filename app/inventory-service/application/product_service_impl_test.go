@@ -54,14 +54,15 @@ func TestProductServiceImpl_Update(t *testing.T) {
 
 func TestProductServiceImpl_Get(t *testing.T) {
 	t.Run("returns the product from the repository", func(t *testing.T) {
+		id := uint64(1)
 		ctrl := gomock.NewController(t)
-		product := testProduct(t, 1, 10)
+		product := testProduct(t, id, 10)
 		productRepo := mocks.NewMockProductRepository(ctrl)
-		productRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).Return(product, nil).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(product, nil).Times(1)
 
 		service := NewProductService(productRepo)
 
-		got, err := service.Get(context.Background(), 1)
+		got, err := service.Get(context.Background(), id)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -88,13 +89,14 @@ func TestProductServiceImpl_Get(t *testing.T) {
 
 func TestProductServiceImpl_Delete(t *testing.T) {
 	t.Run("deletes the product by id", func(t *testing.T) {
+		id := uint64(1)
 		ctrl := gomock.NewController(t)
 		productRepo := mocks.NewMockProductRepository(ctrl)
-		productRepo.EXPECT().Delete(gomock.Any(), uint64(1)).Return(nil).Times(1)
+		productRepo.EXPECT().Delete(gomock.Any(), id).Return(nil).Times(1)
 
 		service := NewProductService(productRepo)
 
-		if err := service.Delete(context.Background(), 1); err != nil {
+		if err := service.Delete(context.Background(), id); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -116,13 +118,15 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 
 func TestProductServiceImpl_Restock(t *testing.T) {
 	t.Run("adds the requested quantity back to each product", func(t *testing.T) {
+		p1ID := uint64(1)
+		p2ID := uint64(2)
 		ctrl := gomock.NewController(t)
-		p1 := testProduct(t, 1, 5)
-		p2 := testProduct(t, 2, 8)
+		p1 := testProduct(t, p1ID, 5)
+		p2 := testProduct(t, p2ID, 8)
 		productRepo := mocks.NewMockProductRepository(ctrl)
 
-		productRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).Return(p1, nil).Times(1)
-		productRepo.EXPECT().GetByID(gomock.Any(), uint64(2)).Return(p2, nil).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), p1ID).Return(p1, nil).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), p2ID).Return(p2, nil).Times(1)
 
 		var updated []*model.Product
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
@@ -134,7 +138,7 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 
 		service := NewProductService(productRepo)
 
-		items := []dto.ReservationDTO{{ProductID: 1, Quantity: 3}, {ProductID: 2, Quantity: 2}}
+		items := []dto.ReservationDTO{{ProductID: p1ID, Quantity: 3}, {ProductID: p2ID, Quantity: 2}}
 		if err := service.Restock(context.Background(), items); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -151,15 +155,16 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 	})
 
 	t.Run("propagates an error fetching a product and stops", func(t *testing.T) {
+		productID := uint64(1)
 		ctrl := gomock.NewController(t)
 		wantErr := errors.New("db down")
 		productRepo := mocks.NewMockProductRepository(ctrl)
-		productRepo.EXPECT().GetByID(gomock.Any(), uint64(1)).Return(nil, wantErr).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewProductService(productRepo)
 
-		err := service.Restock(context.Background(), []dto.ReservationDTO{{ProductID: 1, Quantity: 1}})
+		err := service.Restock(context.Background(), []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)

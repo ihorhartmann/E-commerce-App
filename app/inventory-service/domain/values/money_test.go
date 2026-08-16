@@ -9,15 +9,17 @@ import (
 
 func TestNewMoney(t *testing.T) {
 	t.Run("creates money with a non-negative amount and a supported currency", func(t *testing.T) {
-		money, err := NewMoney(10.5, USD)
+		amount := 10.5
+		currency := USD
+		money, err := NewMoney(amount, currency)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if money.Amount() != 10.5 {
-			t.Errorf("Amount() = %v, want 10.5", money.Amount())
+		if money.Amount() != amount {
+			t.Errorf("Amount() = %v, want %v", money.Amount(), amount)
 		}
-		if money.Currency() != USD {
-			t.Errorf("Currency() = %v, want %v", money.Currency(), USD)
+		if money.Currency() != currency {
+			t.Errorf("Currency() = %v, want %v", money.Currency(), currency)
 		}
 	})
 

@@ -28,7 +28,9 @@ func newTestProduct(t *testing.T, quantity uint) *Product {
 
 func TestNewProduct(t *testing.T) {
 	t.Run("creates a product with the given fields", func(t *testing.T) {
-		product, err := NewProduct(1, "Widget", "a widget", testMoney(t), 10)
+		name := "Widget"
+		quantity := uint(10)
+		product, err := NewProduct(1, name, "a widget", testMoney(t), quantity)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -36,11 +38,11 @@ func TestNewProduct(t *testing.T) {
 		if product.ID() != 1 {
 			t.Errorf("ID() = %d, want 1", product.ID())
 		}
-		if product.Name() != "Widget" {
-			t.Errorf("Name() = %q, want %q", product.Name(), "Widget")
+		if product.Name() != name {
+			t.Errorf("Name() = %q, want %q", product.Name(), name)
 		}
-		if product.Quantity() != 10 {
-			t.Errorf("Quantity() = %d, want 10", product.Quantity())
+		if product.Quantity() != quantity {
+			t.Errorf("Quantity() = %d, want %d", product.Quantity(), quantity)
 		}
 		if len(product.StockReservations()) != 0 {
 			t.Errorf("StockReservations() = %v, want empty", product.StockReservations())
@@ -64,12 +66,13 @@ func TestNewExistingProduct(t *testing.T) {
 	})
 
 	t.Run("creates a product when id is set", func(t *testing.T) {
-		product, err := NewExistingProduct(1, "Widget", "a widget", testMoney(t), 10)
+		id := uint64(1)
+		product, err := NewExistingProduct(id, "Widget", "a widget", testMoney(t), 10)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if product.ID() != 1 {
-			t.Errorf("ID() = %d, want 1", product.ID())
+		if product.ID() != id {
+			t.Errorf("ID() = %d, want %d", product.ID(), id)
 		}
 	})
 
@@ -140,20 +143,22 @@ func TestProduct_WithStockReservations(t *testing.T) {
 
 func TestProduct_CreateReservation(t *testing.T) {
 	t.Run("creates a reservation when enough stock is available", func(t *testing.T) {
+		orderID := uint64(100)
+		quantity := uint(4)
 		product := newTestProduct(t, 10)
 
-		reservation, err := product.CreateReservation(100, 4, ReservationHolderBuyer)
+		reservation, err := product.CreateReservation(orderID, quantity, ReservationHolderBuyer)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if reservation.ProductID() != product.ID() {
 			t.Errorf("ProductID() = %d, want %d", reservation.ProductID(), product.ID())
 		}
-		if reservation.OrderID() != 100 {
-			t.Errorf("OrderID() = %d, want 100", reservation.OrderID())
+		if reservation.OrderID() != orderID {
+			t.Errorf("OrderID() = %d, want %d", reservation.OrderID(), orderID)
 		}
-		if reservation.Quantity() != 4 {
-			t.Errorf("Quantity() = %d, want 4", reservation.Quantity())
+		if reservation.Quantity() != quantity {
+			t.Errorf("Quantity() = %d, want %d", reservation.Quantity(), quantity)
 		}
 		if reservation.Holder() != ReservationHolderBuyer {
 			t.Errorf("Holder() = %v, want %v", reservation.Holder(), ReservationHolderBuyer)

@@ -10,7 +10,6 @@ import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Money;
 
-import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,10 +47,7 @@ public class RefundServiceImpl implements RefundService {
 
         var result = paymentGateway.submitRefund(payment.externalId(), amount);
 
-        var refund = new Refund(
-                draftRefund.id(), draftRefund.paymentId(), result.externalId(), draftRefund.amount(), result.status(),
-                draftRefund.createdAt(), Instant.now()
-        );
+        var refund = Refund.createNew(draftRefund.paymentId(), result.externalId(), draftRefund.amount(), result.status());
         return refundRepository.create(refund);
     }
 
@@ -76,7 +72,7 @@ public class RefundServiceImpl implements RefundService {
     private Payment getPaymentWithRefunds(long paymentId) {
         var payment = paymentRepository.getById(paymentId);
         var refunds = refundRepository.findByPaymentId(paymentId);
-        return new Payment(
+        return Payment.createExisting(
                 payment.id(),
                 payment.orderId(),
                 payment.externalId(), payment.amount(),

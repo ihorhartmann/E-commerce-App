@@ -9,22 +9,26 @@ import (
 
 func TestNewStockReservation(t *testing.T) {
 	t.Run("creates a reservation with the given fields", func(t *testing.T) {
-		reservation, err := NewStockReservation(1, 10, 100, 5, ReservationHolderBuyer)
+		id := uint64(1)
+		productID := uint64(10)
+		orderID := uint64(100)
+		quantity := uint(5)
+		reservation, err := NewStockReservation(id, productID, orderID, quantity, ReservationHolderBuyer)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if reservation.ID() != 1 {
-			t.Errorf("ID() = %d, want 1", reservation.ID())
+		if reservation.ID() != id {
+			t.Errorf("ID() = %d, want %d", reservation.ID(), id)
 		}
-		if reservation.ProductID() != 10 {
-			t.Errorf("ProductID() = %d, want 10", reservation.ProductID())
+		if reservation.ProductID() != productID {
+			t.Errorf("ProductID() = %d, want %d", reservation.ProductID(), productID)
 		}
-		if reservation.OrderID() != 100 {
-			t.Errorf("OrderID() = %d, want 100", reservation.OrderID())
+		if reservation.OrderID() != orderID {
+			t.Errorf("OrderID() = %d, want %d", reservation.OrderID(), orderID)
 		}
-		if reservation.Quantity() != 5 {
-			t.Errorf("Quantity() = %d, want 5", reservation.Quantity())
+		if reservation.Quantity() != quantity {
+			t.Errorf("Quantity() = %d, want %d", reservation.Quantity(), quantity)
 		}
 		if reservation.Holder() != ReservationHolderBuyer {
 			t.Errorf("Holder() = %v, want %v", reservation.Holder(), ReservationHolderBuyer)

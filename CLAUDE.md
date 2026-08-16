@@ -145,9 +145,9 @@ database connections and other resources if there are such.
   captured state) typically relies on a fresh instance being created per test method; leaving the lifecycle implicit
   means a later change to `PER_CLASS` (e.g. to share expensive `@BeforeAll` setup) can silently break that isolation.
   Making the choice explicit on every class prevents that.
-* Application-layer unit test names must follow a `MethodName` + separator + `TestDescription` pattern: the exact
-  name of the production method under test, then a description of the scenario. The separator depends on what the
-  language's test-name syntax allows:
+* Application-layer and domain-layer unit test names must follow a `MethodName` + separator + `TestDescription`
+  pattern: the exact name of the production method under test, then a description of the scenario. The separator
+  depends on what the language's test-name syntax allows:
     * In Kotlin, backtick-quoted test names allow most characters but not `:` (illegal in a JVM method name), so use
       a literal ` - ` between the method name and a plain-language description, e.g.
       `` `execute - places the order, reserves stock, and submits payment` ``.
@@ -156,12 +156,18 @@ database connections and other resources if there are such.
     * In Go, the existing `TestType_MethodName` top-level function combined with `t.Run("test description")`
       subtests already satisfies this pattern (the subtest path reads as `TestType_MethodName/test_description`) -
       no different convention is needed there.
-* Application-layer tests must cover every distinct branch a method defines: each happy-path outcome (e.g. an
-  `if`/`when` picking a different action per state or flag - not just one representative "sunny day" case) and
-  each catch/error-handling branch with its own logic (a Java/Kotlin `catch`, a Go `if err != nil`, doing a state
-  transition, a compensating action, a rethrow with a side effect, etc). Skip calls whose error isn't caught -
-  it just propagates by default, which is language behavior, not application logic, and no test can protect it
-  from regressing.
+    * A Java record's compact constructor or a Kotlin class' primary constructor/`init` block has no method name of
+      its own to reuse, so use the literal word `constructor` as the `MethodName` part, e.g.
+      `constructor_rejectsANegativeAmount` (Java), `` `constructor - rejects a negative amount` `` (Kotlin). Go
+      constructors are already named functions (`NewProduct`, `NewShipment`), so this placeholder isn't needed
+      there.
+* Application-layer and domain-layer tests must cover every distinct branch a method defines: each happy-path
+  outcome (e.g. an `if`/`when` picking a different action per state or flag - not just one representative "sunny
+  day" case) and each catch/error-handling branch with its own logic (a Java/Kotlin `catch`, a Go `if err != nil`,
+  doing a state transition, a compensating action, a rethrow with a side effect, etc). Skip calls whose error isn't
+  caught - it just propagates by default, which is language behavior, not application logic, and no test can
+  protect it from regressing. This includes factory methods (e.g. a domain model's `create`/`NewXxx`): test them by
+  their own name like any other method, separately from `constructor` if they delegate to it.
 * Tests must verify the number of times each mock/collaborator method is called (`Mockito.verify(mock, times(n))`
   or `verifyNoInteractions`/`verifyNoMoreInteractions` in Java, `verify(exactly = n)` in Kotlin/MockK,
   `.Times(n)` in Go/gomock), not just assert on the method's return value. This is what actually distinguishes
@@ -170,3 +176,9 @@ database connections and other resources if there are such.
 * Application-layer unit tests must not re-verify domain business-rule validation (e.g. a domain method rejecting
   an invalid state or amount). That validation is owned and already covered by the
   domain layer's own unit tests; duplicating it at the application layer tests the domain, not the use case.
+* Within a single test method (a Go `t.Run` closure counts as one), any literal value used 2 or more times must be
+  extracted into a local variable declared at the top of that method/closure and reused at every occurrence,
+  instead of repeating the literal - e.g. an id passed into a constructor call and then re-checked in an assertion,
+  or a correlation id passed into the call under test and then repeated in a `verify`/`EXPECT` call. Scope the
+  variable to that one method only; do not hoist it to a shared file-level constant, and do not extract a value
+  that only appears once.

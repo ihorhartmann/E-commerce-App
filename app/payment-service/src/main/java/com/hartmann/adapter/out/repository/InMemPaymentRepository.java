@@ -23,17 +23,17 @@ public class InMemPaymentRepository implements PaymentRepository {
     public InMemPaymentRepository() {
         var now = Instant.now();
         List.of(
-                new Payment(1L, 1001L, "pi_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), PaymentStatus.COMPLETED, List.of(), now, now),
-                new Payment(2L, 1002L, "pi_seed_2", new Money(new BigDecimal("250.00"), Currency.USD), PaymentStatus.COMPLETED, List.of(), now, now),
-                new Payment(3L, 1003L, "pi_seed_3", new Money(new BigDecimal("75.00"), Currency.GBP), PaymentStatus.FAILED, List.of(), now, now),
-                new Payment(4L, 1004L, "pi_seed_4", new Money(new BigDecimal("45.00"), Currency.EUR), PaymentStatus.PENDING, List.of(), now, now)
+                Payment.createExisting(1L, 1001L, "pi_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), PaymentStatus.COMPLETED, List.of(), now, now),
+                Payment.createExisting(2L, 1002L, "pi_seed_2", new Money(new BigDecimal("250.00"), Currency.USD), PaymentStatus.COMPLETED, List.of(), now, now),
+                Payment.createExisting(3L, 1003L, "pi_seed_3", new Money(new BigDecimal("75.00"), Currency.GBP), PaymentStatus.FAILED, List.of(), now, now),
+                Payment.createExisting(4L, 1004L, "pi_seed_4", new Money(new BigDecimal("45.00"), Currency.EUR), PaymentStatus.PENDING, List.of(), now, now)
         ).forEach(payment -> payments.put(payment.id(), payment));
     }
 
     @Override
     public Payment create(Payment payment) {
         var id = idSequence.getAndIncrement();
-        var created = new Payment(
+        var created = Payment.createExisting(
                 id,
                 payment.orderId(),
                 payment.externalId(), payment.amount(),
@@ -71,7 +71,7 @@ public class InMemPaymentRepository implements PaymentRepository {
             throw new ObjectNotFoundException("Payment with id " + paymentId + " not found");
         }
 
-        var updated = new Payment(
+        var updated = Payment.createExisting(
                 existing.id(),
                 existing.orderId(),
                 existing.externalId(), existing.amount(),

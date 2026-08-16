@@ -6,20 +6,26 @@ import com.hartmann.domain.value.Money;
 import java.time.Instant;
 import java.util.List;
 
-public record Payment(
-        long id,
-        long orderId,
-        String externalId,
-        Money amount,
-        PaymentStatus status,
-        List<Refund> refunds,
-        Instant createdAt,
-        Instant updatedAt
-) {
-    public Payment {
-        if (id < 0) {
-            throw new DomainException("Payment id must not be negative");
-        }
+public class Payment {
+    private final long id;
+    private final long orderId;
+    private final String externalId;
+    private final Money amount;
+    private final PaymentStatus status;
+    private final List<Refund> refunds;
+    private final Instant createdAt;
+    private final Instant updatedAt;
+
+    private Payment(
+            long id,
+            long orderId,
+            String externalId,
+            Money amount,
+            PaymentStatus status,
+            List<Refund> refunds,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
         if (orderId <= 0) {
             throw new DomainException("Payment orderId must be positive");
         }
@@ -38,6 +44,47 @@ public record Payment(
         if (createdAt == null || updatedAt == null) {
             throw new DomainException("Payment createdAt/updatedAt must not be null");
         }
+
+        this.id = id;
+        this.orderId = orderId;
+        this.externalId = externalId;
+        this.amount = amount;
+        this.status = status;
+        this.refunds = refunds;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
+    public long id() {
+        return id;
+    }
+
+    public long orderId() {
+        return orderId;
+    }
+
+    public String externalId() {
+        return externalId;
+    }
+
+    public Money amount() {
+        return amount;
+    }
+
+    public PaymentStatus status() {
+        return status;
+    }
+
+    public List<Refund> refunds() {
+        return refunds;
+    }
+
+    public Instant createdAt() {
+        return createdAt;
+    }
+
+    public Instant updatedAt() {
+        return updatedAt;
     }
 
     public Refund createRefund(Money amount) {
@@ -58,7 +105,50 @@ public record Payment(
                             + " for payment " + id);
         }
 
+        return Refund.createNew(id, null, amount, RefundStatus.PENDING);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Payment other)) {
+            return false;
+        }
+        return id != 0 && id == other.id;
+    }
+
+    @Override
+    public int hashCode() {
+        return Long.hashCode(id);
+    }
+
+    @Override
+    public String toString() {
+        return "Payment{id=" + id + ", orderId=" + orderId + ", externalId='" + externalId + "', amount=" + amount
+                + ", status=" + status + ", refunds=" + refunds + ", createdAt=" + createdAt
+                + ", updatedAt=" + updatedAt + "}";
+    }
+
+    public static Payment createNew(long orderId, String externalId, Money amount) {
         var now = Instant.now();
-        return new Refund(0L, id, null, amount, RefundStatus.PENDING, now, now);
+        return new Payment(0L, orderId, externalId, amount, PaymentStatus.PENDING, List.of(), now, now);
+    }
+
+    public static Payment createExisting(
+            long id,
+            long orderId,
+            String externalId,
+            Money amount,
+            PaymentStatus status,
+            List<Refund> refunds,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        if (id <= 0) {
+            throw new DomainException("Payment id must be positive");
+        }
+        return new Payment(id, orderId, externalId, amount, status, refunds, createdAt, updatedAt);
     }
 }

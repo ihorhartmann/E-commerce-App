@@ -10,22 +10,25 @@ import kotlin.test.assertFailsWith
 class MoneyTest {
 
     @Test
-    fun `creates money with a non-negative amount`() {
-        val money = Money(BigDecimal("10.00"), Currency.USD)
+    fun `constructor - creates money with a non-negative amount`() {
+        val amount = BigDecimal("10.00")
+        val currency = Currency.USD
+        val money = Money(amount, currency)
 
-        assertEquals(BigDecimal("10.00"), money.amount)
-        assertEquals(Currency.USD, money.currency)
+        assertEquals(amount, money.amount)
+        assertEquals(currency, money.currency)
     }
 
     @Test
-    fun `allows a zero amount`() {
-        val money = Money(BigDecimal.ZERO, Currency.USD)
+    fun `constructor - allows a zero amount`() {
+        val amount = BigDecimal.ZERO
+        val money = Money(amount, Currency.USD)
 
-        assertEquals(BigDecimal.ZERO, money.amount)
+        assertEquals(amount, money.amount)
     }
 
     @Test
-    fun `rejects a negative amount`() {
+    fun `constructor - rejects a negative amount`() {
         assertFailsWith<IllegalArgumentException> { Money(BigDecimal("-10.00"), Currency.USD) }
     }
 }

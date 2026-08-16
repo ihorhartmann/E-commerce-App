@@ -21,22 +21,22 @@ class InMemoryOrderRepository : OrderRepository {
 
     init {
         listOf(
-            Order.create(
+            Order.createNew(
                 userId = 1,
-                items = listOf(OrderItem(0, 0, 101, 2, Money(BigDecimal("19.99"), Currency.EUR))),
+                items = listOf(OrderItem.createNew(101, 2, Money(BigDecimal("19.99"), Currency.EUR))),
                 address = Address("Kyiv", "01001", "Khreshchatyk St, 1", ""),
             ),
-            Order.create(
+            Order.createNew(
                 userId = 2,
                 items = listOf(
-                    OrderItem(0, 0, 102, 1, Money(BigDecimal("49.50"), Currency.EUR)),
-                    OrderItem(0, 0, 103, 3, Money(BigDecimal("7.25"), Currency.EUR)),
+                    OrderItem.createNew(102, 1, Money(BigDecimal("49.50"), Currency.EUR)),
+                    OrderItem.createNew(103, 3, Money(BigDecimal("7.25"), Currency.EUR)),
                 ),
                 address = Address("Lviv", "79000", "Svobody Ave, 10", "Apt 5"),
             ),
-            Order.create(
+            Order.createNew(
                 userId = 3,
-                items = listOf(OrderItem(0, 0, 104, 1, Money(BigDecimal("99.00"), Currency.USD))),
+                items = listOf(OrderItem.createNew(104, 1, Money(BigDecimal("99.00"), Currency.USD))),
                 address = Address("Warsaw", "00-001", "Marszalkowska St, 20", ""),
             ),
         ).forEach(::save)
@@ -45,11 +45,21 @@ class InMemoryOrderRepository : OrderRepository {
     override fun save(order: Order): Order {
         val storedOrder = if (order.id == 0L) {
             val orderId = orderSequence.incrementAndGet()
-            order.copy(
+            Order.createExisting(
                 id = orderId,
-                items = order.items.map { item ->
-                    item.copy(id = itemSequence.incrementAndGet(), orderId = orderId)
+                userId = order.userId,
+                items = order.items.map {
+                    OrderItem.createExisting(itemSequence.incrementAndGet(), orderId, it.productId, it.quantity, it.price)
                 },
+                address = order.address,
+                status = order.status,
+                paymentConfirmedAt = order.paymentConfirmedAt,
+                shipment = order.shipment,
+                cancellationReason = order.cancellationReason,
+                awaitingReturn = order.awaitingReturn,
+                refund = order.refund,
+                createdAt = order.createdAt,
+                updatedAt = order.updatedAt,
             )
         } else {
             order

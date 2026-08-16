@@ -16,15 +16,17 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
+import com.hartmann.entities.model.OrderStatus
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
+import java.time.LocalDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-private fun testItem() = OrderItem(
+private fun testItem() = OrderItem.createExisting(
     id = 1,
     orderId = 1,
     productId = 1,
@@ -32,7 +34,12 @@ private fun testItem() = OrderItem(
     price = Money(BigDecimal("10.00"), Currency.USD),
 )
 
-private fun newOrder() = Order.create(userId = 1, items = listOf(testItem()), address = testAddress())
+private fun newOrder(id: Long = 0): Order =
+    if (id == 0L) {
+        Order.createNew(userId = 1, items = listOf(testItem()), address = testAddress())
+    } else {
+        Order.createExisting(id = id, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = LocalDateTime.now())
+    }
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class PlaceOrderUseCaseImplTest {
@@ -46,11 +53,12 @@ class PlaceOrderUseCaseImplTest {
 
     @Test
     fun `execute - places an order when reservation and payment both succeed`() {
+        val orderId = 1L
         val order = newOrder()
-        val createdOrder = order.copy(id = 1)
+        val createdOrder = newOrder(id = orderId)
         every { orderRepository.save(order) } returns createdOrder
-        every { inventoryClient.reserve(1, createdOrder.items) } just Runs
-        every { paymentClient.submitPayment(1, createdOrder.totalPrice()) } returns
+        every { inventoryClient.reserve(orderId, createdOrder.items) } just Runs
+        every { paymentClient.submitPayment(orderId, createdOrder.totalPrice()) } returns
             SubmitPaymentResult(10L, "secret_123")
 
         val result = useCase.execute(order)
@@ -63,12 +71,13 @@ class PlaceOrderUseCaseImplTest {
 
     @Test
     fun `execute - marks the order out of stock and rethrows when reservation reports insufficient stock`() {
+        val orderId = 1L
         val order = newOrder()
-        val createdOrder = order.copy(id = 1)
+        val createdOrder = newOrder(id = orderId)
         val outOfStockOrder = createdOrder.outOfStock()
         every { orderRepository.save(order) } returns createdOrder
         every { orderRepository.save(outOfStockOrder) } returns outOfStockOrder
-        every { inventoryClient.reserve(1, createdOrder.items) } throws InsufficientStockException("no stock")
+        every { inventoryClient.reserve(orderId, createdOrder.items) } throws InsufficientStockException("no stock")
 
         assertFailsWith<InsufficientStockException> { useCase.execute(order) }
 
@@ -78,12 +87,13 @@ class PlaceOrderUseCaseImplTest {
 
     @Test
     fun `execute - fails the reservation and rethrows on any other reservation error`() {
+        val orderId = 1L
         val order = newOrder()
-        val createdOrder = order.copy(id = 1)
+        val createdOrder = newOrder(id = orderId)
         val failedOrder = createdOrder.failReservation()
         every { orderRepository.save(order) } returns createdOrder
         every { orderRepository.save(failedOrder) } returns failedOrder
-        every { inventoryClient.reserve(1, createdOrder.items) } throws Exception("inventory unreachable")
+        every { inventoryClient.reserve(orderId, createdOrder.items) } throws Exception("inventory unreachable")
 
         assertFailsWith<Exception> { useCase.execute(order) }
 
@@ -93,17 +103,18 @@ class PlaceOrderUseCaseImplTest {
 
     @Test
     fun `execute - fails the payment, cancels the reservation and rethrows when payment submission errors`() {
+        val orderId = 1L
         val order = newOrder()
-        val createdOrder = order.copy(id = 1)
+        val createdOrder = newOrder(id = orderId)
         val failedOrder = createdOrder.failPayment()
         every { orderRepository.save(order) } returns createdOrder
         every { orderRepository.save(failedOrder) } returns failedOrder
-        every { inventoryClient.reserve(1, createdOrder.items) } just Runs
-        every { paymentClient.submitPayment(1, createdOrder.totalPrice()) } throws Exception("gateway down")
+        every { inventoryClient.reserve(orderId, createdOrder.items) } just Runs
+        every { paymentClient.submitPayment(orderId, createdOrder.totalPrice()) } throws Exception("gateway down")
 
         assertFailsWith<Exception> { useCase.execute(order) }
 
         verify(exactly = 1) { orderRepository.save(failedOrder) }
-        verify(exactly = 1) { kafkaProducer.publishCancelReservation("1", 1L) }
+        verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }
     }
 }

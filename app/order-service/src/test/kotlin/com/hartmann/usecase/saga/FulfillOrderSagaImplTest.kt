@@ -19,6 +19,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
+import java.time.LocalDateTime
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,7 +28,7 @@ import kotlin.test.assertNotNull
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-private fun testItem() = OrderItem(
+private fun testItem() = OrderItem.createExisting(
     id = 1,
     orderId = 1,
     productId = 1,
@@ -36,7 +37,7 @@ private fun testItem() = OrderItem(
 )
 
 private fun placedOrder() =
-    Order.create(userId = 1, items = listOf(testItem()), address = testAddress()).copy(id = 1)
+    Order.createExisting(id = 1, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = LocalDateTime.now())
 
 private fun processingOrder() = placedOrder().confirmPayment()
 
@@ -69,64 +70,75 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onPaymentCompleted - confirms payment and requests a shipment`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = placedOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentCompleted(PaymentCompletedEvent(1), "corr-1")
+        saga.onPaymentCompleted(PaymentCompletedEvent(orderId), correlationId)
 
         assertEquals(OrderStatus.PROCESSING, savedOrder?.status)
-        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment("corr-1", 1, order.address) }
+        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.address) }
     }
 
     @Test
     fun `onPaymentFailed - fails the order and cancels the reservation`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = placedOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentFailed(PaymentFailedEvent(1), "corr-1")
+        saga.onPaymentFailed(PaymentFailedEvent(orderId), correlationId)
 
         assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
-        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation("corr-1", 1) }
+        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
     }
 
     @Test
     fun `onShipmentCreationFailed - cancels the reservation and requests a refund`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = processingOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCreationFailed(ShipmentCreationFailedEvent(1), "corr-1")
+        saga.onShipmentCreationFailed(ShipmentCreationFailedEvent(orderId), correlationId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertNotNull(savedOrder?.refund)
-        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation("corr-1", 1) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested("corr-1", 1, any(), any()) }
+        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
+        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
     }
 
     @Test
     fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
+        val trackingNumber = "TRACK-1"
         val order = processingOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCreated(1, "TRACK-1", "corr-1")
+        saga.onShipmentCreated(orderId, trackingNumber, correlationId)
 
-        assertEquals("TRACK-1", savedOrder?.shipment?.trackingNumber)
-        verify(exactly = 1) { orderKafkaProducer.publishHoldReservation("corr-1", 1) }
+        assertEquals(trackingNumber, savedOrder?.shipment?.trackingNumber)
+        verify(exactly = 1) { orderKafkaProducer.publishHoldReservation(correlationId, orderId) }
     }
 
     @Test
     fun `onShipmentInDelivery - marks the shipment picked up and fulfills the reservation`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = orderWithShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentInDelivery(1, "corr-1")
+        saga.onShipmentInDelivery(orderId, correlationId)
 
         assertEquals(true, savedOrder?.wasPickedUp())
-        verify(exactly = 1) { orderKafkaProducer.publishFulfillReservation("corr-1", 1) }
+        verify(exactly = 1) { orderKafkaProducer.publishFulfillReservation(correlationId, orderId) }
     }
 
     @Test
@@ -148,67 +160,76 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onShipmentCancelled - after pickup only requests a refund - reservation already left the warehouse`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = orderInDelivery()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(1, "corr-1")
+        saga.onShipmentCancelled(orderId, correlationId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested("corr-1", 1, any(), any()) }
+        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
     }
 
     @Test
     fun `onShipmentCancelled - before pickup also cancels the reservation`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = orderWithShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(1, "corr-1")
+        saga.onShipmentCancelled(orderId, correlationId)
 
         assertNotEquals(true, savedOrder?.awaitingReturn)
-        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation("corr-1", 1) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested("corr-1", 1, any(), any()) }
+        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
+        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
     }
 
     @Test
     fun `onShipmentLost - requests a refund without touching the reservation`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = orderInDelivery()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentLost(1, "corr-1")
+        saga.onShipmentLost(orderId, correlationId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertNotEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested("corr-1", 1, any(), any()) }
+        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
     }
 
     @Test
     fun `onShipmentReturnedToInventory - publishes a restock command with the order's items`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
         val order = orderInDelivery().cancelShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentReturnedToInventory(1, "corr-1")
+        saga.onShipmentReturnedToInventory(orderId, correlationId)
 
         verify(exactly = 1) {
-            orderKafkaProducer.publishRestock("corr-1", 1, listOf(RestockItemDto(testItem().productId, testItem().quantity)))
+            orderKafkaProducer.publishRestock(correlationId, orderId, listOf(RestockItemDto(testItem().productId, testItem().quantity)))
         }
     }
 
     @Test
     fun `onRefundCompleted - confirms the refund with the reported amount and currency`() {
+        val amount = BigDecimal("20.00")
         val order = orderInDelivery().cancelShipment().requestRefund()
         stubGetOrder(order)
         stubSave()
 
-        saga.onRefundCompleted(RefundCompletedEvent(1, BigDecimal("20.00"), "USD"), "corr-1")
+        saga.onRefundCompleted(RefundCompletedEvent(1, amount, "USD"), "corr-1")
 
-        assertEquals(BigDecimal("20.00"), savedOrder?.refund?.amount?.amount)
+        assertEquals(amount, savedOrder?.refund?.amount?.amount)
         assertEquals(true, savedOrder?.refund?.isConfirmed)
     }
 

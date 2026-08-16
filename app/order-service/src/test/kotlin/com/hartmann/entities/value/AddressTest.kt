@@ -16,32 +16,36 @@ private fun testAddress(
 class AddressTest {
 
     @Test
-    fun `creates an address with all fields set`() {
-        val address = testAddress(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "Apt 5")
+    fun `constructor - creates an address with all fields set`() {
+        val city = "Kyiv"
+        val postalCode = "01001"
+        val line1 = "Khreshchatyk 1"
+        val line2 = "Apt 5"
+        val address = testAddress(city = city, postalCode = postalCode, line1 = line1, line2 = line2)
 
-        assertEquals("Kyiv", address.city)
-        assertEquals("01001", address.postalCode)
-        assertEquals("Khreshchatyk 1", address.line1)
-        assertEquals("Apt 5", address.line2)
+        assertEquals(city, address.city)
+        assertEquals(postalCode, address.postalCode)
+        assertEquals(line1, address.line1)
+        assertEquals(line2, address.line2)
     }
 
     @Test
-    fun `rejects a blank city`() {
+    fun `constructor - rejects a blank city`() {
         assertFailsWith<IllegalArgumentException> { testAddress(city = "") }
     }
 
     @Test
-    fun `rejects a blank postal code`() {
+    fun `constructor - rejects a blank postal code`() {
         assertFailsWith<IllegalArgumentException> { testAddress(postalCode = "") }
     }
 
     @Test
-    fun `rejects a blank line1`() {
+    fun `constructor - rejects a blank line1`() {
         assertFailsWith<IllegalArgumentException> { testAddress(line1 = "") }
     }
 
     @Test
-    fun `allows a blank line2`() {
+    fun `constructor - allows a blank line2`() {
         val address = testAddress(line2 = "")
 
         assertEquals("", address.line2)

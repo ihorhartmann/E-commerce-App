@@ -18,7 +18,7 @@ data class PlaceOrderRequest(
     @field:NotNull @field:Valid val address: AddressRequest,
 )
 
-fun fromPlaceOrderRequest(request: PlaceOrderRequest): Order = Order.create(
+fun fromPlaceOrderRequest(request: PlaceOrderRequest): Order = Order.createNew(
     userId = request.userId,
     items = request.items.map { fromOrderItemRequest(it) },
     address = fromAddressRequest(request.address),
@@ -31,7 +31,7 @@ data class OrderItemRequest(
 )
 
 private fun fromOrderItemRequest(request: OrderItemRequest): OrderItem =
-    OrderItem(0, 0, request.productId, request.quantity, fromMoneyRequest(request.price))
+    OrderItem.createNew(request.productId, request.quantity, fromMoneyRequest(request.price))
 
 data class MoneyRequest(
     @field:NotNull @field:Positive val amount: BigDecimal,

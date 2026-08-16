@@ -11,36 +11,40 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class MoneyTest {
 
     @Test
-    void createsMoneyWithANonNegativeAmount() {
-        var money = new Money(new BigDecimal("10.00"), Currency.USD);
+    void constructor_createsMoneyWithANonNegativeAmount() {
+        var amount = "10.00";
+        var currency = Currency.USD;
+        var money = new Money(new BigDecimal(amount), currency);
 
-        assertThat(money.amount()).isEqualByComparingTo("10.00");
-        assertThat(money.currency()).isEqualTo(Currency.USD);
+        assertThat(money.amount()).isEqualByComparingTo(amount);
+        assertThat(money.currency()).isEqualTo(currency);
     }
 
     @Test
-    void allowsAZeroAmount() {
-        var money = new Money(BigDecimal.ZERO, Currency.USD);
+    void constructor_allowsAZeroAmount() {
+        var amount = BigDecimal.ZERO;
+        var money = new Money(amount, Currency.USD);
 
-        assertThat(money.amount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(money.amount()).isEqualByComparingTo(amount);
     }
 
     @Test
-    void rejectsANegativeAmount() {
+    void constructor_rejectsANegativeAmount() {
         assertThatThrownBy(() -> new Money(new BigDecimal("-1"), Currency.USD))
                 .isInstanceOf(DomainException.class);
     }
 
     @Test
-    void zeroBuildsAZeroAmountInTheGivenCurrency() {
-        var money = Money.zero(Currency.EUR);
+    void zero_buildsAZeroAmountInTheGivenCurrency() {
+        var currency = Currency.EUR;
+        var money = Money.zero(currency);
 
         assertThat(money.amount()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(money.currency()).isEqualTo(Currency.EUR);
+        assertThat(money.currency()).isEqualTo(currency);
     }
 
     @Test
-    void addSumsAmountsInTheSameCurrency() {
+    void add_sumsAmountsInTheSameCurrency() {
         var sum = new Money(new BigDecimal("10.00"), Currency.USD)
                 .add(new Money(new BigDecimal("5.00"), Currency.USD));
 
@@ -48,7 +52,7 @@ class MoneyTest {
     }
 
     @Test
-    void addThrowsOnCurrencyMismatch() {
+    void add_throwsOnCurrencyMismatch() {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 
@@ -56,7 +60,7 @@ class MoneyTest {
     }
 
     @Test
-    void subtractSubtractsAmountsInTheSameCurrency() {
+    void subtract_subtractsAmountsInTheSameCurrency() {
         var difference = new Money(new BigDecimal("10.00"), Currency.USD)
                 .subtract(new Money(new BigDecimal("4.00"), Currency.USD));
 
@@ -64,7 +68,7 @@ class MoneyTest {
     }
 
     @Test
-    void subtractThrowsOnCurrencyMismatch() {
+    void subtract_throwsOnCurrencyMismatch() {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 
@@ -72,16 +76,17 @@ class MoneyTest {
     }
 
     @Test
-    void isGreaterThanComparesAmountsInTheSameCurrency() {
-        var ten = new Money(new BigDecimal("10.00"), Currency.USD);
-        var five = new Money(new BigDecimal("5.00"), Currency.USD);
+    void isGreaterThan_comparesAmountsInTheSameCurrency() {
+        var currency = Currency.USD;
+        var ten = new Money(new BigDecimal("10.00"), currency);
+        var five = new Money(new BigDecimal("5.00"), currency);
 
         assertThat(ten.isGreaterThan(five)).isTrue();
         assertThat(five.isGreaterThan(ten)).isFalse();
     }
 
     @Test
-    void isGreaterThanThrowsOnCurrencyMismatch() {
+    void isGreaterThan_throwsOnCurrencyMismatch() {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 

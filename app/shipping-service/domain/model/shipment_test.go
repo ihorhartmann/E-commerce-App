@@ -56,16 +56,18 @@ func cancelledBeforePickupShipment(t *testing.T) *Shipment {
 
 func TestNewShipment(t *testing.T) {
 	t.Run("creates a shipment in Created status, held by inventory", func(t *testing.T) {
-		shipment, err := NewShipment(100, "TRACK-1", testAddress(t))
+		orderID := uint64(100)
+		trackingNumber := "TRACK-1"
+		shipment, err := NewShipment(orderID, trackingNumber, testAddress(t))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if shipment.OrderId() != 100 {
-			t.Errorf("OrderId() = %d, want 100", shipment.OrderId())
+		if shipment.OrderId() != orderID {
+			t.Errorf("OrderId() = %d, want %d", shipment.OrderId(), orderID)
 		}
-		if shipment.TrackingNumber() != "TRACK-1" {
-			t.Errorf("TrackingNumber() = %q, want %q", shipment.TrackingNumber(), "TRACK-1")
+		if shipment.TrackingNumber() != trackingNumber {
+			t.Errorf("TrackingNumber() = %q, want %q", shipment.TrackingNumber(), trackingNumber)
 		}
 		if shipment.Status() != Created {
 			t.Errorf("Status() = %v, want %v", shipment.Status(), Created)
@@ -94,13 +96,14 @@ func TestNewExistingShipment(t *testing.T) {
 	now := time.Now()
 
 	t.Run("creates a shipment with the given fields", func(t *testing.T) {
-		shipment, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), InDelivery, HolderCourier, now, now)
+		id := uint64(1)
+		shipment, err := NewExistingShipment(id, 100, "TRACK-1", testAddress(t), InDelivery, HolderCourier, now, now)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if shipment.Id() != 1 {
-			t.Errorf("Id() = %d, want 1", shipment.Id())
+		if shipment.Id() != id {
+			t.Errorf("Id() = %d, want %d", shipment.Id(), id)
 		}
 		if shipment.Status() != InDelivery {
 			t.Errorf("Status() = %v, want %v", shipment.Status(), InDelivery)

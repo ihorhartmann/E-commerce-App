@@ -11,9 +11,6 @@ import com.hartmann.domain.value.Money;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-import java.util.List;
-
 @Service
 public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
@@ -38,11 +35,10 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentIntentResult submitPayment(long orderId, Money amount) {
         var result = paymentGateway.submitPayment(orderId, amount);
-        var now = Instant.now();
 
         //TODO create before submit, and then update with externalId
         var payment = paymentRepository.create(
-                new Payment(0L, orderId, result.externalId(), amount, PaymentStatus.PENDING, List.of(), now, now)
+                Payment.createNew(orderId, result.externalId(), amount)
         );
 
         return new PaymentIntentResult(payment, result.clientSecret());

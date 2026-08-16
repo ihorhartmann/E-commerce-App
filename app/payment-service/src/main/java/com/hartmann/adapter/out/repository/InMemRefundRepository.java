@@ -23,16 +23,16 @@ public class InMemRefundRepository implements RefundRepository {
     public InMemRefundRepository() {
         var now = Instant.now();
         List.of(
-                new Refund(1L, 1L, "re_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),
-                new Refund(2L, 2L, "re_seed_2", new Money(new BigDecimal("50.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now),
-                new Refund(3L, 2L, "re_seed_3", new Money(new BigDecimal("75.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now)
+                Refund.createExisting(1L, 1L, "re_seed_1", new Money(new BigDecimal("100.00"), Currency.EUR), RefundStatus.SUCCEEDED, now, now),
+                Refund.createExisting(2L, 2L, "re_seed_2", new Money(new BigDecimal("50.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now),
+                Refund.createExisting(3L, 2L, "re_seed_3", new Money(new BigDecimal("75.00"), Currency.USD), RefundStatus.SUCCEEDED, now, now)
         ).forEach(refund -> refunds.put(refund.id(), refund));
     }
 
     @Override
     public Refund create(Refund refund) {
         var id = idSequence.getAndIncrement();
-        var created = new Refund(
+        var created = Refund.createExisting(
                 id,
                 refund.paymentId(),
                 refund.externalId(), refund.amount(),
@@ -69,7 +69,7 @@ public class InMemRefundRepository implements RefundRepository {
             throw new ObjectNotFoundException("Refund with id " + refundId + " not found");
         }
 
-        var updated = new Refund(
+        var updated = Refund.createExisting(
                 existing.id(),
                 existing.paymentId(),
                 existing.externalId(), existing.amount(),

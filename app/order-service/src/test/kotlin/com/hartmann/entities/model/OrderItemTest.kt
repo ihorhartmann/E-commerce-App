@@ -7,55 +7,110 @@ import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 
-private fun testOrderItem(
-    id: Long = 1,
-    orderId: Long = 1,
-    productId: Long = 1,
-    quantity: Int = 1,
-    price: Money = Money(BigDecimal("10.00"), Currency.USD),
-) = OrderItem(id = id, orderId = orderId, productId = productId, quantity = quantity, price = price)
+private fun testPrice() = Money(BigDecimal("10.00"), Currency.USD)
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderItemTest {
 
-    @Test
-    fun `creates an order item with all fields set`() {
-        val item = testOrderItem(id = 1, orderId = 2, productId = 3, quantity = 4)
+    // --- constructor ---
 
-        assertEquals(1, item.id)
-        assertEquals(2, item.orderId)
-        assertEquals(3, item.productId)
-        assertEquals(4, item.quantity)
+    @Test
+    fun `constructor - rejects a zero productId`() {
+        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 0, quantity = 1, price = testPrice()) }
     }
 
     @Test
-    fun `rejects a negative id`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(id = -1) }
+    fun `constructor - rejects a negative productId`() {
+        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = -1, quantity = 1, price = testPrice()) }
     }
 
     @Test
-    fun `rejects a negative orderId`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(orderId = -1) }
+    fun `constructor - rejects a zero quantity`() {
+        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = 0, price = testPrice()) }
     }
 
     @Test
-    fun `rejects a zero productId`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(productId = 0) }
+    fun `constructor - rejects a negative quantity`() {
+        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = -1, price = testPrice()) }
+    }
+
+    // --- createNew ---
+
+    @Test
+    fun `createNew - creates an order item with id and orderId defaulted to zero`() {
+        val productId = 3L
+        val quantity = 4
+        val item = OrderItem.createNew(productId = productId, quantity = quantity, price = testPrice())
+
+        assertEquals(0L, item.id)
+        assertEquals(0L, item.orderId)
+        assertEquals(productId, item.productId)
+        assertEquals(quantity, item.quantity)
+    }
+
+    // --- createExisting ---
+
+    @Test
+    fun `createExisting - creates an order item with all fields set`() {
+        val id = 1L
+        val orderId = 2L
+        val productId = 3L
+        val quantity = 4
+        val item = OrderItem.createExisting(id = id, orderId = orderId, productId = productId, quantity = quantity, price = testPrice())
+
+        assertEquals(id, item.id)
+        assertEquals(orderId, item.orderId)
+        assertEquals(productId, item.productId)
+        assertEquals(quantity, item.quantity)
     }
 
     @Test
-    fun `rejects a negative productId`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(productId = -1) }
+    fun `createExisting - throws when id is not positive`() {
+        assertFailsWith<IllegalArgumentException> {
+            OrderItem.createExisting(id = 0, orderId = 1, productId = 1, quantity = 1, price = testPrice())
+        }
     }
 
     @Test
-    fun `rejects a zero quantity`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(quantity = 0) }
+    fun `createExisting - throws when orderId is not positive`() {
+        assertFailsWith<IllegalArgumentException> {
+            OrderItem.createExisting(id = 1, orderId = 0, productId = 1, quantity = 1, price = testPrice())
+        }
+    }
+
+    // --- equals ---
+
+    @Test
+    fun `equals - returns true for order items with the same id`() {
+        val id = 1L
+        val a = OrderItem.createExisting(id = id, orderId = 1, productId = 1, quantity = 1, price = testPrice())
+        val b = OrderItem.createExisting(id = id, orderId = 1, productId = 1, quantity = 5, price = testPrice())
+
+        assertEquals(a, b)
     }
 
     @Test
-    fun `rejects a negative quantity`() {
-        assertFailsWith<IllegalArgumentException> { testOrderItem(quantity = -1) }
+    fun `equals - returns false for order items with different ids`() {
+        val a = OrderItem.createExisting(id = 1, orderId = 1, productId = 1, quantity = 1, price = testPrice())
+        val b = OrderItem.createExisting(id = 2, orderId = 1, productId = 1, quantity = 1, price = testPrice())
+
+        assertNotEquals(a, b)
+    }
+
+    @Test
+    fun `equals - returns false when both order items are not yet persisted`() {
+        val a = OrderItem.createNew(productId = 1, quantity = 1, price = testPrice())
+        val b = OrderItem.createNew(productId = 1, quantity = 1, price = testPrice())
+
+        assertNotEquals(a, b)
+    }
+
+    @Test
+    fun `equals - returns false for an object of a different type`() {
+        val item = OrderItem.createExisting(id = 1, orderId = 1, productId = 1, quantity = 1, price = testPrice())
+
+        assertNotEquals<Any>(item, "not an order item")
     }
 }

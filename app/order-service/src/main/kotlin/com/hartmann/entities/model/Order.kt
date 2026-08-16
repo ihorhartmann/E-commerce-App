@@ -9,7 +9,7 @@ import com.hartmann.entities.value.ShipmentInfo
 import java.time.LocalDateTime
 import java.math.BigDecimal
 
-data class Order(
+class Order private constructor(
     val id: Long,
     val userId: Long,
     val items: List<OrderItem>,
@@ -24,7 +24,6 @@ data class Order(
     val updatedAt: LocalDateTime? = null,
 ) {
     init {
-        require(id >= 0) { "id must not be negative" }
         require(userId > 0) { "userId must be positive" }
         require(items.isNotEmpty()) { "order must contain at least one item" }
         require(items.map { it.price.currency }.distinct().size == 1) { "all order item currencies must match" }
@@ -42,57 +41,57 @@ data class Order(
     /** Reservation request failed for a reason other than insufficient stock (e.g. Inventory unreachable). */
     fun failReservation(): Order {
         requireStatus("fail reservation", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.RESERVATION_FAILED)
+        return withState(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.RESERVATION_FAILED)
     }
 
     /** Reservation request failed specifically because the requested quantity is not available. */
     fun outOfStock(): Order {
         requireStatus("mark out of stock", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.OUT_OF_STOCK)
+        return withState(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.OUT_OF_STOCK)
     }
 
     /** No charge ever succeeded at this point, so there is nothing to refund. */
     fun failPayment(): Order {
         requireStatus("fail payment", OrderStatus.PLACED)
-        return copy(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.PAYMENT_FAILED)
+        return withState(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.PAYMENT_FAILED)
     }
 
     fun confirmPayment(): Order {
         requireStatus("confirm payment", OrderStatus.PLACED)
-        return copy(status = OrderStatus.PROCESSING, paymentConfirmedAt = LocalDateTime.now())
+        return withState(status = OrderStatus.PROCESSING, paymentConfirmedAt = LocalDateTime.now())
     }
 
     fun createShipment(trackingNumber: String): Order {
         requireStatus("create shipment", OrderStatus.PROCESSING)
-        return copy(shipment = ShipmentInfo.create(trackingNumber))
+        return withState(shipment = ShipmentInfo.create(trackingNumber))
     }
 
     fun startDelivery(): Order {
         requireStatus("start delivery", OrderStatus.PROCESSING)
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to start delivery for" }
-        return copy(shipment = currentShipment.pickUp())
+        return withState(shipment = currentShipment.pickUp())
     }
 
     fun deliver(): Order {
         requireStatus("deliver", OrderStatus.PROCESSING)
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to deliver" }
-        return copy(status = OrderStatus.FULFILLED, shipment = currentShipment.deliver())
+        return withState(status = OrderStatus.FULFILLED, shipment = currentShipment.deliver())
     }
 
     /** Shipment was never created, so there's nothing to physically return. */
     fun failShipmentCreation(): Order {
         requireStatus("fail shipment creation", OrderStatus.PROCESSING)
-        return copy(
+        return withState(
             status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.SHIPMENT_CREATION_FAILED,
-            awaitingReturn = false
+            awaitingReturn = false,
         )
     }
 
     /** The goods are lost, not coming back - no return to wait for. */
     fun loseShipment(): Order {
         requireStatus("lose shipment", OrderStatus.PROCESSING)
-        return copy(
+        return withState(
             status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.SHIPMENT_LOST,
             awaitingReturn = false,
@@ -108,16 +107,16 @@ data class Order(
      */
     fun cancelShipment(): Order {
         requireStatus("cancel shipment", OrderStatus.PROCESSING)
-        return copy(
+        return withState(
             status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
-            awaitingReturn = wasPickedUp()
+            awaitingReturn = wasPickedUp(),
         )
     }
 
     fun requestRefund(): Order {
         requireStatus("request refund", OrderStatus.CANCEL_REQUESTED)
-        return copy(refund = RefundInfo.request())
+        return withState(refund = RefundInfo.request())
     }
 
     /** The courier physically returned the goods. Finalizes to CANCELLED if the refund already confirmed. */
@@ -125,7 +124,7 @@ data class Order(
         requireStatus("return to stock", OrderStatus.CANCEL_REQUESTED)
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to return" }
         val nextStatus = if (refund?.isConfirmed == true) OrderStatus.CANCELLED else OrderStatus.CANCEL_REQUESTED
-        return copy(status = nextStatus, shipment = currentShipment.returnToInventory(), awaitingReturn = false)
+        return withState(status = nextStatus, shipment = currentShipment.returnToInventory(), awaitingReturn = false)
     }
 
     /**
@@ -138,14 +137,14 @@ data class Order(
         requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
         val currentRefund = requireNotNull(refund) { "order $id has no refund request to confirm" }
         val nextStatus = if (awaitingReturn) OrderStatus.CANCEL_REQUESTED else OrderStatus.CANCELLED
-        return copy(status = nextStatus, refund = currentRefund.confirm(amount))
+        return withState(status = nextStatus, refund = currentRefund.confirm(amount))
     }
 
     /** Payment service reported the refund failed; the order stays CANCEL_REQUESTED, flagged for follow-up. */
     fun markRefundFailed(): Order {
         requireStatus("mark refund failed", OrderStatus.CANCEL_REQUESTED)
         val currentRefund = requireNotNull(refund) { "order $id has no refund request to fail" }
-        return copy(refund = currentRefund.markFailed())
+        return withState(refund = currentRefund.markFailed())
     }
 
     fun wasPickedUp(): Boolean {
@@ -160,12 +159,49 @@ data class Order(
         }
     }
 
+    /**
+     * Builds a new [Order] with the given fields overridden and everything else carried over from
+     * this instance - the hand-written equivalent of a data class' generated `copy`, kept private
+     * so only this class' own transition methods can reach around [requireStatus]'s guards.
+     */
+    private fun withState(
+        status: OrderStatus = this.status,
+        paymentConfirmedAt: LocalDateTime? = this.paymentConfirmedAt,
+        shipment: ShipmentInfo? = this.shipment,
+        cancellationReason: CancellationReason? = this.cancellationReason,
+        awaitingReturn: Boolean = this.awaitingReturn,
+        refund: RefundInfo? = this.refund,
+    ): Order {
+        return Order(
+            id = id,
+            userId = userId,
+            items = items,
+            address = address,
+            status = status,
+            paymentConfirmedAt = paymentConfirmedAt,
+            shipment = shipment,
+            cancellationReason = cancellationReason,
+            awaitingReturn = awaitingReturn,
+            refund = refund,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+        )
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Order) return false
+        return id != 0L && id == other.id
+    }
+
+    override fun hashCode(): Int = id.hashCode()
+
+    override fun toString(): String =
+        "Order(id=$id, userId=$userId, status=$status, cancellationReason=$cancellationReason, " +
+                "awaitingReturn=$awaitingReturn, shipment=$shipment, refund=$refund)"
+
     companion object {
-        fun create(
-            userId: Long,
-            items: List<OrderItem>,
-            address: Address,
-        ): Order {
+        fun createNew(userId: Long, items: List<OrderItem>, address: Address): Order {
             return Order(
                 id = 0,
                 userId = userId,
@@ -173,6 +209,37 @@ data class Order(
                 address = address,
                 status = OrderStatus.PLACED,
                 createdAt = LocalDateTime.now(),
+            )
+        }
+
+        fun createExisting(
+            id: Long,
+            userId: Long,
+            items: List<OrderItem>,
+            address: Address,
+            status: OrderStatus,
+            paymentConfirmedAt: LocalDateTime? = null,
+            shipment: ShipmentInfo? = null,
+            cancellationReason: CancellationReason? = null,
+            awaitingReturn: Boolean = false,
+            refund: RefundInfo? = null,
+            createdAt: LocalDateTime,
+            updatedAt: LocalDateTime? = null,
+        ): Order {
+            require(id > 0) { "id must be positive" }
+            return Order(
+                id = id,
+                userId = userId,
+                items = items,
+                address = address,
+                status = status,
+                paymentConfirmedAt = paymentConfirmedAt,
+                shipment = shipment,
+                cancellationReason = cancellationReason,
+                awaitingReturn = awaitingReturn,
+                refund = refund,
+                createdAt = createdAt,
+                updatedAt = updatedAt,
             )
         }
     }
