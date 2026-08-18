@@ -2,12 +2,12 @@ package com.hartmann.entities.model
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotEquals
 
 private fun testPrice() = Money(BigDecimal("10.00"), Currency.USD)
 
@@ -18,22 +18,22 @@ class OrderItemTest {
 
     @Test
     fun `constructor - rejects a zero productId`() {
-        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 0, quantity = 1, price = testPrice()) }
+        assertThrows<IllegalArgumentException> { OrderItem.createNew(productId = 0, quantity = 1, price = testPrice()) }
     }
 
     @Test
     fun `constructor - rejects a negative productId`() {
-        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = -1, quantity = 1, price = testPrice()) }
+        assertThrows<IllegalArgumentException> { OrderItem.createNew(productId = -1, quantity = 1, price = testPrice()) }
     }
 
     @Test
     fun `constructor - rejects a zero quantity`() {
-        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = 0, price = testPrice()) }
+        assertThrows<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = 0, price = testPrice()) }
     }
 
     @Test
     fun `constructor - rejects a negative quantity`() {
-        assertFailsWith<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = -1, price = testPrice()) }
+        assertThrows<IllegalArgumentException> { OrderItem.createNew(productId = 1, quantity = -1, price = testPrice()) }
     }
 
     // --- createNew ---
@@ -68,14 +68,14 @@ class OrderItemTest {
 
     @Test
     fun `createExisting - throws when id is not positive`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows<IllegalArgumentException> {
             OrderItem.createExisting(id = 0, orderId = 1, productId = 1, quantity = 1, price = testPrice())
         }
     }
 
     @Test
     fun `createExisting - throws when orderId is not positive`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows<IllegalArgumentException> {
             OrderItem.createExisting(id = 1, orderId = 0, productId = 1, quantity = 1, price = testPrice())
         }
     }
@@ -111,6 +111,6 @@ class OrderItemTest {
     fun `equals - returns false for an object of a different type`() {
         val item = OrderItem.createExisting(id = 1, orderId = 1, productId = 1, quantity = 1, price = testPrice())
 
-        assertNotEquals<Any>(item, "not an order item")
+        assertNotEquals(item, "not an order item")
     }
 }

@@ -1,13 +1,12 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
+import com.hartmann.entities.value.Currency
+import com.hartmann.entities.value.Money
+import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
+import com.hartmann.interfaceadapter.`in`.kafka.dto.RefundCompletedEvent
+import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
-import com.hartmann.usecase.port.`in`.saga.event.PaymentCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.PaymentFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.ShipmentCreationFailedEvent
-import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.messaging.handler.annotation.Header
@@ -33,22 +32,36 @@ class OrderKafkaConsumer(
         handleMessage(KafkaConst.PAYMENT_EVENTS_TOPIC, messageType, correlationId) {
             when (messageType) {
                 KafkaConst.PAYMENT_COMPLETED_EVENT -> {
-                    saga.onPaymentCompleted(objectMapper.readValue(payload, PaymentCompletedEvent::class.java), correlationId)
+                    saga.onPaymentCompleted(
+                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
+                        correlationId
+                    )
                     true
                 }
 
                 KafkaConst.PAYMENT_FAILED_EVENT -> {
-                    saga.onPaymentFailed(objectMapper.readValue(payload, PaymentFailedEvent::class.java), correlationId)
+                    saga.onPaymentFailed(
+                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
+                        correlationId
+                    )
                     true
                 }
 
                 KafkaConst.REFUND_COMPLETED_EVENT -> {
-                    saga.onRefundCompleted(objectMapper.readValue(payload, RefundCompletedEvent::class.java), correlationId)
+                    val event = objectMapper.readValue(payload, RefundCompletedEvent::class.java)
+                    saga.onRefundCompleted(
+                        event.orderId,
+                        Money(event.amount, Currency.fromCode(event.currency)),
+                        correlationId
+                    )
                     true
                 }
 
                 KafkaConst.REFUND_FAILED_EVENT -> {
-                    saga.onRefundFailed(objectMapper.readValue(payload, RefundFailedEvent::class.java), correlationId)
+                    saga.onRefundFailed(
+                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
+                        correlationId
+                    )
                     true
                 }
 
@@ -67,8 +80,8 @@ class OrderKafkaConsumer(
             when (messageType) {
                 KafkaConst.SHIPMENT_CREATION_FAILED_EVENT -> {
                     saga.onShipmentCreationFailed(
-                        objectMapper.readValue(payload, ShipmentCreationFailedEvent::class.java),
-                        correlationId,
+                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
+                        correlationId
                     )
                     true
                 }

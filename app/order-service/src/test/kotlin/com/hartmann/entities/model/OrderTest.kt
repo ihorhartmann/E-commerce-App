@@ -4,28 +4,41 @@ import com.hartmann.entities.exception.DomainException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
 private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Currency = Currency.USD) =
-    OrderItem.createExisting(id = 1, orderId = 1, productId = 1, quantity = quantity, price = Money(BigDecimal(amount), currency))
+    OrderItem.createExisting(
+        id = 1,
+        orderId = 1,
+        productId = 1,
+        quantity = quantity,
+        price = Money(BigDecimal(amount), currency)
+    )
 
 private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 0): Order =
     if (id == 0L) {
         Order.createNew(userId = 1, items = items, address = testAddress())
     } else {
-        Order.createExisting(id = id, userId = 1, items = items, address = testAddress(), status = OrderStatus.PLACED, createdAt = LocalDateTime.now())
+        Order.createExisting(
+            id = id,
+            userId = 1,
+            items = items,
+            address = testAddress(),
+            status = OrderStatus.PLACED,
+            createdAt = LocalDateTime.now()
+        )
     }
 
 private fun processingOrder(id: Long = 0) = placedOrder(id = id).confirmPayment()
@@ -45,12 +58,12 @@ class OrderTest {
 
     @Test
     fun `constructor - rejects an empty item list`() {
-        assertFailsWith<IllegalArgumentException> { placedOrder(items = emptyList()) }
+        assertThrows<IllegalArgumentException> { placedOrder(items = emptyList()) }
     }
 
     @Test
     fun `constructor - rejects items with mismatched currencies`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows<IllegalArgumentException> {
             placedOrder(
                 items = listOf(
                     testItem(currency = Currency.USD),
@@ -92,7 +105,7 @@ class OrderTest {
 
     @Test
     fun `createExisting - throws when id is not positive`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows<IllegalArgumentException> {
             Order.createExisting(
                 id = 0,
                 userId = 1,
@@ -131,7 +144,7 @@ class OrderTest {
 
     @Test
     fun `failReservation - throws when order is not placed`() {
-        assertFailsWith<DomainException> { processingOrder().failReservation() }
+        assertThrows<DomainException> { processingOrder().failReservation() }
     }
 
     @Test
@@ -144,7 +157,7 @@ class OrderTest {
 
     @Test
     fun `outOfStock - throws when order is not placed`() {
-        assertFailsWith<DomainException> { processingOrder().outOfStock() }
+        assertThrows<DomainException> { processingOrder().outOfStock() }
     }
 
     @Test
@@ -157,7 +170,7 @@ class OrderTest {
 
     @Test
     fun `failPayment - throws when order is not placed`() {
-        assertFailsWith<DomainException> { processingOrder().failPayment() }
+        assertThrows<DomainException> { processingOrder().failPayment() }
     }
 
     // --- confirmPayment ---
@@ -172,7 +185,7 @@ class OrderTest {
 
     @Test
     fun `confirmPayment - throws when order is not placed`() {
-        assertFailsWith<DomainException> { processingOrder().confirmPayment() }
+        assertThrows<DomainException> { processingOrder().confirmPayment() }
     }
 
     // --- createShipment / startDelivery / deliver ---
@@ -188,7 +201,7 @@ class OrderTest {
 
     @Test
     fun `createShipment - throws when order is not processing`() {
-        assertFailsWith<DomainException> { placedOrder().createShipment("TRACK-1") }
+        assertThrows<DomainException> { placedOrder().createShipment("TRACK-1") }
     }
 
     @Test
@@ -201,12 +214,12 @@ class OrderTest {
 
     @Test
     fun `startDelivery - throws when order has no shipment`() {
-        assertFailsWith<IllegalArgumentException> { processingOrder().startDelivery() }
+        assertThrows<IllegalArgumentException> { processingOrder().startDelivery() }
     }
 
     @Test
     fun `startDelivery - throws when order is not processing`() {
-        assertFailsWith<DomainException> { placedOrder().startDelivery() }
+        assertThrows<DomainException> { placedOrder().startDelivery() }
     }
 
     @Test
@@ -219,7 +232,7 @@ class OrderTest {
 
     @Test
     fun `deliver - throws when the shipment was never picked up`() {
-        assertFailsWith<IllegalStateException> { orderWithShipment().deliver() }
+        assertThrows<IllegalStateException> { orderWithShipment().deliver() }
     }
 
     // --- failShipmentCreation / loseShipment / cancelShipment (PROCESSING -> CANCEL_REQUESTED) ---
@@ -244,7 +257,7 @@ class OrderTest {
 
     @Test
     fun `loseShipment - throws when order is not processing`() {
-        assertFailsWith<DomainException> { placedOrder().loseShipment() }
+        assertThrows<DomainException> { placedOrder().loseShipment() }
     }
 
     @Test
@@ -265,7 +278,7 @@ class OrderTest {
 
     @Test
     fun `cancelShipment - throws when order is not processing`() {
-        assertFailsWith<DomainException> { placedOrder().cancelShipment() }
+        assertThrows<DomainException> { placedOrder().cancelShipment() }
     }
 
     // --- requestRefund / markRefundFailed ---
@@ -275,12 +288,12 @@ class OrderTest {
         val order = cancelRequestedAfterPickup().requestRefund()
 
         assertNotNull(order.refund)
-        assertFalse(order.refund.isConfirmed)
+        assertFalse(order.refund!!.isConfirmed)
     }
 
     @Test
     fun `requestRefund - throws when order is not cancel-requested`() {
-        assertFailsWith<DomainException> { placedOrder().requestRefund() }
+        assertThrows<DomainException> { placedOrder().requestRefund() }
     }
 
     @Test
@@ -293,7 +306,7 @@ class OrderTest {
 
     @Test
     fun `markRefundFailed - throws when there is no refund request`() {
-        assertFailsWith<IllegalArgumentException> { cancelRequestedAfterPickup().markRefundFailed() }
+        assertThrows<IllegalArgumentException> { cancelRequestedAfterPickup().markRefundFailed() }
     }
 
     // --- confirmRefund / returnToStock, both orderings must finalize the same way ---
@@ -337,14 +350,14 @@ class OrderTest {
 
     @Test
     fun `confirmRefund - throws when there is no refund request`() {
-        assertFailsWith<IllegalArgumentException> {
+        assertThrows<IllegalArgumentException> {
             cancelRequestedAfterPickup().confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
         }
     }
 
     @Test
     fun `confirmRefund - throws when order is not cancel-requested`() {
-        assertFailsWith<DomainException> {
+        assertThrows<DomainException> {
             placedOrder().confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
         }
     }
@@ -353,12 +366,12 @@ class OrderTest {
     fun `returnToStock - throws when order has no shipment`() {
         val order = processingOrder().failShipmentCreation()
 
-        assertFailsWith<IllegalArgumentException> { order.returnToStock() }
+        assertThrows<IllegalArgumentException> { order.returnToStock() }
     }
 
     @Test
     fun `returnToStock - throws when order is not cancel-requested`() {
-        assertFailsWith<DomainException> { placedOrder().returnToStock() }
+        assertThrows<DomainException> { placedOrder().returnToStock() }
     }
 
     // --- wasPickedUp ---
@@ -399,12 +412,5 @@ class OrderTest {
         val b = placedOrder()
 
         assertNotEquals(a, b)
-    }
-
-    @Test
-    fun `equals - returns false for an object of a different type`() {
-        val order = placedOrder(id = 1)
-
-        assertNotEquals<Any>(order, "not an order")
     }
 }

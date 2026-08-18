@@ -6,25 +6,20 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.usecase.port.`in`.saga.event.PaymentCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.PaymentFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.ShipmentCreationFailedEvent
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNotNull
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -55,7 +50,7 @@ class FulfillOrderSagaImplTest {
 
     private var savedOrder: Order? = null
 
-    @BeforeTest
+    @BeforeEach
     fun setUp() {
         savedOrder = null
     }
@@ -76,7 +71,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentCompleted(PaymentCompletedEvent(orderId), correlationId)
+        saga.onPaymentCompleted(orderId, correlationId)
 
         assertEquals(OrderStatus.PROCESSING, savedOrder?.status)
         verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.address) }
@@ -90,7 +85,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentFailed(PaymentFailedEvent(orderId), correlationId)
+        saga.onPaymentFailed(orderId, correlationId)
 
         assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
@@ -104,7 +99,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCreationFailed(ShipmentCreationFailedEvent(orderId), correlationId)
+        saga.onShipmentCreationFailed(orderId, correlationId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertNotNull(savedOrder?.refund)
@@ -227,7 +222,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onRefundCompleted(RefundCompletedEvent(1, amount, "USD"), "corr-1")
+        saga.onRefundCompleted(1, Money(amount, Currency.USD), "corr-1")
 
         assertEquals(amount, savedOrder?.refund?.amount?.amount)
         assertEquals(true, savedOrder?.refund?.isConfirmed)
@@ -239,7 +234,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onRefundFailed(RefundFailedEvent(1), "corr-1")
+        saga.onRefundFailed(1, "corr-1")
 
         assertNotNull(savedOrder?.refund?.failedAt)
     }

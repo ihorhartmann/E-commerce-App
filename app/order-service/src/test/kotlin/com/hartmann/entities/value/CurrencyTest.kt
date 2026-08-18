@@ -1,10 +1,10 @@
 package com.hartmann.entities.value
 
 import com.hartmann.entities.exception.DomainException
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import org.junit.jupiter.api.assertThrows
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class CurrencyTest {
@@ -26,11 +26,11 @@ class CurrencyTest {
 
     @Test
     fun `fromCode - throws on an unsupported code`() {
-        assertFailsWith<DomainException> { Currency.fromCode("JPY") }
+        assertThrows<DomainException> { Currency.fromCode("JPY") }
     }
 
     @Test
     fun `fromCode - throws on a blank code`() {
-        assertFailsWith<DomainException> { Currency.fromCode("") }
+        assertThrows<DomainException> { Currency.fromCode("") }
     }
 }

@@ -10,11 +10,11 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import com.hartmann.entities.model.OrderStatus
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import kotlin.test.Test
-import kotlin.test.assertEquals
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class GetOrderUseCaseImplTest {

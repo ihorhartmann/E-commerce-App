@@ -1,14 +1,14 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 private fun testAmount() = Money(BigDecimal("10.00"), Currency.USD)
 
@@ -37,7 +37,7 @@ class RefundInfoTest {
     fun `confirm - throws when already confirmed`() {
         val refund = RefundInfo.request().confirm(testAmount())
 
-        assertFailsWith<IllegalStateException> { refund.confirm(testAmount()) }
+        assertThrows<IllegalStateException> { refund.confirm(testAmount()) }
     }
 
     @Test
@@ -52,6 +52,6 @@ class RefundInfoTest {
     fun `markFailed - throws when already confirmed`() {
         val refund = RefundInfo.request().confirm(testAmount())
 
-        assertFailsWith<IllegalStateException> { refund.markFailed() }
+        assertThrows<IllegalStateException> { refund.markFailed() }
     }
 }

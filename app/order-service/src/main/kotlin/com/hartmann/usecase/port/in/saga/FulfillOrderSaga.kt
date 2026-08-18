@@ -1,17 +1,13 @@
 package com.hartmann.usecase.port.`in`.saga
 
-import com.hartmann.usecase.port.`in`.saga.event.PaymentCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.PaymentFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundCompletedEvent
-import com.hartmann.usecase.port.`in`.saga.event.RefundFailedEvent
-import com.hartmann.usecase.port.`in`.saga.event.ShipmentCreationFailedEvent
+import com.hartmann.entities.value.Money
 
 interface FulfillOrderSaga {
-    fun onPaymentCompleted(event: PaymentCompletedEvent, correlationId: String)
-    fun onPaymentFailed(event: PaymentFailedEvent, correlationId: String)
-    fun onShipmentCreationFailed(event: ShipmentCreationFailedEvent, correlationId: String)
-    fun onRefundCompleted(event: RefundCompletedEvent, correlationId: String)
-    fun onRefundFailed(event: RefundFailedEvent, correlationId: String)
+    fun onPaymentCompleted(orderId: Long, correlationId: String)
+    fun onPaymentFailed(orderId: Long, correlationId: String)
+    fun onShipmentCreationFailed(orderId: Long, correlationId: String)
+    fun onRefundCompleted(orderId: Long, amount: Money, correlationId: String)
+    fun onRefundFailed(orderId: Long, correlationId: String)
     fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String)
     fun onShipmentInDelivery(orderId: Long, correlationId: String)
     fun onShipmentDelivered(orderId: Long)

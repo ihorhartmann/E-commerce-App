@@ -37,7 +37,7 @@ func main() {
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 
 	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkaconst.ShippingEventsTopic)
-	shipmentProducer := outkafka.NewKafkaGoShipmentProducer(messageProducer)
+	shipmentProducer := outkafka.NewShipmentKafkaProducer(messageProducer)
 
 	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer)
 

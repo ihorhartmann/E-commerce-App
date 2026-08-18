@@ -186,3 +186,20 @@ database connections and other resources if there are such.
   in Go), not just the HTTP status code - a status-only assertion can't catch a wrong/missing field or a malformed
   body. Exception: responses with no body by design (e.g. `204 No Content`, or a `2xx` endpoint that intentionally
   returns no payload) have nothing to assert on and are exempt.
+* When a test names its actual/expected comparison variables explicitly, use `got`/`want` in Go and `actual`/`expected`
+  in Java/Kotlin - never mix the two languages' vocabularies. Within one scope (a test method, or one Go `t.Run`
+  block), if there's only a single such comparison, the bare names are enough. If more than one comparison happens in
+  the same scope and at least one side needs a qualifier to stay unambiguous (e.g. `wantOrder`, `expectedOrderId`),
+  the other side of that same pair must be qualified too (e.g. `gotOrder`/`wantOrder`, `actualOrderId`/`expectedOrderId`)
+  - never leave one side of a pair qualified while the other stays bare. This also applies when the "want"/"expected"
+  side is an already-existing variable rather than a freshly declared one (e.g. reusing a `correlationID` that was
+  passed into the call under test as the expected value) - the generic `got`/`actual` side must still be qualified to
+  match it (e.g. `gotCorrelationID`/`correlationID`, not a bare `got`/`correlationID`), since a bare `got` shadowed
+  across several such comparisons in the same scope is exactly as ambiguous as a bare `got` next to a qualified `want`.
+  The only exemption is a handful of universal, non-negotiable Go idioms that are never renamed regardless of context -
+  chiefly `err` (never `gotErr`) and `ok` (never `gotOk`) - because Go convention already treats those names as fixed
+  regardless of what they're being compared against. Having an otherwise-descriptive name (e.g. a multi-return value
+  like `messageType` from `messageType, messageID, correlationID, err := parseHeaders(headers)`) is NOT by itself a
+  reason to skip qualification: if it's compared against a qualified `want*`/`expected*` counterpart, it must become
+  `gotMessageType` just the same - the pairing rule applies to anything actually playing the got/actual role in a
+  comparison, not just to bare `got`/`actual`.

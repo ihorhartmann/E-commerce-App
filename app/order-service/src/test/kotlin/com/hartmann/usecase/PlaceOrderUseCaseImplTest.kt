@@ -17,12 +17,12 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import com.hartmann.entities.model.OrderStatus
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.LocalDateTime
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -79,7 +79,7 @@ class PlaceOrderUseCaseImplTest {
         every { orderRepository.save(outOfStockOrder) } returns outOfStockOrder
         every { inventoryClient.reserve(orderId, createdOrder.items) } throws InsufficientStockException("no stock")
 
-        assertFailsWith<InsufficientStockException> { useCase.execute(order) }
+        assertThrows<InsufficientStockException> { useCase.execute(order) }
 
         verify(exactly = 1) { orderRepository.save(outOfStockOrder) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
@@ -95,7 +95,7 @@ class PlaceOrderUseCaseImplTest {
         every { orderRepository.save(failedOrder) } returns failedOrder
         every { inventoryClient.reserve(orderId, createdOrder.items) } throws Exception("inventory unreachable")
 
-        assertFailsWith<Exception> { useCase.execute(order) }
+        assertThrows<Exception> { useCase.execute(order) }
 
         verify(exactly = 1) { orderRepository.save(failedOrder) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
@@ -112,7 +112,7 @@ class PlaceOrderUseCaseImplTest {
         every { inventoryClient.reserve(orderId, createdOrder.items) } just Runs
         every { paymentClient.submitPayment(orderId, createdOrder.totalPrice()) } throws Exception("gateway down")
 
-        assertFailsWith<Exception> { useCase.execute(order) }
+        assertThrows<Exception> { useCase.execute(order) }
 
         verify(exactly = 1) { orderRepository.save(failedOrder) }
         verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }

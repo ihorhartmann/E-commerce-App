@@ -1,10 +1,10 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class MoneyTest {
@@ -29,6 +29,6 @@ class MoneyTest {
 
     @Test
     fun `constructor - rejects a negative amount`() {
-        assertFailsWith<IllegalArgumentException> { Money(BigDecimal("-10.00"), Currency.USD) }
+        assertThrows<IllegalArgumentException> { Money(BigDecimal("-10.00"), Currency.USD) }
     }
 }

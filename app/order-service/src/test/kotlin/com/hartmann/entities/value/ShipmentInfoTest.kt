@@ -1,11 +1,11 @@
 package com.hartmann.entities.value
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
+import org.junit.jupiter.api.assertThrows
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class ShipmentInfoTest {
@@ -32,7 +32,7 @@ class ShipmentInfoTest {
     fun `pickUp - throws when already picked up`() {
         val shipment = ShipmentInfo.create("TRACK-1").pickUp()
 
-        assertFailsWith<IllegalStateException> { shipment.pickUp() }
+        assertThrows<IllegalStateException> { shipment.pickUp() }
     }
 
     @Test
@@ -46,7 +46,7 @@ class ShipmentInfoTest {
     fun `deliver - throws when never picked up`() {
         val shipment = ShipmentInfo.create("TRACK-1")
 
-        assertFailsWith<IllegalStateException> { shipment.deliver() }
+        assertThrows<IllegalStateException> { shipment.deliver() }
     }
 
     @Test
@@ -60,6 +60,6 @@ class ShipmentInfoTest {
     fun `returnToInventory - throws when already returned`() {
         val shipment = ShipmentInfo.create("TRACK-1").pickUp().returnToInventory()
 
-        assertFailsWith<IllegalStateException> { shipment.returnToInventory() }
+        assertThrows<IllegalStateException> { shipment.returnToInventory() }
     }
 }
