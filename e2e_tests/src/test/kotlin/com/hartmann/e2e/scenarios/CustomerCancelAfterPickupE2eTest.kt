@@ -1,0 +1,71 @@
+package com.hartmann.e2e.scenarios
+
+import com.hartmann.e2e.support.docker.DockerComposeStack
+import com.hartmann.e2e.support.e2e.E2eSharedSteps
+import com.hartmann.e2e.support.api.inventory.InventoryApi
+import com.hartmann.e2e.support.api.order.OrderApi
+import com.hartmann.e2e.support.api.payment.PaymentApi
+import com.hartmann.e2e.support.api.shipping.ShippingApi
+import org.assertj.core.api.Assertions.assertThat
+import org.awaitility.Awaitility.await
+import org.junit.jupiter.api.Test
+import java.math.BigDecimal
+
+class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
+
+    @Test
+    fun `cancel shipment - after pickup restocks only once the courier physically returns the goods`() {
+        val orderUrl = DockerComposeStack.orderServiceUrl
+        val inventoryUrl = DockerComposeStack.inventoryServiceUrl
+        val paymentUrl = DockerComposeStack.paymentServiceUrl
+        val shippingUrl = DockerComposeStack.shippingServiceUrl
+
+        val productId = 3L
+        val quantity = 1
+        val product = InventoryApi.getProduct(inventoryUrl, productId)
+
+        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
+        val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
+        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, trackingNumber)
+
+        ShippingApi.pickup(shippingUrl, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
+
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val productAfterPickup = InventoryApi.getProduct(inventoryUrl, productId)
+            assertThat(productAfterPickup.quantity).isEqualTo(product.quantity - quantity)
+            assertThat(productAfterPickup.reserved).isEqualTo(product.reserved)
+        }
+
+        val shipmentAfterCancel = ShippingApi.cancel(shippingUrl, shipment.id) // In Delivery -> Cancelled, still held by Courier
+        assertThat(shipmentAfterCancel.holder).isEqualTo("Courier")
+
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val orderAfterCancel = OrderApi.getOrder(orderUrl, processingOrder.id)
+            assertThat(orderAfterCancel.status).isEqualTo("CANCEL_REQUESTED")
+            assertThat(orderAfterCancel.refund?.requestedAt).isNotNull()
+        }
+
+        // the stock was already sold at pickup, so cancelling must NOT restock until the courier
+        // physically brings the goods back
+        val productBeforeReturn = InventoryApi.getProduct(inventoryUrl, productId)
+        assertThat(productBeforeReturn.quantity).isEqualTo(product.quantity - quantity)
+
+        ShippingApi.confirmReturnedToInventory(shippingUrl, shipment.id)
+
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val productAfterReturn = InventoryApi.getProduct(inventoryUrl, productId)
+            assertThat(productAfterReturn.quantity).isEqualTo(product.quantity) // RestockCommand brought it back
+        }
+
+        // both halves - the physical return above and the refund - must complete before CANCELLED
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val orderAfterReturn = OrderApi.getOrder(orderUrl, processingOrder.id)
+            assertThat(orderAfterReturn.status).isEqualTo("CANCELLED")
+            assertThat(orderAfterReturn.refund?.confirmedAt).isNotNull()
+        }
+
+        val refunds = PaymentApi.getRefundsByOrderId(paymentUrl, processingOrder.id)
+        assertThat(refunds).hasSize(1)
+        assertThat(refunds.single().status).isEqualTo("SUCCEEDED")
+    }
+}

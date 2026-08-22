@@ -1,5 +1,7 @@
 package com.hartmann.adapter.in.http;
 
+import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.exception.ApplicationException;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.exception.DomainException;
 import org.slf4j.Logger;
@@ -22,6 +24,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DomainException.class)
     public ProblemDetail handleDomainException(DomainException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(PaymentGatewayUnavailableException.class)
+    public ProblemDetail handlePaymentGatewayUnavailable(PaymentGatewayUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    @ExceptionHandler(ApplicationException.class)
+    public ProblemDetail handleApplicationException(ApplicationException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

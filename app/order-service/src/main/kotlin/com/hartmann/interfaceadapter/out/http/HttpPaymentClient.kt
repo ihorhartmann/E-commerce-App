@@ -2,13 +2,17 @@ package com.hartmann.interfaceadapter.out.http
 
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
+import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayException
+import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayUnavailableException
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentRequest
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentResponse
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.toEntity
 
@@ -17,14 +21,31 @@ class HttpPaymentClient(
     @Value($$"${payment-service.url}") baseUrl: String,
     loggingInterceptor: ClientHttpRequestInterceptor,
 ) : PaymentClient {
+    companion object {
+        private val LOG = LoggerFactory.getLogger(HttpPaymentClient::class.java)
+    }
+
     private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()
 
     override fun submitPayment(orderId: Long, amount: Money): SubmitPaymentResult {
-        val response = restClient.post()
-            .uri("/api/v1/payments")
-            .body(SubmitPaymentRequest(orderId, amount.amount, amount.currency.name))
-            .retrieve()
-            .toEntity<SubmitPaymentResponse>()
+        val response = try {
+            restClient.post()
+                .uri("/api/v1/payments")
+                .body(SubmitPaymentRequest(orderId, amount.amount, amount.currency.name))
+                .retrieve()
+                .toEntity<SubmitPaymentResponse>()
+        } catch (e: HttpStatusCodeException) {
+            when (e.statusCode) {
+                HttpStatus.CONFLICT ->
+                    throw PaymentGatewayException("Payment gateway rejected the payment for order $orderId")
+                HttpStatus.SERVICE_UNAVAILABLE ->
+                    throw PaymentGatewayUnavailableException("Payment gateway temporarily unavailable for order $orderId")
+                else -> {
+                    LOG.error(e.message, e)
+                    throw e
+                }
+            }
+        }
 
         check(response.statusCode == HttpStatus.CREATED) {
             "Payment service returned unexpected status ${response.statusCode} for order $orderId"

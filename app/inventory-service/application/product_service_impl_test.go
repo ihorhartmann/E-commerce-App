@@ -19,8 +19,9 @@ func TestProductServiceImpl_Create(t *testing.T) {
 	createdProduct := testProduct(t, 1, 10) // what the repository returns once it assigns an id
 	productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 	productRepo.EXPECT().Create(gomock.Any(), newProduct).Return(createdProduct, nil).Times(1)
+	reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-	service := NewProductService(productRepo)
+	service := NewProductService(productRepo, reservationRepo)
 
 	got, err := service.Create(context.Background(), newProduct)
 
@@ -33,52 +34,115 @@ func TestProductServiceImpl_Create(t *testing.T) {
 }
 
 func TestProductServiceImpl_Update(t *testing.T) {
-	input := testProduct(t, 1, 10)
-	updatedProduct := testProduct(t, 1, 20) // what the repository actually persisted and returned
-	productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-	productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
+	t.Run("returns the updated product with its current reservations", func(t *testing.T) {
+		input := testProduct(t, 1, 10)
+		updatedProduct := testProduct(t, 1, 20) // what the repository actually persisted and returned
+		reservation := testReservation(t, 1, updatedProduct.ID(), 100, 3, model.ReservationHolderBuyer)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		reservationRepo.EXPECT().
+			FindByProductIDs(gomock.Any(), []uint64{updatedProduct.ID()}).
+			Return([]*model.StockReservation{reservation}, nil).
+			Times(1)
 
-	service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
-	got, err := service.Update(context.Background(), input)
+		got, err := service.Update(context.Background(), input)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !reflect.DeepEqual(got, updatedProduct) {
-		t.Errorf("Update() = %+v, want %+v", got, updatedProduct)
-	}
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := updatedProduct.WithStockReservations([]*model.StockReservation{reservation})
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Update() = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("propagates an error fetching reservations and does not return a product", func(t *testing.T) {
+		input := testProduct(t, 1, 10)
+		updatedProduct := testProduct(t, 1, 20)
+		wantErr := errors.New("db down")
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		reservationRepo.EXPECT().
+			FindByProductIDs(gomock.Any(), []uint64{updatedProduct.ID()}).
+			Return(nil, wantErr).
+			Times(1)
+
+		service := NewProductService(productRepo, reservationRepo)
+
+		got, err := service.Update(context.Background(), input)
+
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want %v", err, wantErr)
+		}
+		if got != nil {
+			t.Errorf("got = %+v, want nil", got)
+		}
+	})
 }
 
 func TestProductServiceImpl_Get(t *testing.T) {
-	t.Run("returns the product from the repository", func(t *testing.T) {
+	t.Run("returns the product with its current reservations", func(t *testing.T) {
 		id := uint64(1)
 		product := testProduct(t, id, 10)
+		reservation := testReservation(t, 1, id, 100, 3, model.ReservationHolderBuyer)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(product, nil).Times(1)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		reservationRepo.EXPECT().
+			FindByProductIDs(gomock.Any(), []uint64{id}).
+			Return([]*model.StockReservation{reservation}, nil).
+			Times(1)
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		got, err := service.Get(context.Background(), id)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !reflect.DeepEqual(got, product) {
-			t.Errorf("Get() = %+v, want %+v", got, product)
+		want := product.WithStockReservations([]*model.StockReservation{reservation})
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Get() = %+v, want %+v", got, want)
 		}
 	})
 
-	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
+	t.Run("rejects a zero id without calling either repository", func(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		_, err := service.Get(context.Background(), 0)
 
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		}
+	})
+
+	t.Run("propagates an error fetching reservations", func(t *testing.T) {
+		id := uint64(1)
+		product := testProduct(t, id, 10)
+		wantErr := errors.New("db down")
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(product, nil).Times(1)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{id}).Return(nil, wantErr).Times(1)
+
+		service := NewProductService(productRepo, reservationRepo)
+
+		got, err := service.Get(context.Background(), id)
+
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want %v", err, wantErr)
+		}
+		if got != nil {
+			t.Errorf("got = %+v, want nil", got)
 		}
 	})
 }
@@ -88,8 +152,9 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 		id := uint64(1)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().Delete(gomock.Any(), id).Return(nil).Times(1)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		if err := service.Delete(context.Background(), id); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -99,8 +164,9 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().Delete(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		err := service.Delete(context.Background(), 0)
 
@@ -128,8 +194,9 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 				return p, nil
 			},
 		)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		items := []dto.ReservationDTO{{ProductID: p1ID, Quantity: 3}, {ProductID: p2ID, Quantity: 2}}
 		if err := service.Restock(context.Background(), items); err != nil {
@@ -153,8 +220,9 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		service := NewProductService(productRepo)
+		service := NewProductService(productRepo, reservationRepo)
 
 		err := service.Restock(context.Background(), []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 

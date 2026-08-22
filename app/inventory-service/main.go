@@ -29,9 +29,9 @@ func main() {
 	}
 
 	productRepository := repository.NewInMemoryProductRepository()
-	productUseCases := application.NewProductService(productRepository)
-
 	reservationRepository := repository.NewInMemoryReservationRepository()
+
+	productUseCases := application.NewProductService(productRepository, reservationRepository)
 	reservationUseCases := application.NewReservationService(reservationRepository, productRepository)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
