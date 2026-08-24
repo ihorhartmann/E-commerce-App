@@ -12,6 +12,7 @@ import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
@@ -41,6 +42,7 @@ import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+@Tag("integration")
 @SpringBootTest(classes = [OrderKafkaConsumer::class, KafkaErrorHandlerConfig::class])
 @ImportAutoConfiguration(KafkaAutoConfiguration::class, JacksonAutoConfiguration::class)
 @EnableKafka

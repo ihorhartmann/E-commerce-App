@@ -10,6 +10,7 @@ import org.apache.kafka.common.header.Header
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.beans.factory.annotation.Autowired
@@ -28,6 +29,7 @@ import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 
+@Tag("integration")
 @SpringBootTest(classes = [OrderKafkaProducerImpl::class])
 @ImportAutoConfiguration(KafkaAutoConfiguration::class, JacksonAutoConfiguration::class)
 @Testcontainers

@@ -34,5 +34,11 @@ kotlin {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        if (project.hasProperty("integration")) {
+            includeTags("integration")
+        } else {
+            excludeTags("integration")
+        }
+    }
 }

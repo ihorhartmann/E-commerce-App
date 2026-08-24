@@ -1,0 +1,23 @@
+name: Inventory Service - Unit Tests
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "app/inventory-service/**"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/inventory-service
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: app/inventory-service/go.mod
+          cache-dependency-path: app/inventory-service/go.sum
+
+      - run: go test ./...
