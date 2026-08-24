@@ -42,8 +42,13 @@ object E2eSharedSteps {
         unitPrice: BigDecimal,
     ): OrderResponse {
         val placedOrder = placeOrder(orderBaseUrl, productId, quantity, unitPrice)
-        StripeApi.confirmPaymentIntent(requireNotNull(placedOrder.clientSecret), StripeApi.TEST_CARD_SUCCESS)
+        // Stripe amounts are minor units (cents) - confirms the exact amount it received matches
+        // what we sent, not just that it deserialized back into the same value in our own DB.
+        val expectedCents = placedOrder.totalPrice.amount.movePointRight(2).toInt()
+        val actualCents = StripeApi.confirmPaymentIntent(requireNotNull(placedOrder.clientSecret), StripeApi.TEST_CARD_SUCCESS)
             .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().path<Int>("amount")
+        assertThat(actualCents).isEqualTo(expectedCents)
 
         lateinit var processingOrder: OrderResponse
         await().atMost(POLL_TIMEOUT).untilAsserted {

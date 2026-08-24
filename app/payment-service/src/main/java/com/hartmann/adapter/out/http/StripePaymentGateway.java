@@ -16,7 +16,6 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -46,7 +45,7 @@ public class StripePaymentGateway implements PaymentGateway {
                 .build();
 
         var requestOptions = RequestOptions.builder()
-                .setIdempotencyKey("order-" + orderId + "-" + UUID.randomUUID()) //TODO remove uuid when db is added
+                .setIdempotencyKey("order-" + orderId)
                 .build();
 
         LOG.debug("sending create PaymentIntent request orderId={}", orderId);
