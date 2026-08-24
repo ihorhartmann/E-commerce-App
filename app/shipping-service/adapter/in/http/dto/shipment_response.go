@@ -12,12 +12,12 @@ type ShipmentResponse struct {
 	TrackingNumber string          `json:"trackingNumber"`
 	Address        AddressResponse `json:"address"`
 	Status         string          `json:"status"`
+	Holder         string          `json:"holder"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`
 }
 
 type AddressResponse struct {
-	Country    string `json:"country"`
 	City       string `json:"city"`
 	PostalCode string `json:"postalCode"`
 	Line1      string `json:"line1"`
@@ -31,6 +31,7 @@ func ToShipmentResponse(shipment *model.Shipment) ShipmentResponse {
 		TrackingNumber: shipment.TrackingNumber(),
 		Address:        toAddressResponse(shipment.Address()),
 		Status:         string(shipment.Status()),
+		Holder:         string(shipment.Holder()),
 		CreatedAt:      shipment.CreatedAt(),
 		UpdatedAt:      shipment.UpdatedAt(),
 	}
@@ -38,7 +39,6 @@ func ToShipmentResponse(shipment *model.Shipment) ShipmentResponse {
 
 func toAddressResponse(address value.Address) AddressResponse {
 	return AddressResponse{
-		Country:    address.Country(),
 		City:       address.City(),
 		PostalCode: address.PostalCode(),
 		Line1:      address.Line1(),

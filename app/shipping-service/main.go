@@ -3,10 +3,15 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	kafkaconst "shippingservice/adapter/common/kafka"
+	"shippingservice/adapter/in/http/middleware"
+	"syscall"
+	"time"
+
 	shippinghttp "shippingservice/adapter/in/http"
 	"shippingservice/adapter/in/kafka"
 	outkafka "shippingservice/adapter/out/kafka"
@@ -14,29 +19,35 @@ import (
 	"shippingservice/application/service"
 	"shippingservice/infrastructure/env"
 	"shippingservice/infrastructure/kafkago"
-	"syscall"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
 	config, err := env.LoadFromEnv()
 	if err != nil {
-		panic(err)
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
 
 	shipmentRepository := repository.NewInMemoryShipmentRepository()
-	shipmentService := service.NewShipmentServiceImpl(shipmentRepository)
 
-	messageConsumer := kafkago.NewStubMessageConsumer()
-	shipmentConsumer := kafka.NewShipmentConsumer(messageConsumer)
+	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
+
+	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkaconst.ShippingEventsTopic)
+	shipmentProducer := outkafka.NewShipmentKafkaProducer(messageProducer)
+
+	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer)
+
+	messageConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafkaconst.ShippingCommandsTopic, kafkaconst.ConsumerGroupID)
+	shipmentConsumer := kafka.NewShipmentKafkaConsumer(messageConsumer, shipmentService)
 	shipmentConsumer.Start()
 
-	messageProducer := kafkago.NewStubMessageProducer()
-	shipmentProducer := outkafka.NewKafkaGoShipmentProducer(messageProducer)
-
 	router := gin.Default()
+	router.Use(middleware.LoggingMiddleware(), middleware.ErrorHandlerMiddleware())
+
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
@@ -50,8 +61,9 @@ func main() {
 	}
 
 	go func() {
-		if err = server.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
-			log.Fatal(err)
+		if err = server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("failed to start http server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -63,14 +75,15 @@ func main() {
 	defer cancel()
 
 	if err = server.Shutdown(ctx); err != nil {
-		log.Fatal(err)
+		slog.Error("failed to shut down http server", "error", err)
+		os.Exit(1)
 	}
 	if err = shipmentConsumer.Close(); err != nil {
-		log.Fatal(err)
+		slog.Error("error closing kafka consumer", "error", err)
 	}
 	if err = shipmentProducer.Close(); err != nil {
-		log.Fatal(err)
+		slog.Error("error closing kafka producer", "error", err)
 	}
 
-	log.Println("application shut down successfully")
+	slog.Info("application shut down successfully")
 }

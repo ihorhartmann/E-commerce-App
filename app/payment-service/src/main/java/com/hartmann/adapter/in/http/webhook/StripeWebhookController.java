@@ -1,6 +1,6 @@
 package com.hartmann.adapter.in.http.webhook;
 
-import com.hartmann.adapter.out.http.mapper.StripeRefundStatusMapper;
+import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/webhooks/stripe")
 public class StripeWebhookController {
-    private static final Logger log = LoggerFactory.getLogger(StripeWebhookController.class);
+    private static final Logger LOG = LoggerFactory.getLogger(StripeWebhookController.class);
 
     private final String webhookSecret;
     private final PaymentService paymentService;
@@ -48,10 +48,9 @@ public class StripeWebhookController {
     ) {
         Event event;
         try {
-            log.info("Webhook received event: {}", payload);
             event = Webhook.constructEvent(payload, signatureHeader, webhookSecret);
         } catch (SignatureVerificationException e) {
-            log.warn("Rejected Stripe webhook: invalid signature", e);
+            LOG.warn("Rejected Stripe webhook: invalid signature", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         }
 
@@ -59,7 +58,7 @@ public class StripeWebhookController {
             case "payment_intent.succeeded" -> handlePaymentIntentEvent(event, PaymentStatus.COMPLETED);
             case "payment_intent.payment_failed" -> handlePaymentIntentEvent(event, PaymentStatus.FAILED);
             case "refund.updated" -> handleRefundEvent(event);
-            default -> log.info("Ignoring unhandled Stripe event type: {}", event.getType());
+            default -> LOG.info("Ignoring unhandled Stripe event type: {}", event.getType());
         }
 
         return ResponseEntity.ok().build();
@@ -72,7 +71,7 @@ public class StripeWebhookController {
                         updatePaymentStatus(event, paymentIntent, status);
                     }
                 },
-                () -> log.warn(
+                () -> LOG.warn(
                         "Stripe event {} ({}) could not be deserialized to PaymentIntent — "
                                 + "likely an API version mismatch between account and stripe-java",
                         event.getId(), event.getType()
@@ -83,12 +82,12 @@ public class StripeWebhookController {
     private void updatePaymentStatus(Event event, PaymentIntent paymentIntent, PaymentStatus status) {
         try {
             Payment payment = paymentService.updateStatusByExternalId(paymentIntent.getId(), status);
-            log.info(
+            LOG.info(
                     "Payment updated from webhook: eventId={}, paymentId={}, orderId={}, externalId={}, status={}",
                     event.getId(), payment.id(), payment.orderId(), paymentIntent.getId(), status
             );
         } catch (ObjectNotFoundException e) {
-            log.warn("Received webhook for unknown PaymentIntent {}: {}", paymentIntent.getId(), e.getMessage());
+            LOG.warn("Received webhook for unknown PaymentIntent {}: {}", paymentIntent.getId(), e.getMessage());
         }
     }
 
@@ -99,7 +98,7 @@ public class StripeWebhookController {
                         updateRefundStatus(event, stripeRefund);
                     }
                 },
-                () -> log.warn(
+                () -> LOG.warn(
                         "Stripe event {} ({}) could not be deserialized to Refund — "
                                 + "likely an API version mismatch between account and stripe-java",
                         event.getId(), event.getType()
@@ -108,15 +107,15 @@ public class StripeWebhookController {
     }
 
     private void updateRefundStatus(Event event, com.stripe.model.Refund stripeRefund) {
-        var status = StripeRefundStatusMapper.toDomain(stripeRefund.getStatus());
+        var status = StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus());
         try {
             Refund refund = refundService.updateStatusByExternalId(stripeRefund.getId(), status);
-            log.info(
+            LOG.info(
                     "Refund updated from webhook: eventId={}, refundId={}, paymentId={}, externalId={}, status={}",
                     event.getId(), refund.id(), refund.paymentId(), stripeRefund.getId(), status
             );
         } catch (ObjectNotFoundException e) {
-            log.warn("Received webhook for unknown Refund {}: {}", stripeRefund.getId(), e.getMessage());
+            LOG.warn("Received webhook for unknown Refund {}: {}", stripeRefund.getId(), e.getMessage());
         }
     }
 }

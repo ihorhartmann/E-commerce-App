@@ -6,14 +6,7 @@
 
 **Technologies:** GORM, Gin, kafka-go
 
-
-## Generic code conventions
-
-* Use lowerCamelCase  identifiers by default.
-* Use UpperCamelCase only for exported types, functions, methods, constants, and variables.
-* If a struct intentionally implements an interface, the interface must be explicitly embedded in the struct.
-* HTTP status codes must always be taken from the `net/http` package.
-
+See the [root CLAUDE.md](../../CLAUDE.md#go-specific-conventions) for Go-specific code conventions.
 
 ## Layers and Packages
 
@@ -23,14 +16,12 @@ Contains domain objects that represent business concepts and rules.
 
 This layer must not depend on any other layer.
 
-Errors in this layer must be declared in an `errors.go` file located next to the file where they are used.
-
 #### Package structure
 
 ```text
 domain/
 ├── model/
-└── values/
+└── value/
 ```
 
 ##### domain/model
@@ -42,7 +33,7 @@ Examples:
 * `Product`
 * `Order`
 
-##### domain/values
+##### domain/value
 
 Value objects used by domain models.
 
@@ -59,8 +50,6 @@ Example:
 Contains application business logic and ports that define how business logic interacts with external systems.
 
 This layer depends only on the `Domain` layer.
-
-Errors in this layer must be declared in an `errors.go` file located next to the file where they are used.
 
 #### Package structure
 
@@ -94,13 +83,14 @@ Inbound ports must be named like `EntityService`, for example `ShipmentService`.
 Outbound ports are interfaces that define how business logic interacts with external systems, such as:
 databases, kafka, third-party services.
 
-Outbound ports are grouped by transport or technology type and must be named like `EntityRepository`, `EntityProducer`, etc.
+See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
 ##### application/services
 
 Services contain business logic that operates on domain objects.
 
-Classes in this package provide implementations of the inbound service port interfaces defined in `application/ports/in` and must be named like `EntityServiceImpl`, for example `ShipmentServiceImpl`.
+Classes in this package provide implementations of the inbound service port interfaces defined in `application/ports/in`
+and must be named like `EntityServiceImpl`, for example `ShipmentServiceImpl`.
 
 ---
 
@@ -110,12 +100,10 @@ Contains adapters that connect the application core with external interfaces and
 
 This layer may depend on the `Application` and `Domain` layers.
 
-Errors used by adapter must be declared in an `errors.go` file located next to the corresponding port interface in the `Application` layer.
-
 #### Package structure
 
 ```text
-adapters/
+adapter/
 ├── common/
 │   ├── kafka/
 │   └── ...
@@ -131,27 +119,25 @@ adapters/
     └── ...
 ```
 
-##### adapters/common
+##### adapter/common
 
 Shared code used by both incoming and outgoing adapters.
 
 Examples:
 
-* Kafka event types
+* Kafka message types
 * Shared adapter utilities
 
-Kafka adapters also use shared producer and consumer interfaces defined under the `common` package.
+Kafka producer and consumer interfaces do NOT live here, since neither is actually used by both directions:
+`KafkaMessageProducer` lives in `adapter/out/kafka/common` (used only by outbound Kafka adapters) and
+`KafkaMessageConsumer` lives in `adapter/in/kafka/common` (used only by inbound Kafka adapters).
 
-##### adapters/out
+##### adapter/out
 
-Outbound adapters that implement interfaces defined in `application/ports/out`. Output adapter implementations must be named in format `TechnologyPortName`.
+Outbound adapters that implement interfaces defined in `application/ports/out`. See the
+[root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
-Examples:
-
-* `KafkaGoShipmentProducer`
-* `PostgresShipmentRepository`
-
-##### adapters/in
+##### adapter/in
 
 Inbound adapters that invoke application logic and serve as entry points to the service.
 
@@ -162,19 +148,8 @@ Examples:
 
 HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
 
-Controllers must be named like `EntityController`, for example `ShipmentController` and each controller must provide a `RegisterRoutes` function responsible for registering all controller routes.
-
-#### DTO mapping rules
-
-DTO packages are responsible for mapping between DTOs and domain models.
-
-Each adapter type contains dedicated DTO packages.
-
-Mapping must be implemented using package-level functions without receivers. Nested DTOs must also have dedicated functions responsible for mapping nested objects.
-
-Function names must be like `FromDtoName` and `ToDtoName`, for example `FromCreateOrderRequest`, `ToCreateOrderResponse`.
-
-When introducing a new DTO, implement only the mapping functions required by the current service. Do not create unused mapping functions.
+Each controller must provide a `RegisterRoutes` function responsible for registering all controller routes. See the
+[root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
 ### Infrastructure
 
@@ -190,10 +165,8 @@ Examples:
 
 This layer may depend only on the `Adapters` layer.
 
-This layer contains the implementations of:
-
-* `CommonKafkaProducer`
-* `CommonKafkaConsumer`
+This layer contains the kafka-go-based implementations of the `KafkaMessageProducer`/`KafkaMessageConsumer`
+interfaces declared in `adapter/out/kafka/common`/`adapter/in/kafka/common`.
 
 These implementations do not contain business-specific logic and are therefore implemented at the infrastructure level.
 
