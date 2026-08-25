@@ -19,7 +19,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -32,7 +32,7 @@ private fun testItem() = OrderItem.createExisting(
 )
 
 private fun placedOrder() =
-    Order.createExisting(id = 1, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = LocalDateTime.now())
+    Order.createExisting(id = 1, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
 
 private fun processingOrder() = placedOrder().confirmPayment()
 

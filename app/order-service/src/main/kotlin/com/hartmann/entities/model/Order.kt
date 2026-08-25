@@ -6,7 +6,7 @@ import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
-import java.time.LocalDateTime
+import java.time.Instant
 import java.math.BigDecimal
 
 class Order private constructor(
@@ -15,13 +15,13 @@ class Order private constructor(
     val items: List<OrderItem>,
     val address: Address,
     val status: OrderStatus,
-    val paymentConfirmedAt: LocalDateTime? = null,
+    val paymentConfirmedAt: Instant? = null,
     val shipment: ShipmentInfo? = null,
     val cancellationReason: CancellationReason? = null,
     val awaitingReturn: Boolean = false,
     val refund: RefundInfo? = null,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime? = null,
+    val createdAt: Instant,
+    val updatedAt: Instant? = null,
 ) {
     init {
         require(userId > 0) { "userId must be positive" }
@@ -58,7 +58,7 @@ class Order private constructor(
 
     fun confirmPayment(): Order {
         requireStatus("confirm payment", OrderStatus.PLACED)
-        return withState(status = OrderStatus.PROCESSING, paymentConfirmedAt = LocalDateTime.now())
+        return withState(status = OrderStatus.PROCESSING, paymentConfirmedAt = Instant.now())
     }
 
     fun createShipment(trackingNumber: String): Order {
@@ -166,7 +166,7 @@ class Order private constructor(
      */
     private fun withState(
         status: OrderStatus = this.status,
-        paymentConfirmedAt: LocalDateTime? = this.paymentConfirmedAt,
+        paymentConfirmedAt: Instant? = this.paymentConfirmedAt,
         shipment: ShipmentInfo? = this.shipment,
         cancellationReason: CancellationReason? = this.cancellationReason,
         awaitingReturn: Boolean = this.awaitingReturn,
@@ -208,7 +208,7 @@ class Order private constructor(
                 items = items,
                 address = address,
                 status = OrderStatus.PLACED,
-                createdAt = LocalDateTime.now(),
+                createdAt = Instant.now(),
             )
         }
 
@@ -218,13 +218,13 @@ class Order private constructor(
             items: List<OrderItem>,
             address: Address,
             status: OrderStatus,
-            paymentConfirmedAt: LocalDateTime? = null,
+            paymentConfirmedAt: Instant? = null,
             shipment: ShipmentInfo? = null,
             cancellationReason: CancellationReason? = null,
             awaitingReturn: Boolean = false,
             refund: RefundInfo? = null,
-            createdAt: LocalDateTime,
-            updatedAt: LocalDateTime? = null,
+            createdAt: Instant,
+            updatedAt: Instant? = null,
         ): Order {
             require(id > 0) { "id must be positive" }
             return Order(
