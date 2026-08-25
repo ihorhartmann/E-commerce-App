@@ -1,6 +1,20 @@
 services:
+  postgres:
+    image: postgres:18-alpine
+    networks:
+      - app-network
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./docker/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+
   kafka:
-    image: apache/kafka:latest
+    image: apache/kafka:4.3.1
     networks:
       - app-network
     ports:
@@ -19,7 +33,7 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
   kafka-ui:
-    image: kafbat/kafka-ui:latest
+    image: kafbat/kafka-ui:v1.5.0
     networks:
       - app-network
     ports:
@@ -43,8 +57,14 @@ services:
       INVENTORY_SERVICE_PORT: ${INVENTORY_SERVICE_PORT}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       - kafka
+      - postgres
 
   order-service:
     build:
@@ -61,11 +81,17 @@ services:
       KAFKA_PORT: ${KAFKA_PORT}
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
       PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       - kafka
       - inventory-service
       - payment-service
       - shipping-service
+      - postgres
 
   payment-service:
     build:
@@ -82,8 +108,14 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       - kafka
+      - postgres
 
   shipping-service:
     build:
@@ -98,10 +130,19 @@ services:
       SHIPPING_SERVICE_PORT: ${SHIPPING_SERVICE_PORT}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
     depends_on:
       - kafka
+      - postgres
 
 networks:
   app-network:
     name: app-network
     driver: bridge
+
+volumes:
+  postgres-data:

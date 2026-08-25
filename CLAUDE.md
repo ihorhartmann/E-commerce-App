@@ -52,6 +52,15 @@ implements it), and a constructor function/factory (e.g. Go's `NewXxx`) must ret
 struct pointer. It does not apply to dependencies or return values that are inherently concrete and have no meaningful
 interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
 
+# Dependency versions
+
+Every dependency added to any service (Gradle, Maven, Go modules, etc.) must pin an explicit version - never rely on
+a transitive or BOM-managed version being resolved implicitly. `org.springframework.boot` is the sole exception: its
+own artifacts (`spring-boot-starter-*`, the Gradle plugin, the Maven `spring-boot-dependencies` BOM import) are
+versioned once, in a single place, and that one version governs all of them - so it still complies with this rule,
+just centrally rather than per-dependency, instead of each `spring-boot-starter-*` needing its own repeated version
+string.
+
 # Go-specific conventions
 
 * Use lowerCamelCase identifiers by default.
