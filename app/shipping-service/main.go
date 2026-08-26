@@ -18,6 +18,7 @@ import (
 	"shippingservice/adapter/out/repository"
 	"shippingservice/application/service"
 	"shippingservice/infrastructure/env"
+	gormconn "shippingservice/infrastructure/gorm"
 	"shippingservice/infrastructure/kafkago"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +33,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	shipmentRepository := repository.NewInMemoryShipmentRepository()
+	db, err := gormconn.NewDB(config)
+	if err != nil {
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
+	}
+
+	shipmentRepository := repository.NewPostgresShipmentRepository(db)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 
@@ -83,6 +90,12 @@ func main() {
 	}
 	if err = shipmentProducer.Close(); err != nil {
 		slog.Error("error closing kafka producer", "error", err)
+	}
+
+	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
+		if err = sqlDB.Close(); err != nil {
+			slog.Error("error closing database connection", "error", err)
+		}
 	}
 
 	slog.Info("application shut down successfully")

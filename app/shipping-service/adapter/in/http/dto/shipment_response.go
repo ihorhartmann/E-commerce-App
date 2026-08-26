@@ -14,7 +14,7 @@ type ShipmentResponse struct {
 	Status         string          `json:"status"`
 	Holder         string          `json:"holder"`
 	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
+	UpdatedAt      *time.Time      `json:"updatedAt"`
 }
 
 type AddressResponse struct {
@@ -33,8 +33,15 @@ func ToShipmentResponse(shipment *model.Shipment) ShipmentResponse {
 		Status:         string(shipment.Status()),
 		Holder:         string(shipment.Holder()),
 		CreatedAt:      shipment.CreatedAt(),
-		UpdatedAt:      shipment.UpdatedAt(),
+		UpdatedAt:      toResponseTime(shipment.UpdatedAt()),
 	}
+}
+
+func toResponseTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func toAddressResponse(address value.Address) AddressResponse {

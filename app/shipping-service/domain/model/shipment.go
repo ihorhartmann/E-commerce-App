@@ -1,6 +1,8 @@
 package model
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"shippingservice/domain"
 	"shippingservice/domain/value"
@@ -17,7 +19,9 @@ type Shipment struct {
 	status         ShipmentStatus
 	holder         ShipmentHolder
 	createdAt      time.Time
-	updatedAt      time.Time
+	// updatedAt is the zero value (updatedAt.IsZero()) until the shipment's status actually
+	// changes for the first time - see copy().
+	updatedAt time.Time
 }
 
 func NewExistingShipment(
@@ -50,13 +54,16 @@ func NewExistingShipment(
 }
 
 // NewShipment creates a brand-new shipment in the initial Created status, with the goods still
-// held by the inventory (not yet picked up by a courier).
-func NewShipment(orderId uint64, trackingNumber string, address value.Address) (*Shipment, error) {
-	if err := validateShipment(orderId, trackingNumber); err != nil {
-		return nil, err
+// held by the inventory (not yet picked up by a courier). It generates its own tracking number.
+func NewShipment(orderId uint64, address value.Address) (*Shipment, error) {
+	if orderId == 0 {
+		return nil, domain.ErrInvalidInput
 	}
 
-	now := time.Now()
+	trackingNumber, err := generateTrackingNumber(orderId)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Shipment{
 		orderId:        orderId,
@@ -64,9 +71,18 @@ func NewShipment(orderId uint64, trackingNumber string, address value.Address) (
 		address:        address,
 		status:         Created,
 		holder:         HolderInventory,
-		createdAt:      now,
-		updatedAt:      now,
+		createdAt:      time.Now(),
+		// updatedAt stays zero-value (IsZero()) - nothing has been updated yet.
 	}, nil
+}
+
+func generateTrackingNumber(orderId uint64) (string, error) {
+	suffix := make([]byte, 4)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", fmt.Errorf("failed to generate tracking number: %w", err)
+	}
+
+	return fmt.Sprintf("%d%s", orderId, strings.ToUpper(hex.EncodeToString(suffix))), nil
 }
 
 func validateShipment(orderId uint64, trackingNumber string) error {
@@ -179,6 +195,8 @@ func (s *Shipment) CreatedAt() time.Time {
 	return s.createdAt
 }
 
+// UpdatedAt returns the zero value (check with UpdatedAt().IsZero()) until the shipment's status
+// actually changes for the first time.
 func (s *Shipment) UpdatedAt() time.Time {
 	return s.updatedAt
 }
