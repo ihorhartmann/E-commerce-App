@@ -88,7 +88,7 @@ class PaymentTest {
     }
 
     @Test
-    void constructor_rejectsNullTimestamps() {
+    void constructor_rejectsNullCreatedAt() {
         var now = Instant.now();
         var id = 1L;
         var orderId = 100L;
@@ -98,8 +98,15 @@ class PaymentTest {
         var refunds = List.<Refund>of();
         assertThatThrownBy(() -> Payment.createExisting(id, orderId, externalId, amount, status, refunds, null, now))
                 .isInstanceOf(DomainException.class);
-        assertThatThrownBy(() -> Payment.createExisting(id, orderId, externalId, amount, status, refunds, now, null))
-                .isInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void constructor_allowsNullUpdatedAt() {
+        var now = Instant.now();
+        var payment = Payment.createExisting(1L, 100L, "pi_test", money("10.00", Currency.USD),
+                PaymentStatus.COMPLETED, List.of(), now, null);
+
+        assertThat(payment.updatedAt()).isNull();
     }
 
     // --- createNew ---

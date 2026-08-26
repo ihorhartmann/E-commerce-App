@@ -30,3 +30,5 @@ CREATE TABLE orders.order_items (
     price_amount   NUMERIC(19, 2) NOT NULL,
     price_currency VARCHAR(3) NOT NULL
 );
+
+CREATE INDEX idx_order_items_order_id ON orders.order_items (order_id);

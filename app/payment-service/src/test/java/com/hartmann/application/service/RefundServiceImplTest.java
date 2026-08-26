@@ -85,8 +85,7 @@ class RefundServiceImplTest {
         var amount = "40.00";
 
         var payment = testPayment(paymentId, 100L, PaymentStatus.COMPLETED, List.of());
-        when(paymentRepository.getById(paymentId)).thenReturn(payment);
-        when(refundRepository.findByPaymentId(paymentId)).thenReturn(List.of());
+        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
         when(paymentGateway.submitRefund("pi_test", money(amount)))
                 .thenReturn(new SubmitRefundResult("re_new", RefundStatus.PENDING));
         var savedRefund = testRefund(1L, paymentId, RefundStatus.PENDING, amount);

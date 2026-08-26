@@ -41,8 +41,8 @@ public class Payment {
         if (refunds == null) {
             throw new DomainException("Payment refunds must not be null");
         }
-        if (createdAt == null || updatedAt == null) {
-            throw new DomainException("Payment createdAt/updatedAt must not be null");
+        if (createdAt == null) {
+            throw new DomainException("Payment createdAt must not be null");
         }
 
         this.id = id;
@@ -132,8 +132,7 @@ public class Payment {
     }
 
     public static Payment createNew(long orderId, String externalId, Money amount) {
-        var now = Instant.now();
-        return new Payment(0L, orderId, externalId, amount, PaymentStatus.PENDING, List.of(), now, now);
+        return new Payment(0L, orderId, externalId, amount, PaymentStatus.PENDING, List.of(), Instant.now(), null);
     }
 
     public static Payment createExisting(

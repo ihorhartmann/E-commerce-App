@@ -21,7 +21,7 @@ public record PaymentResponse(
                 payment.amount().currency().name(),
                 payment.status().name(),
                 payment.createdAt().toString(),
-                payment.updatedAt().toString()
+                payment.updatedAt() != null ? payment.updatedAt().toString() : null
         );
     }
 }
