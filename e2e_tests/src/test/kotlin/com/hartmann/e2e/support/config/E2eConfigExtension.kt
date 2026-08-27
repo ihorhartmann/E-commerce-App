@@ -1,6 +1,8 @@
 package com.hartmann.e2e.support.config
 
 import com.hartmann.e2e.support.docker.DockerComposeStack
+import com.hartmann.e2e.support.seed.OrderSequenceSeeder
+import com.hartmann.e2e.support.seed.ProductSeeder
 import com.hartmann.e2e.support.stripe.StripeCliListener
 import org.junit.jupiter.api.extension.BeforeAllCallback
 import org.junit.jupiter.api.extension.ExtensionContext
@@ -18,6 +20,8 @@ class E2eConfigExtension : BeforeAllCallback {
     override fun beforeAll(context: ExtensionContext) {
         RestAssuredJsonConfig.apply()
         DockerComposeStack.start()
+        OrderSequenceSeeder.start()
+        ProductSeeder.start()
         StripeCliListener.start()
 
         context.root.getStore(ExtensionContext.Namespace.GLOBAL).getOrComputeIfAbsent(SHUTDOWN_KEY) {

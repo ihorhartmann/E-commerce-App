@@ -23,6 +23,7 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.27.7")
     testImplementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.18.2")
     testImplementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.18.2")
+    testImplementation("org.postgresql:postgresql:42.7.13")
 }
 
 kotlin {
