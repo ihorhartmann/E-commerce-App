@@ -2,7 +2,7 @@ package transaction
 
 import (
 	"context"
-	"inventoryservice/infrastructure/repository/transaction"
+	"inventoryservice/application/port/out/repository/transaction"
 
 	"gorm.io/gorm"
 )

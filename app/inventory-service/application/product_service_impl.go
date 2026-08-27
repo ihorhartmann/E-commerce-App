@@ -5,6 +5,7 @@ import (
 	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in"
 	"inventoryservice/application/port/out/repository"
+	"inventoryservice/application/port/out/repository/transaction"
 	"inventoryservice/domain"
 
 	"inventoryservice/domain/model"
@@ -12,15 +13,12 @@ import (
 
 type ProductServiceImpl struct {
 	in.ProductService
-	productRepository     repository.ProductRepository
-	reservationRepository repository.ReservationRepository
+	productRepository repository.ProductRepository
+	txExecutor        transaction.Executor
 }
 
-func NewProductService(
-	products repository.ProductRepository,
-	reservations repository.ReservationRepository,
-) in.ProductService {
-	return &ProductServiceImpl{productRepository: products, reservationRepository: reservations}
+func NewProductService(products repository.ProductRepository, txExecutor transaction.Executor) in.ProductService {
+	return &ProductServiceImpl{productRepository: products, txExecutor: txExecutor}
 }
 
 func (ps *ProductServiceImpl) Create(ctx context.Context, product *model.Product) (*model.Product, error) {
@@ -33,7 +31,9 @@ func (ps *ProductServiceImpl) Update(ctx context.Context, product *model.Product
 		return nil, err
 	}
 
-	return ps.attachReservations(ctx, updated)
+	// Re-read via the joined query so Reserved()/Available() on the returned product reflect
+	// current reservations instead of always reading as unreserved.
+	return ps.productRepository.GetByIDWithReservations(ctx, updated.ID())
 }
 
 func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Product, error) {
@@ -41,26 +41,7 @@ func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Produc
 		return nil, domain.ErrInvalidInput
 	}
 
-	product, err := ps.productRepository.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	return ps.attachReservations(ctx, product)
-}
-
-// attachReservations attaches a product's current stock reservations, so Reserved()/Available() on the
-// returned product reflect real state instead of always reading as unreserved - callers building a
-// response from the product (e.g. the HTTP DTO) need this, since Product itself only carries
-// reservations when explicitly given them (see Product.WithStockReservations).
-// TODO may be replace with real DB join
-func (ps *ProductServiceImpl) attachReservations(ctx context.Context, product *model.Product) (*model.Product, error) {
-	reservations, err := ps.reservationRepository.FindByProductIDs(ctx, []uint64{product.ID()})
-	if err != nil {
-		return nil, err
-	}
-
-	return product.WithStockReservations(reservations), nil
+	return ps.productRepository.GetByIDWithReservations(ctx, id)
 }
 
 func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
@@ -71,18 +52,19 @@ func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
 	return ps.productRepository.Delete(ctx, id)
 }
 
-// TODO make it tx and try to bulk update products in the future
 func (ps *ProductServiceImpl) Restock(ctx context.Context, items []dto.ReservationDTO) error {
-	for _, item := range items {
-		product, err := ps.productRepository.GetByID(ctx, item.ProductID)
-		if err != nil {
-			return err
+	return ps.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		for _, item := range items {
+			product, err := ps.productRepository.GetByID(ctx, item.ProductID)
+			if err != nil {
+				return err
+			}
+
+			if _, err = ps.productRepository.Update(ctx, product.Restock(item.Quantity)); err != nil {
+				return err
+			}
 		}
 
-		if _, err = ps.productRepository.Update(ctx, product.Restock(item.Quantity)); err != nil {
-			return err
-		}
-	}
-
-	return nil
+		return nil
+	})
 }

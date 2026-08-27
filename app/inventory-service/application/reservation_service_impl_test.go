@@ -67,7 +67,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 			},
 		)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		reservations, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
 
@@ -92,7 +92,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 4}})
 
@@ -111,7 +111,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), gomock.Any()).Times(0)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 
@@ -131,7 +131,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 
@@ -151,7 +151,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1, 2}).Return(nil).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
 
 		if err := service.Cancel(context.Background(), orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -166,7 +166,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
 
 		err := service.Cancel(context.Background(), orderID)
 
@@ -193,7 +193,7 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 			},
 		)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
 
 		if err := service.HoldByCourier(context.Background(), orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -217,7 +217,7 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
 
 		err := service.HoldByCourier(context.Background(), orderID)
 
@@ -235,7 +235,7 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)))
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
 
 		err := service.HoldByCourier(context.Background(), orderID)
 
@@ -266,7 +266,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1}).Return(nil).Times(1)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		if err := service.Fulfill(context.Background(), orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -286,7 +286,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		err := service.Fulfill(context.Background(), orderID)
 
@@ -308,7 +308,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo)
+		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
 
 		err := service.Fulfill(context.Background(), orderID)
 

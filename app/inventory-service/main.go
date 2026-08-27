@@ -12,6 +12,8 @@ import (
 
 	"inventoryservice/application"
 	"inventoryservice/infrastructure/env"
+	gormconn "inventoryservice/infrastructure/gorm"
+	gormtx "inventoryservice/infrastructure/gorm/transaction"
 	"inventoryservice/infrastructure/repository"
 	inhttp "inventoryservice/interfaces/http"
 	inkafka "inventoryservice/interfaces/kafka"
@@ -28,11 +30,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	productRepository := repository.NewInMemoryProductRepository()
-	reservationRepository := repository.NewInMemoryReservationRepository()
+	db, err := gormconn.NewDB(config)
+	if err != nil {
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
+	}
 
-	productUseCases := application.NewProductService(productRepository, reservationRepository)
-	reservationUseCases := application.NewReservationService(reservationRepository, productRepository)
+	productRepository := repository.NewPostgresProductRepository(db)
+	reservationRepository := repository.NewPostgresReservationRepository(db)
+	txExecutor := gormtx.NewGormTxManager(db)
+
+	productUseCases := application.NewProductService(productRepository, txExecutor)
+	reservationUseCases := application.NewReservationService(reservationRepository, productRepository, txExecutor)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka.InventoryCommandsTopic, kafka.ConsumerGroupID)
@@ -71,5 +80,12 @@ func main() {
 		slog.Error("failed to shut down http server", "error", err)
 		os.Exit(1)
 	}
+
+	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
+		if err = sqlDB.Close(); err != nil {
+			slog.Error("error closing database connection", "error", err)
+		}
+	}
+
 	slog.Info("application shut down successfully")
 }
