@@ -14,6 +14,7 @@ import java.time.Duration
  */
 object DockerComposeStack {
     private val STARTUP_TIMEOUT: Duration = Duration.ofMinutes(3)
+    private const val POSTGRES_CONTAINER_PORT = 5432
 
     private fun requiredEnv(name: String): String =
         System.getenv(name) ?: error("$name is not set - export it before running tests.")
@@ -27,12 +28,17 @@ object DockerComposeStack {
     val stripePublishableKey: String = requiredEnv("STRIPE_PUBLISHABLE_KEY")
     val stripeWebhookSecret: String = requiredEnv("STRIPE_WEBHOOK_SECRET")
 
+    val postgresDb: String = requiredEnv("POSTGRES_DB")
+    val postgresUser: String = requiredEnv("POSTGRES_USER")
+    val postgresPassword: String = requiredEnv("POSTGRES_PASSWORD")
+
     init {
         // consumed by the docker compose child process via inherited env, not by this Kotlin code -
         // just fail fast here with a clear message if any is missing
         requiredEnv("KAFKA_PORT")
         requiredEnv("KAFKA_HOST_PORT")
         requiredEnv("KAFKA_UI_PORT")
+        requiredEnv("POSTGRES_PORT")
     }
 
     // No .withEnv(...): Testcontainers doesn't reliably pass these through to docker-compose's
@@ -62,6 +68,11 @@ object DockerComposeStack {
                 paymentPort,
                 Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT),
             )
+            .withExposedService(
+                "postgres",
+                POSTGRES_CONTAINER_PORT,
+                Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT),
+            )
 
     private val started: Boolean by lazy {
         compose.start()
@@ -81,6 +92,12 @@ object DockerComposeStack {
     val paymentServiceUrl: String by lazy { serviceUrl("payment-service", paymentPort) }
 
     val shippingServiceUrl: String by lazy { serviceUrl("shipping-service", shippingPort) }
+
+    val postgresJdbcUrl: String by lazy {
+        val host = compose.getServiceHost("postgres", POSTGRES_CONTAINER_PORT)
+        val port = compose.getServicePort("postgres", POSTGRES_CONTAINER_PORT)
+        "jdbc:postgresql://$host:$port/$postgresDb"
+    }
 
     private fun serviceUrl(serviceName: String, port: Int): String {
         val host = compose.getServiceHost(serviceName, port)

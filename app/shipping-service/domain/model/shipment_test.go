@@ -20,7 +20,7 @@ func testAddress(t *testing.T) value.Address {
 
 func newTestShipment(t *testing.T) *Shipment {
 	t.Helper()
-	shipment, err := NewShipment(100, "TRACK-1", testAddress(t))
+	shipment, err := NewShipment(100, testAddress(t))
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
@@ -55,10 +55,9 @@ func cancelledBeforePickupShipment(t *testing.T) *Shipment {
 }
 
 func TestNewShipment(t *testing.T) {
-	t.Run("creates a shipment in Created status, held by inventory", func(t *testing.T) {
+	t.Run("creates a shipment in Created status, held by inventory, with a generated tracking number", func(t *testing.T) {
 		orderID := uint64(100)
-		trackingNumber := "TRACK-1"
-		shipment, err := NewShipment(orderID, trackingNumber, testAddress(t))
+		shipment, err := NewShipment(orderID, testAddress(t))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -66,8 +65,8 @@ func TestNewShipment(t *testing.T) {
 		if shipment.OrderId() != orderID {
 			t.Errorf("OrderId() = %d, want %d", shipment.OrderId(), orderID)
 		}
-		if shipment.TrackingNumber() != trackingNumber {
-			t.Errorf("TrackingNumber() = %q, want %q", shipment.TrackingNumber(), trackingNumber)
+		if shipment.TrackingNumber() == "" {
+			t.Error("TrackingNumber() is empty, want a generated value")
 		}
 		if shipment.Status() != Created {
 			t.Errorf("Status() = %v, want %v", shipment.Status(), Created)
@@ -78,14 +77,7 @@ func TestNewShipment(t *testing.T) {
 	})
 
 	t.Run("rejects a zero orderId", func(t *testing.T) {
-		_, err := NewShipment(0, "TRACK-1", testAddress(t))
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
-		}
-	})
-
-	t.Run("rejects a blank tracking number", func(t *testing.T) {
-		_, err := NewShipment(100, "  ", testAddress(t))
+		_, err := NewShipment(0, testAddress(t))
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}

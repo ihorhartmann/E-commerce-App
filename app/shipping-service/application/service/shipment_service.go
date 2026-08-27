@@ -38,7 +38,12 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 }
 
 func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error) {
-	created, err := s.shipmentRepository.Create(ctx, orderID, address)
+	shipment, err := model.NewShipment(orderID, address)
+	if err != nil {
+		return nil, err
+	}
+
+	created, err := s.shipmentRepository.Create(ctx, shipment)
 	if err != nil {
 		if pubErr := s.shipmentProducer.PublishShipmentCreationFailed(ctx, correlationID, orderID); pubErr != nil {
 			return nil, errors.Join(err, pubErr)

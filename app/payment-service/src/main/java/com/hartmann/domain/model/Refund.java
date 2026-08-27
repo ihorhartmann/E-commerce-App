@@ -32,8 +32,8 @@ public class Refund {
         if (status == null) {
             throw new DomainException("Refund status must not be null");
         }
-        if (createdAt == null || updatedAt == null) {
-            throw new DomainException("Refund createdAt/updatedAt must not be null");
+        if (createdAt == null) {
+            throw new DomainException("Refund createdAt must not be null");
         }
         // externalId is intentionally not validated here - a freshly drafted refund
         // (Payment.createRefund) doesn't have one yet; Stripe assigns it afterward.
@@ -98,8 +98,7 @@ public class Refund {
     }
 
     public static Refund createNew(long paymentId, String externalId, Money amount, RefundStatus status) {
-        var now = Instant.now();
-        return new Refund(0L, paymentId, externalId, amount, status, now, now);
+        return new Refund(0L, paymentId, externalId, amount, status, Instant.now(), null);
     }
 
     public static Refund createExisting(

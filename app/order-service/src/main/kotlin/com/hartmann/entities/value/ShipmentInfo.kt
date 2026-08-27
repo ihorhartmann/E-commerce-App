@@ -1,26 +1,26 @@
 package com.hartmann.entities.value
 
-import java.time.LocalDateTime
+import java.time.Instant
 
 data class ShipmentInfo(
     val trackingNumber: String,
-    val pickedUpAt: LocalDateTime? = null,
-    val deliveredAt: LocalDateTime? = null,
-    val returnedAt: LocalDateTime? = null,
+    val pickedUpAt: Instant? = null,
+    val deliveredAt: Instant? = null,
+    val returnedAt: Instant? = null,
 ) {
     fun pickUp(): ShipmentInfo {
         check(pickedUpAt == null) { "shipment already picked up" }
-        return copy(pickedUpAt = LocalDateTime.now())
+        return copy(pickedUpAt = Instant.now())
     }
 
     fun deliver(): ShipmentInfo {
         check(pickedUpAt != null) { "cannot deliver a shipment that was never picked up" }
-        return copy(deliveredAt = LocalDateTime.now())
+        return copy(deliveredAt = Instant.now())
     }
 
     fun returnToInventory(): ShipmentInfo {
         check(returnedAt == null) { "shipment already marked returned" }
-        return copy(returnedAt = LocalDateTime.now())
+        return copy(returnedAt = Instant.now())
     }
 
     companion object {

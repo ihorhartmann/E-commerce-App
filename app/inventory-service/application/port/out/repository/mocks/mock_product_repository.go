@@ -85,6 +85,21 @@ func (mr *MockProductRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockProductRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByIDWithReservations mocks base method.
+func (m *MockProductRepository) GetByIDWithReservations(ctx context.Context, id uint64) (*model.Product, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDWithReservations", ctx, id)
+	ret0, _ := ret[0].(*model.Product)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDWithReservations indicates an expected call of GetByIDWithReservations.
+func (mr *MockProductRepositoryMockRecorder) GetByIDWithReservations(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithReservations", reflect.TypeOf((*MockProductRepository)(nil).GetByIDWithReservations), ctx, id)
+}
+
 // GetByIDs mocks base method.
 func (m *MockProductRepository) GetByIDs(ctx context.Context, ids []uint64) ([]*model.Product, error) {
 	m.ctrl.T.Helper()

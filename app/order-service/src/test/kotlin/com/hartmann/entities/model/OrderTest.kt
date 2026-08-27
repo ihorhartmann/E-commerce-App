@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -37,7 +37,7 @@ private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 
             items = items,
             address = testAddress(),
             status = OrderStatus.PLACED,
-            createdAt = LocalDateTime.now()
+            createdAt = Instant.now()
         )
     }
 
@@ -96,7 +96,7 @@ class OrderTest {
             items = listOf(testItem()),
             address = testAddress(),
             status = OrderStatus.PROCESSING,
-            createdAt = LocalDateTime.now(),
+            createdAt = Instant.now(),
         )
 
         assertEquals(id, order.id)
@@ -112,7 +112,7 @@ class OrderTest {
                 items = listOf(testItem()),
                 address = testAddress(),
                 status = OrderStatus.PLACED,
-                createdAt = LocalDateTime.now(),
+                createdAt = Instant.now(),
             )
         }
     }

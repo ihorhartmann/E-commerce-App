@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"inventoryservice/application/port/in"
 	"inventoryservice/application/port/out/repository"
+	"inventoryservice/application/port/out/repository/transaction"
 
 	"inventoryservice/application/dto"
 	"inventoryservice/domain/model"
@@ -14,15 +15,18 @@ type ReservationServiceImpl struct {
 	in.ReservationService
 	reservationRepository repository.ReservationRepository
 	productRepository     repository.ProductRepository
+	txExecutor            transaction.Executor
 }
 
 func NewReservationService(
 	reservationRepository repository.ReservationRepository,
 	productRepository repository.ProductRepository,
+	txExecutor transaction.Executor,
 ) in.ReservationService {
 	return &ReservationServiceImpl{
 		reservationRepository: reservationRepository,
 		productRepository:     productRepository,
+		txExecutor:            txExecutor,
 	}
 }
 
@@ -120,47 +124,49 @@ func (rs *ReservationServiceImpl) Cancel(ctx context.Context, orderID uint64) er
 	return rs.reservationRepository.DeleteByIDs(ctx, ids)
 }
 
-// TODO make it tx and try to bulk update reservations in the future
 func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
-	if err != nil {
-		return err
-	}
-
-	for _, reservation := range reservations {
-		held, err := reservation.WithHolder(model.ReservationHolderCourier)
+	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 		if err != nil {
 			return err
 		}
 
-		if _, err = rs.reservationRepository.Update(ctx, held); err != nil {
-			return err
-		}
-	}
+		for _, reservation := range reservations {
+			held, err := reservation.WithHolder(model.ReservationHolderCourier)
+			if err != nil {
+				return err
+			}
 
-	return nil
+			if _, err = rs.reservationRepository.Update(ctx, held); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
-// TODO make it tx and try to bulk update products in the future
 func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
-	if err != nil {
-		return err
-	}
-
-	ids := make([]uint64, 0, len(reservations))
-	for _, reservation := range reservations {
-		product, err := rs.productRepository.GetByID(ctx, reservation.ProductID())
+	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 		if err != nil {
 			return err
 		}
 
-		if _, err = rs.productRepository.Update(ctx, product.Fulfill(reservation.Quantity())); err != nil {
-			return err
+		ids := make([]uint64, 0, len(reservations))
+		for _, reservation := range reservations {
+			product, err := rs.productRepository.GetByID(ctx, reservation.ProductID())
+			if err != nil {
+				return err
+			}
+
+			if _, err = rs.productRepository.Update(ctx, product.Fulfill(reservation.Quantity())); err != nil {
+				return err
+			}
+
+			ids = append(ids, reservation.ID())
 		}
 
-		ids = append(ids, reservation.ID())
-	}
-
-	return rs.reservationRepository.DeleteByIDs(ctx, ids)
+		return rs.reservationRepository.DeleteByIDs(ctx, ids)
+	})
 }

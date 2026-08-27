@@ -11,6 +11,7 @@ import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Money;
 
 import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,7 +43,7 @@ public class RefundServiceImpl implements RefundService {
     @Override
     @Transactional
     public Refund submitRefund(long paymentId, Money amount) {
-        var payment = getPaymentWithRefunds(paymentId);
+        var payment = paymentRepository.getByIdWithRefunds(paymentId);
         var draftRefund = payment.createRefund(amount);
 
         var result = paymentGateway.submitRefund(payment.externalId(), amount);
@@ -66,20 +67,5 @@ public class RefundServiceImpl implements RefundService {
         }
 
         return updatedRefund;
-    }
-
-    //TODO replace it with join in real postgresql repo
-    private Payment getPaymentWithRefunds(long paymentId) {
-        var payment = paymentRepository.getById(paymentId);
-        var refunds = refundRepository.findByPaymentId(paymentId);
-        return Payment.createExisting(
-                payment.id(),
-                payment.orderId(),
-                payment.externalId(), payment.amount(),
-                payment.status(),
-                refunds,
-                payment.createdAt(),
-                payment.updatedAt()
-        );
     }
 }

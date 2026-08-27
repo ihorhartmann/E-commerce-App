@@ -13,7 +13,6 @@ import (
 	context "context"
 	reflect "reflect"
 	model "shippingservice/domain/model"
-	value "shippingservice/domain/value"
 
 	gomock "go.uber.org/mock/gomock"
 )
@@ -43,18 +42,18 @@ func (m *MockShipmentRepository) EXPECT() *MockShipmentRepositoryMockRecorder {
 }
 
 // Create mocks base method.
-func (m *MockShipmentRepository) Create(ctx context.Context, orderID uint64, address value.Address) (*model.Shipment, error) {
+func (m *MockShipmentRepository) Create(ctx context.Context, shipment *model.Shipment) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Create", ctx, orderID, address)
+	ret := m.ctrl.Call(m, "Create", ctx, shipment)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Create indicates an expected call of Create.
-func (mr *MockShipmentRepositoryMockRecorder) Create(ctx, orderID, address any) *gomock.Call {
+func (mr *MockShipmentRepositoryMockRecorder) Create(ctx, shipment any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockShipmentRepository)(nil).Create), ctx, orderID, address)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockShipmentRepository)(nil).Create), ctx, shipment)
 }
 
 // GetByID mocks base method.

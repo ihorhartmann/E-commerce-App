@@ -56,7 +56,7 @@ class RefundTest {
     }
 
     @Test
-    void constructor_rejectsNullTimestamps() {
+    void constructor_rejectsNullCreatedAt() {
         var now = Instant.now();
         var id = 1L;
         var paymentId = 100L;
@@ -65,8 +65,14 @@ class RefundTest {
         var status = RefundStatus.PENDING;
         assertThatThrownBy(() -> Refund.createExisting(id, paymentId, externalId, amount, status, null, now))
                 .isInstanceOf(DomainException.class);
-        assertThatThrownBy(() -> Refund.createExisting(id, paymentId, externalId, amount, status, now, null))
-                .isInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void constructor_allowsNullUpdatedAt() {
+        var now = Instant.now();
+        var refund = Refund.createExisting(1L, 100L, "re_test", testAmount(), RefundStatus.PENDING, now, null);
+
+        assertThat(refund.updatedAt()).isNull();
     }
 
     // --- createNew ---

@@ -13,4 +13,6 @@ public interface PaymentRepository {
     Payment updateStatus(long paymentId, PaymentStatus status);
 
     Payment getByExternalId(String externalId);
+
+    Payment getByIdWithRefunds(long paymentId);
 }

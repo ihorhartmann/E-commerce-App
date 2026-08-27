@@ -7,12 +7,12 @@ import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 data class OrderResponse(
     val id: Long,
     val userId: Long,
-    val paymentConfirmedAt: LocalDateTime?,
+    val paymentConfirmedAt: Instant?,
     val shipment: ShipmentResponseDto?,
     val cancellationReason: String?,
     val refund: RefundResponseDto?,
@@ -20,8 +20,8 @@ data class OrderResponse(
     val totalPrice: MoneyResponseDto,
     val address: AddressResponseDto,
     val status: String,
-    val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime?,
+    val createdAt: Instant,
+    val updatedAt: Instant?,
     val clientSecret: String? = null,
 )
 
@@ -43,9 +43,9 @@ fun toOrderResponse(order: Order, clientSecret: String? = null): OrderResponse =
 
 data class ShipmentResponseDto(
     val trackingNumber: String,
-    val pickedUpAt: LocalDateTime?,
-    val deliveredAt: LocalDateTime?,
-    val returnedAt: LocalDateTime?,
+    val pickedUpAt: Instant?,
+    val deliveredAt: Instant?,
+    val returnedAt: Instant?,
 )
 
 private fun toShipmentResponseDto(shipment: ShipmentInfo): ShipmentResponseDto = ShipmentResponseDto(
@@ -56,10 +56,10 @@ private fun toShipmentResponseDto(shipment: ShipmentInfo): ShipmentResponseDto =
 )
 
 data class RefundResponseDto(
-    val requestedAt: LocalDateTime,
+    val requestedAt: Instant,
     val amount: MoneyResponseDto?,
-    val confirmedAt: LocalDateTime?,
-    val failedAt: LocalDateTime?,
+    val confirmedAt: Instant?,
+    val failedAt: Instant?,
 )
 
 private fun toRefundResponseDto(refund: RefundInfo): RefundResponseDto = RefundResponseDto(

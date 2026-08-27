@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class GetOrderUseCaseImplTest {
@@ -31,7 +31,7 @@ class GetOrderUseCaseImplTest {
             items = listOf(OrderItem.createExisting(1, 1, 1, 1, Money(BigDecimal("10.00"), Currency.USD))),
             address = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = ""),
             status = OrderStatus.PLACED,
-            createdAt = LocalDateTime.now(),
+            createdAt = Instant.now(),
         )
         every { orderRepository.getOrder(orderId) } returns order
 

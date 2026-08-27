@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
 
 @WebMvcTest(OrderController::class)
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
@@ -51,7 +51,7 @@ class OrderControllerTest {
         items = listOf(testItem()),
         address = testAddress(),
         status = OrderStatus.PLACED,
-        createdAt = LocalDateTime.now(),
+        createdAt = Instant.now(),
     )
 
     private val validPlaceOrderRequestJson: String = """
