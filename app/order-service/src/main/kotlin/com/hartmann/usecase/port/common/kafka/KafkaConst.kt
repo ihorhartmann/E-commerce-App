@@ -22,7 +22,6 @@ object KafkaConst {
     const val PAYMENT_FAILED_EVENT = "PaymentFailed"
     const val REFUND_COMPLETED_EVENT = "RefundCompleted"
     const val REFUND_FAILED_EVENT = "RefundFailed"
-    const val SHIPMENT_CREATION_FAILED_EVENT = "ShipmentCreationFailed"
 
     const val SHIPMENT_CREATED_EVENT = "ShipmentCreated"
     const val SHIPMENT_IN_DELIVERY_EVENT = "ShipmentInDelivery"

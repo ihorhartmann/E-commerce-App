@@ -235,16 +235,7 @@ class OrderTest {
         assertThrows<IllegalStateException> { orderWithShipment().deliver() }
     }
 
-    // --- failShipmentCreation / loseShipment / cancelShipment (PROCESSING -> CANCEL_REQUESTED) ---
-
-    @Test
-    fun `failShipmentCreation - requests cancellation without awaiting a return`() {
-        val order = processingOrder().failShipmentCreation()
-
-        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
-        assertEquals(CancellationReason.SHIPMENT_CREATION_FAILED, order.cancellationReason)
-        assertFalse(order.awaitingReturn)
-    }
+    // --- loseShipment / cancelShipment (PROCESSING -> CANCEL_REQUESTED) ---
 
     @Test
     fun `loseShipment - does not await a return even though the goods were already picked up`() {
@@ -364,7 +355,7 @@ class OrderTest {
 
     @Test
     fun `returnToStock - throws when order has no shipment`() {
-        val order = processingOrder().failShipmentCreation()
+        val order = processingOrder().cancelShipment()
 
         assertThrows<IllegalArgumentException> { order.returnToStock() }
     }

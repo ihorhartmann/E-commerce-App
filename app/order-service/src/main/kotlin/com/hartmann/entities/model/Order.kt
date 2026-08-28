@@ -78,16 +78,6 @@ class Order private constructor(
         return withState(status = OrderStatus.FULFILLED, shipment = currentShipment.deliver())
     }
 
-    /** Shipment was never created, so there's nothing to physically return. */
-    fun failShipmentCreation(): Order {
-        requireStatus("fail shipment creation", OrderStatus.PROCESSING)
-        return withState(
-            status = OrderStatus.CANCEL_REQUESTED,
-            cancellationReason = CancellationReason.SHIPMENT_CREATION_FAILED,
-            awaitingReturn = false,
-        )
-    }
-
     /** The goods are lost, not coming back - no return to wait for. */
     fun loseShipment(): Order {
         requireStatus("lose shipment", OrderStatus.PROCESSING)
@@ -257,7 +247,6 @@ enum class CancellationReason {
     RESERVATION_FAILED,
     OUT_OF_STOCK,
     PAYMENT_FAILED,
-    SHIPMENT_CREATION_FAILED,
     SHIPMENT_LOST,
     CANCELLED_BY_CUSTOMER,
 }

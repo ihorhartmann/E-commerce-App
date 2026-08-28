@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	commonkafka "shippingservice/application/port/common/kafka"
@@ -45,9 +44,6 @@ func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, correlationID 
 
 	created, err := s.shipmentRepository.Create(ctx, shipment)
 	if err != nil {
-		if pubErr := s.shipmentProducer.PublishShipmentCreationFailed(ctx, correlationID, orderID); pubErr != nil {
-			return nil, errors.Join(err, pubErr)
-		}
 		return nil, err
 	}
 

@@ -108,18 +108,12 @@ sequenceDiagram
                 P--)O: Kafka: PaymentCompleted
                 Note over O: Order.confirmPayment() -> PROCESSING, paymentConfirmedAt
                 O--)Sh: Kafka: CreateShipment
+                Note over Sh: on failure, retried by Shipping's own consumer<br/>(no event back to Order yet - DLQ handling is TODO)
 
-                alt Shipment creation failed
-                    Sh--)O: Kafka: ShipmentCreationFailed
-                    Note over O: Order.failShipmentCreation().requestRefund()<br/>-> CANCEL_REQUESTED, reason="Shipment creation failed"
-                    O--)I: Kafka: CancelReservation
-                    O--)P: Kafka: RefundRequested
-                else Shipment created
-                    Sh--)O: Kafka: ShipmentCreated
-                    Note over O: Order.createShipment(trackingNumber)<br/>(stays PROCESSING)
-                    O--)I: Kafka: HoldReservation
-                    Note over I: reservation holder -> Courier
-                end
+                Sh--)O: Kafka: ShipmentCreated
+                Note over O: Order.createShipment(trackingNumber)<br/>(stays PROCESSING)
+                O--)I: Kafka: HoldReservation
+                Note over I: reservation holder -> Courier
             end
         end
     end
@@ -240,7 +234,7 @@ by splitting into topics.
 | `shipping.commands` | Order | Shipping | `CreateShipment` |
 | `payment.commands` | Order | Payment | `RefundRequested` |
 | `payment.events` | Payment | Order | `PaymentCompleted`, `PaymentFailed`, `RefundCompleted`, `RefundFailed` |
-| `shipping.events` | Shipping | Order | `ShipmentCreationFailed`, `ShipmentCreated`, `ShipmentInDelivery`, `ShipmentDelivered`, `ShipmentCancelled`, `ShipmentLost`, `ShipmentReturnedToInventory` |
+| `shipping.events` | Shipping | Order | `ShipmentCreated`, `ShipmentInDelivery`, `ShipmentDelivered`, `ShipmentCancelled`, `ShipmentLost`, `ShipmentReturnedToInventory` |
 
 Commands (`*.commands`) are an order to a specific service to do one targeted
 thing. Events (`*.events`) are a fact that happened. Every message carries

@@ -5,7 +5,6 @@ import com.hartmann.entities.value.Money
 interface FulfillOrderSaga {
     fun onPaymentCompleted(orderId: Long, correlationId: String)
     fun onPaymentFailed(orderId: Long, correlationId: String)
-    fun onShipmentCreationFailed(orderId: Long, correlationId: String)
     fun onRefundCompleted(orderId: Long, amount: Money, correlationId: String)
     fun onRefundFailed(orderId: Long, correlationId: String)
     fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String)

@@ -78,14 +78,6 @@ class OrderKafkaConsumer(
     ) {
         handleMessage(KafkaConst.SHIPPING_EVENTS_TOPIC, messageType, correlationId) {
             when (messageType) {
-                KafkaConst.SHIPMENT_CREATION_FAILED_EVENT -> {
-                    saga.onShipmentCreationFailed(
-                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
-                        correlationId
-                    )
-                    true
-                }
-
                 KafkaConst.SHIPMENT_CREATED_EVENT -> {
                     val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
                     saga.onShipmentCreated(event.orderId, event.trackingNumber, correlationId)

@@ -92,22 +92,6 @@ class FulfillOrderSagaImplTest {
     }
 
     @Test
-    fun `onShipmentCreationFailed - cancels the reservation and requests a refund`() {
-        val orderId = 1L
-        val correlationId = "corr-1"
-        val order = processingOrder()
-        stubGetOrder(order)
-        stubSave()
-
-        saga.onShipmentCreationFailed(orderId, correlationId)
-
-        assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
-        assertNotNull(savedOrder?.refund)
-        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
-    }
-
-    @Test
     fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
         val orderId = 1L
         val correlationId = "corr-1"

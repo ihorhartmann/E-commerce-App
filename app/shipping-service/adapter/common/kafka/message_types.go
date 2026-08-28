@@ -14,7 +14,6 @@ func (mt MessageType) String() string {
 const (
 	CreateShipmentCommand MessageType = "CreateShipment"
 
-	ShipmentCreationFailedEvent      MessageType = "ShipmentCreationFailed"
 	ShipmentCreatedEvent             MessageType = "ShipmentCreated"
 	ShipmentInDeliveryEvent          MessageType = "ShipmentInDelivery"
 	ShipmentDeliveredEvent           MessageType = "ShipmentDelivered"

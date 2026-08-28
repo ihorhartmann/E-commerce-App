@@ -34,16 +34,6 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
-    override fun onShipmentCreationFailed(orderId: Long, correlationId: String) {
-        val order = orderRepository.getOrder(orderId)
-        val updatedOrder = order.failShipmentCreation().requestRefund()
-
-        orderRepository.save(updatedOrder)
-        cancelReservations(updatedOrder, correlationId)
-        publishRefundRequested(updatedOrder, correlationId)
-    }
-
-    @Transactional
     override fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String) {
         val order = orderRepository.getOrder(orderId)
         val updatedOrder = order.createShipment(trackingNumber)

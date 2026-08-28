@@ -87,18 +87,6 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onShippingEvent - dispatches ShipmentCreationFailed to the saga`() {
-        val orderId = 200L
-        val correlationId = "corr-7"
-        every { saga.onShipmentCreationFailed(orderId, correlationId) } returns Unit
-
-        consumer.onShippingEvent(KafkaConst.SHIPMENT_CREATION_FAILED_EVENT, correlationId, "{\"orderId\":$orderId}")
-
-        verify(exactly = 1) { saga.onShipmentCreationFailed(orderId, correlationId) }
-        confirmVerified(saga)
-    }
-
-    @Test
     fun `onShippingEvent - dispatches ShipmentCreated to the saga with the tracking number`() {
         val orderId = 201L
         val correlationId = "corr-8"

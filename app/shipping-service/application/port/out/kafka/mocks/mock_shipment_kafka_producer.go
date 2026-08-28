@@ -55,20 +55,6 @@ func (mr *MockShipmentKafkaProducerMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockShipmentKafkaProducer)(nil).Close))
 }
 
-// PublishShipmentCreationFailed mocks base method.
-func (m *MockShipmentKafkaProducer) PublishShipmentCreationFailed(ctx context.Context, correlationID string, orderID uint64) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PublishShipmentCreationFailed", ctx, correlationID, orderID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// PublishShipmentCreationFailed indicates an expected call of PublishShipmentCreationFailed.
-func (mr *MockShipmentKafkaProducerMockRecorder) PublishShipmentCreationFailed(ctx, correlationID, orderID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublishShipmentCreationFailed", reflect.TypeOf((*MockShipmentKafkaProducer)(nil).PublishShipmentCreationFailed), ctx, correlationID, orderID)
-}
-
 // PublishShipmentReturnedToInventory mocks base method.
 func (m *MockShipmentKafkaProducer) PublishShipmentReturnedToInventory(ctx context.Context, correlationID string, shipment *model.Shipment) error {
 	m.ctrl.T.Helper()

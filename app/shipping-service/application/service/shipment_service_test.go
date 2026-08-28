@@ -101,7 +101,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 		}
 	})
 
-	t.Run("publishes creation-failed and returns the original error when persisting fails", func(t *testing.T) {
+	t.Run("returns the original error without publishing when persisting fails", func(t *testing.T) {
 		orderID := uint64(100)
 		correlationID := "corr-1"
 		address := testAddress(t)
@@ -110,7 +110,6 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
 		shipmentRepo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
-		producer.EXPECT().PublishShipmentCreationFailed(gomock.Any(), correlationID, orderID).Return(nil).Times(1)
 		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer)
@@ -119,30 +118,6 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
-		}
-	})
-
-	t.Run("joins both errors when the creation-failed publish also fails", func(t *testing.T) {
-		orderID := uint64(100)
-		correlationID := "corr-1"
-		address := testAddress(t)
-		createErr := errors.New("db down")
-		pubErr := errors.New("kafka down")
-		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
-		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
-
-		shipmentRepo.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, createErr).Times(1)
-		producer.EXPECT().PublishShipmentCreationFailed(gomock.Any(), correlationID, orderID).Return(pubErr).Times(1)
-
-		service := NewShipmentServiceImpl(shipmentRepo, producer)
-
-		_, err := service.CreateShipment(context.Background(), correlationID, orderID, address)
-
-		if !errors.Is(err, createErr) {
-			t.Errorf("err should wrap the create error: %v", err)
-		}
-		if !errors.Is(err, pubErr) {
-			t.Errorf("err should wrap the publish error: %v", err)
 		}
 	})
 
