@@ -176,49 +176,4 @@ func TestShipmentKafkaProducer_Integration(t *testing.T) {
 			t.Errorf("payload = %+v, want %+v", payload, wantPayload)
 		}
 	})
-
-	t.Run("publishes a shipment creation failed event with the correct type and payload", func(t *testing.T) {
-		topic := uuid.New().String()
-		createTopic(t, topic)
-
-		messageProducer := kafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
-		producer := shipmentkafka.NewShipmentKafkaProducer(messageProducer)
-		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
-
-		correlationID := uuid.New().String()
-		orderID := uint64(99)
-
-		if err := producer.PublishShipmentCreationFailed(context.Background(), correlationID, orderID); err != nil {
-			t.Fatalf("failed to publish: %v", err)
-		}
-
-		reader := kafkagoclient.NewReader(kafkagoclient.ReaderConfig{Brokers: []string{brokerAddr}, Topic: topic, GroupID: uuid.New().String()})
-		t.Cleanup(func() { closeQuietly(t, "reader", reader) })
-		ctx, cancel := context.WithTimeout(context.Background(), messageWaitTimeout)
-		defer cancel()
-		msg, err := reader.FetchMessage(ctx)
-		if err != nil {
-			t.Fatalf("failed to read the published message: %v", err)
-		}
-
-		wantMessageType := commonkafka.ShipmentCreationFailedEvent
-		if gotMessageType := headerValue(msg.Headers, commonkafka.MessageTypeHeader); gotMessageType != wantMessageType.String() {
-			t.Errorf("messageType header = %q, want %q", gotMessageType, wantMessageType)
-		}
-		if gotCorrelationID := headerValue(msg.Headers, commonkafka.CorrelationIDHeader); gotCorrelationID != correlationID {
-			t.Errorf("correlationId header = %q, want %q", gotCorrelationID, correlationID)
-		}
-		wantKey := kafkautil.FormatKafkaId(orderID)
-		if string(msg.Key) != wantKey {
-			t.Errorf("key = %q, want %q", msg.Key, wantKey)
-		}
-		var payload dto.ShipmentCreationFailedEvent
-		if err = json.Unmarshal(msg.Value, &payload); err != nil {
-			t.Fatalf("failed to unmarshal payload: %v", err)
-		}
-		wantPayload := dto.ShipmentCreationFailedEvent{OrderID: orderID}
-		if payload != wantPayload {
-			t.Errorf("payload = %+v, want %+v", payload, wantPayload)
-		}
-	})
 }

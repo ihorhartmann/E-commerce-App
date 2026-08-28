@@ -40,11 +40,6 @@ func (p *ShipmentKafkaProducer) PublishShipmentReturnedToInventory(_ context.Con
 	return p.producer.Send(kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, key, payload)
 }
 
-func (p *ShipmentKafkaProducer) PublishShipmentCreationFailed(_ context.Context, correlationID string, orderID uint64) error {
-	key := kafkautil.FormatKafkaId(orderID)
-	return p.producer.Send(kafkaconst.ShipmentCreationFailedEvent, correlationID, key, dto.ShipmentCreationFailedEvent{OrderID: orderID})
-}
-
 func (p *ShipmentKafkaProducer) Close() error {
 	return p.producer.Close()
 }

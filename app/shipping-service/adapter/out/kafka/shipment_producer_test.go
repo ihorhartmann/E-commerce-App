@@ -94,23 +94,3 @@ func TestShipmentKafkaProducer_PublishShipmentReturnedToInventory(t *testing.T) 
 		}
 	})
 }
-
-func TestShipmentKafkaProducer_PublishShipmentCreationFailed(t *testing.T) {
-	t.Run("publishes a ShipmentCreationFailedEvent for the order", func(t *testing.T) {
-		correlationID := "corr-4"
-		orderID := uint64(13)
-		wantKey := kafkautil.FormatKafkaId(orderID)
-		wantPayload := dto.ShipmentCreationFailedEvent{OrderID: orderID}
-
-		messageProducer := kafkamocks.NewMockKafkaMessageProducer(gomock.NewController(t))
-		messageProducer.EXPECT().
-			Send(kafkaconst.ShipmentCreationFailedEvent, correlationID, wantKey, wantPayload).
-			Return(nil).
-			Times(1)
-		producer := NewShipmentKafkaProducer(messageProducer)
-
-		if err := producer.PublishShipmentCreationFailed(context.Background(), correlationID, orderID); err != nil {
-			t.Errorf("err = %v, want nil", err)
-		}
-	})
-}
