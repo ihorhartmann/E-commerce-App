@@ -73,6 +73,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
                 .set(EXPIRES_AT, toOffsetDateTime(entity.expiresAt()))
                 .returning(ID)
                 .fetchOne(ID);
+        //noinspection DataFlowIssue
         return getById(id);
     }
 
@@ -164,7 +165,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
             )));
         }
 
-        var first = rows.get(0);
+        var first = rows.getFirst();
         var paymentEntity = new PaymentEntity(
                 first.get(ID), first.get(ORDER_ID), first.get(EXTERNAL_ID), first.get(AMOUNT),
                 first.get(CURRENCY), first.get(STATUS), toInstant(first.get(CREATED_AT)), toInstant(first.get(UPDATED_AT)),

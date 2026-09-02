@@ -13,6 +13,7 @@ public final class KafkaConst {
     // Message types
     public static final String PAYMENT_COMPLETED_EVENT = "PaymentCompleted";
     public static final String PAYMENT_FAILED_EVENT = "PaymentFailed";
+    public static final String PAYMENT_EXPIRED_EVENT = "PaymentExpired";
     public static final String REFUND_REQUESTED_COMMAND = "RefundRequested";
     public static final String REFUND_COMPLETED_EVENT = "RefundCompleted";
     public static final String REFUND_FAILED_EVENT = "RefundFailed";

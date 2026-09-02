@@ -173,14 +173,14 @@ class PaymentServiceImplTest {
     }
 
     @Test
-    void expireOverduePayments_publishesPaymentFailedForAnExpiredPaymentThatHadReachedTheGateway() {
+    void expireOverduePayments_publishesPaymentExpiredForAnExpiredPaymentThatHadReachedTheGateway() {
         var orderId = 100L;
         var expiredPayment = testPayment(1L, orderId, PaymentStatus.EXPIRED);
         when(paymentRepository.expireOverdue()).thenReturn(List.of(expiredPayment));
 
         paymentService.expireOverduePayments();
 
-        verify(paymentKafkaProducer, times(1)).publishPaymentFailed(orderId);
+        verify(paymentKafkaProducer, times(1)).publishPaymentExpired(orderId);
     }
 
     @Test

@@ -43,6 +43,18 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
+    fun `onPaymentEvent - dispatches PaymentExpired to the saga`() {
+        val orderId = 106L
+        val correlationId = "corr-7"
+        every { saga.onPaymentExpired(orderId, correlationId) } returns Unit
+
+        consumer.onPaymentEvent(KafkaConst.PAYMENT_EXPIRED_EVENT, correlationId, "{\"orderId\":$orderId}")
+
+        verify(exactly = 1) { saga.onPaymentExpired(orderId, correlationId) }
+        confirmVerified(saga)
+    }
+
+    @Test
     fun `onPaymentEvent - dispatches RefundCompleted to the saga`() {
         val orderId = 102L
         val correlationId = "corr-3"

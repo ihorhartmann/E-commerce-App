@@ -81,7 +81,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    // TODO: if publishPaymentFailed throws partway through the loop, the payments already marked
+    // TODO: if publishPaymentExpired throws partway through the loop, the payments already marked
     // EXPIRED above are never retried (expireOverdue() won't re-select a terminal row) - their
     // Kafka notification is lost for good. Fix properly via an outbox pattern (write the "expired"
     // fact and its pending Kafka event atomically in the same DB transaction as expireOverdue(),
@@ -98,7 +98,7 @@ public class PaymentServiceImpl implements PaymentService {
             // submitPayment's HTTP call failed. Only PENDING/ATTEMPT_DECLINED-origin expiries are
             // news to order-service, which is still waiting on an outcome for those.
             if (payment.externalId() != null) {
-                paymentKafkaProducer.publishPaymentFailed(payment.orderId());
+                paymentKafkaProducer.publishPaymentExpired(payment.orderId());
             }
         }
     }

@@ -92,6 +92,20 @@ class FulfillOrderSagaImplTest {
     }
 
     @Test
+    fun `onPaymentExpired - expires the order and cancels the reservation`() {
+        val orderId = 1L
+        val correlationId = "corr-1"
+        val order = placedOrder()
+        stubGetOrder(order)
+        stubSave()
+
+        saga.onPaymentExpired(orderId, correlationId)
+
+        assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
+        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
+    }
+
+    @Test
     fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
         val orderId = 1L
         val correlationId = "corr-1"

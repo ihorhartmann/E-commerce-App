@@ -56,6 +56,12 @@ class Order private constructor(
         return withState(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.PAYMENT_FAILED)
     }
 
+    /** Nobody ever completed checkout - payment-service gave up waiting and expired the attempt. */
+    fun expirePayment(): Order {
+        requireStatus("expire payment", OrderStatus.PLACED)
+        return withState(status = OrderStatus.CANCELLED, cancellationReason = CancellationReason.PAYMENT_EXPIRED)
+    }
+
     fun confirmPayment(): Order {
         requireStatus("confirm payment", OrderStatus.PLACED)
         return withState(status = OrderStatus.PROCESSING, paymentConfirmedAt = Instant.now())
@@ -247,6 +253,7 @@ enum class CancellationReason {
     RESERVATION_FAILED,
     OUT_OF_STOCK,
     PAYMENT_FAILED,
+    PAYMENT_EXPIRED,
     SHIPMENT_LOST,
     CANCELLED_BY_CUSTOMER,
 }

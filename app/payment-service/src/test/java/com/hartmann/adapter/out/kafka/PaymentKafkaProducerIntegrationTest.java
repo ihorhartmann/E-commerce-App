@@ -1,7 +1,7 @@
 package com.hartmann.adapter.out.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.out.kafka.dto.PaymentCompletedEvent;
+import com.hartmann.adapter.out.kafka.dto.OrderIdEvent;
 import com.hartmann.adapter.out.kafka.dto.RefundCompletedEvent;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
@@ -109,8 +109,8 @@ class PaymentKafkaProducerIntegrationTest {
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
         assertThat(headerValue(record, KafkaConst.MESSAGE_TYPE)).isEqualTo(KafkaConst.PAYMENT_COMPLETED_EVENT);
         assertThat(headerValue(record, KafkaConst.CORRELATION_ID)).isEqualTo(String.valueOf(orderId));
-        assertThat(objectMapper.readValue(record.value(), PaymentCompletedEvent.class))
-                .isEqualTo(new PaymentCompletedEvent(orderId));
+        assertThat(objectMapper.readValue(record.value(), OrderIdEvent.class))
+                .isEqualTo(new OrderIdEvent(orderId));
     }
 
     @Test

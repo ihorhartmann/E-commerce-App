@@ -1,0 +1,6 @@
+package com.hartmann.adapter.out.kafka.dto;
+
+// Shared shape for the payment events that carry nothing beyond which order they're about
+// (PaymentCompleted, PaymentFailed, PaymentExpired, RefundFailed)
+public record OrderIdEvent(long orderId) {
+}

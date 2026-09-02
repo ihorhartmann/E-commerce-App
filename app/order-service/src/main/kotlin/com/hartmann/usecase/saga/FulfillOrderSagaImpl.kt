@@ -34,6 +34,15 @@ class FulfillOrderSagaImpl(
     }
 
     @Transactional
+    override fun onPaymentExpired(orderId: Long, correlationId: String) {
+        val order = orderRepository.getOrder(orderId)
+        val updatedOrder = order.expirePayment()
+
+        orderRepository.save(updatedOrder)
+        cancelReservations(updatedOrder, correlationId)
+    }
+
+    @Transactional
     override fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String) {
         val order = orderRepository.getOrder(orderId)
         val updatedOrder = order.createShipment(trackingNumber)
