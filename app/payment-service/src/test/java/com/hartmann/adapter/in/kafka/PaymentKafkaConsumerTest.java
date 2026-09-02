@@ -45,7 +45,7 @@ class PaymentKafkaConsumerTest {
     private Payment testPayment(long id, long orderId) {
         var now = Instant.now();
         return Payment.createExisting(id, orderId, "pi_test", new Money(new BigDecimal("100.00"), Currency.USD),
-                PaymentStatus.COMPLETED, List.of(), now, now);
+                PaymentStatus.CONFIRMED, List.of(), now, now, now.plusSeconds(900));
     }
 
     @Test

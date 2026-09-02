@@ -21,8 +21,8 @@ class StripeRefundStatusMapperTest {
     }
 
     @Test
-    void fromStripeStatus_mapsRequiresAction() {
-        assertThat(StripeRefundStatusMapper.fromStripeStatus("requires_action")).isEqualTo(RefundStatus.REQUIRES_ACTION);
+    void fromStripeStatus_mapsRequiresActionToPending() {
+        assertThat(StripeRefundStatusMapper.fromStripeStatus("requires_action")).isEqualTo(RefundStatus.PENDING);
     }
 
     @Test

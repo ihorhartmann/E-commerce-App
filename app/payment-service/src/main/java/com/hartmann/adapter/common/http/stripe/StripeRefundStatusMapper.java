@@ -9,8 +9,9 @@ public final class StripeRefundStatusMapper {
     public static RefundStatus fromStripeStatus(String stripeStatus) {
         return switch (stripeStatus) {
             case "succeeded" -> RefundStatus.SUCCEEDED;
-            case "pending" -> RefundStatus.PENDING;
-            case "requires_action" -> RefundStatus.REQUIRES_ACTION;
+            // requires_action needs customer follow-up we don't act on - treated the same as
+            // pending until a later refund.updated resolves it to succeeded or failed.
+            case "pending", "requires_action" -> RefundStatus.PENDING;
             case "failed", "canceled" -> RefundStatus.FAILED;
             default -> throw new IllegalArgumentException("Unknown Stripe refund status: " + stripeStatus);
         };

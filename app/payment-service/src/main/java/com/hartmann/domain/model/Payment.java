@@ -3,10 +3,15 @@ package com.hartmann.domain.model;
 import com.hartmann.domain.exception.DomainException;
 import com.hartmann.domain.value.Money;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
 public class Payment {
+    // How long a payment attempt stays open (INITIATED/PENDING/ATTEMPT_DECLINED) before the
+    // expiration sweep marks it EXPIRED. Fixed at creation - not extended by ATTEMPT_DECLINED retries.
+    private static final Duration EXPIRATION = Duration.ofMinutes(15);
+
     private final long id;
     private final long orderId;
     private final String externalId;
@@ -15,6 +20,7 @@ public class Payment {
     private final List<Refund> refunds;
     private final Instant createdAt;
     private final Instant updatedAt;
+    private final Instant expiresAt;
 
     private Payment(
             long id,
@@ -24,13 +30,20 @@ public class Payment {
             PaymentStatus status,
             List<Refund> refunds,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            Instant expiresAt
     ) {
         if (orderId <= 0) {
             throw new DomainException("Payment orderId must be positive");
         }
-        if (externalId == null || externalId.isBlank()) {
-            throw new DomainException("Payment externalId must not be blank");
+        // externalId is only assigned once the PaymentIntent is actually created on Stripe - an
+        // INITIATED payment (persisted before that gateway call, for a durable audit trail) has
+        // none yet, and an EXPIRED payment may have reached that status either way: from INITIATED
+        // directly (the gateway call never completed, still no externalId) or from
+        // PENDING/ATTEMPT_DECLINED (externalId already assigned).
+        if (status != PaymentStatus.INITIATED && status != PaymentStatus.EXPIRED
+                && (externalId == null || externalId.isBlank())) {
+            throw new DomainException("Payment externalId must not be blank once submitted");
         }
         if (amount == null) {
             throw new DomainException("Payment amount must not be null");
@@ -44,6 +57,9 @@ public class Payment {
         if (createdAt == null) {
             throw new DomainException("Payment createdAt must not be null");
         }
+        if (expiresAt == null) {
+            throw new DomainException("Payment expiresAt must not be null");
+        }
 
         this.id = id;
         this.orderId = orderId;
@@ -53,6 +69,7 @@ public class Payment {
         this.refunds = refunds;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.expiresAt = expiresAt;
     }
 
     public long id() {
@@ -87,9 +104,13 @@ public class Payment {
         return updatedAt;
     }
 
+    public Instant expiresAt() {
+        return expiresAt;
+    }
+
     public Refund createRefund(Money amount) {
-        if (status != PaymentStatus.COMPLETED) {
-            throw new DomainException("Payment " + id + " is not completed and cannot be refunded");
+        if (status != PaymentStatus.CONFIRMED) {
+            throw new DomainException("Payment " + id + " is not confirmed and cannot be refunded");
         }
         amount.requireSameCurrency(this.amount);
 
@@ -105,7 +126,7 @@ public class Payment {
                             + " for payment " + id);
         }
 
-        return Refund.createNew(id, null, amount, RefundStatus.PENDING);
+        return Refund.createNew(id, null, amount, RefundStatus.INITIATED);
     }
 
     @Override
@@ -128,11 +149,13 @@ public class Payment {
     public String toString() {
         return "Payment{id=" + id + ", orderId=" + orderId + ", externalId='" + externalId + "', amount=" + amount
                 + ", status=" + status + ", refunds=" + refunds + ", createdAt=" + createdAt
-                + ", updatedAt=" + updatedAt + "}";
+                + ", updatedAt=" + updatedAt + ", expiresAt=" + expiresAt + "}";
     }
 
-    public static Payment createNew(long orderId, String externalId, Money amount) {
-        return new Payment(0L, orderId, externalId, amount, PaymentStatus.PENDING, List.of(), Instant.now(), null);
+    /** A brand-new payment attempt, persisted before the PaymentIntent is created on Stripe. */
+    public static Payment createNew(long orderId, Money amount) {
+        var now = Instant.now();
+        return new Payment(0L, orderId, null, amount, PaymentStatus.INITIATED, List.of(), now, null, now.plus(EXPIRATION));
     }
 
     public static Payment createExisting(
@@ -143,11 +166,12 @@ public class Payment {
             PaymentStatus status,
             List<Refund> refunds,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            Instant expiresAt
     ) {
         if (id <= 0) {
             throw new DomainException("Payment id must be positive");
         }
-        return new Payment(id, orderId, externalId, amount, status, refunds, createdAt, updatedAt);
+        return new Payment(id, orderId, externalId, amount, status, refunds, createdAt, updatedAt, expiresAt);
     }
 }
