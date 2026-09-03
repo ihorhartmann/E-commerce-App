@@ -83,6 +83,15 @@ class PaymentTest {
     }
 
     @Test
+    void constructor_allowsANullExternalIdWhenFailed() {
+        var now = Instant.now();
+        var payment = Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
+                PaymentStatus.FAILED, List.of(), now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
+
+        assertThat(payment.externalId()).isNull();
+    }
+
+    @Test
     void constructor_rejectsANullAmount() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "pi_test", null,

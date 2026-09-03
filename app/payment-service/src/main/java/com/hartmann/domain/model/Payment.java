@@ -6,11 +6,20 @@ import com.hartmann.domain.value.Money;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 public class Payment {
     // How long a payment attempt stays open (INITIATED/PENDING/ATTEMPT_DECLINED) before the
     // expiration sweep marks it EXPIRED. Fixed at creation - not extended by ATTEMPT_DECLINED retries.
     private static final Duration EXPIRATION = Duration.ofMinutes(15);
+
+    // Statuses a payment can be in without ever having gotten a PaymentIntent out of Stripe:
+    // INITIATED (persisted before that gateway call, for a durable audit trail), FAILED (the
+    // gateway call itself failed synchronously - see PaymentServiceImpl.submitToGateway), and
+    // EXPIRED reached directly from INITIATED (the sweep gave up before the gateway call ever
+    // completed). Every other status is only reachable once externalId is already assigned.
+    private static final Set<PaymentStatus> STATUSES_ALLOWING_NO_EXTERNAL_ID =
+            Set.of(PaymentStatus.INITIATED, PaymentStatus.FAILED, PaymentStatus.EXPIRED);
 
     private final long id;
     private final long orderId;
@@ -36,20 +45,14 @@ public class Payment {
         if (orderId <= 0) {
             throw new DomainException("Payment orderId must be positive");
         }
-        // externalId is only assigned once the PaymentIntent is actually created on Stripe - an
-        // INITIATED payment (persisted before that gateway call, for a durable audit trail) has
-        // none yet, and an EXPIRED payment may have reached that status either way: from INITIATED
-        // directly (the gateway call never completed, still no externalId) or from
-        // PENDING/ATTEMPT_DECLINED (externalId already assigned).
-        if (status != PaymentStatus.INITIATED && status != PaymentStatus.EXPIRED
-                && (externalId == null || externalId.isBlank())) {
+        if (status == null) {
+            throw new DomainException("Payment status must not be null");
+        }
+        if (!STATUSES_ALLOWING_NO_EXTERNAL_ID.contains(status) && (externalId == null || externalId.isBlank())) {
             throw new DomainException("Payment externalId must not be blank once submitted");
         }
         if (amount == null) {
             throw new DomainException("Payment amount must not be null");
-        }
-        if (status == null) {
-            throw new DomainException("Payment status must not be null");
         }
         if (refunds == null) {
             throw new DomainException("Payment refunds must not be null");
