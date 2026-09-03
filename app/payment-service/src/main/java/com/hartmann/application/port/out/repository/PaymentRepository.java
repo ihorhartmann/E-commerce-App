@@ -3,6 +3,8 @@ package com.hartmann.application.port.out.repository;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 
+import java.util.List;
+
 public interface PaymentRepository {
     Payment create(Payment payment);
 
@@ -10,9 +12,19 @@ public interface PaymentRepository {
 
     Payment getByOrderId(long orderId);
 
+    Payment markPending(long paymentId, String externalId);
+
     Payment updateStatus(long paymentId, PaymentStatus status);
 
     Payment getByExternalId(String externalId);
 
     Payment getByIdWithRefunds(long paymentId);
+
+    /**
+     * Moves every non-terminal payment (INITIATED/PENDING/ATTEMPT_DECLINED) whose expiresAt has
+     * passed to EXPIRED, and returns the rows that were changed. A null externalId on a returned
+     * row means it never left INITIATED - order-service already resolved that order synchronously
+     * when the gateway call failed, so callers must not publish a Kafka event for those.
+     */
+    List<Payment> expireOverdue();
 }

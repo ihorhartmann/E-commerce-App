@@ -191,6 +191,15 @@ database connections and other resources if there are such.
   or a correlation id passed into the call under test and then repeated in a `verify`/`EXPECT` call. Scope the
   variable to that one method only; do not hoist it to a shared file-level constant, and do not extract a value
   that only appears once.
+  * Exception: a literal that is genuinely interchangeable everywhere it appears in the file - the same figure is
+    never itself the thing under test and carries no scenario-distinguishing meaning (e.g. a filler expiry offset
+    passed only so a constructor's non-null future timestamp is valid) - may be hoisted into a shared file-level
+    constant instead of being repeated or re-declared per method. This does not extend to identifying or
+    scenario-distinguishing values such as ids, external ids, or names, even when the same literal happens to
+    recur across several methods - those must stay local (a bare literal, or a per-method local variable per the
+    base rule above), because tests often rely on such values being deliberately different between scenarios (e.g.
+    two different ids proving an equals/inequality check), and a shared constant risks silently coupling
+    otherwise-independent tests together.
 * REST controller tests must assert on the response body's required fields (`jsonPath` in Java/Kotlin, decoded JSON
   in Go), not just the HTTP status code - a status-only assertion can't catch a wrong/missing field or a malformed
   body. Exception: responses with no body by design (e.g. `204 No Content`, or a `2xx` endpoint that intentionally

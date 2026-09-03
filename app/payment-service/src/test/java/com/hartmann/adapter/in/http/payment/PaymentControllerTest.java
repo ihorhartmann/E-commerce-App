@@ -44,7 +44,7 @@ class PaymentControllerTest {
 
     private Payment testPayment(long id, long orderId, PaymentStatus status) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, List.of(), now, now);
+        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, List.of(), now, now, now.plusSeconds(900));
     }
 
     private String submitPaymentRequestJson(long orderId) {
@@ -56,7 +56,7 @@ class PaymentControllerTest {
     @Test
     void getByOrderId_returns200WithThePayment() throws Exception {
         var orderId = 100L;
-        var payment = testPayment(1L, orderId, PaymentStatus.COMPLETED);
+        var payment = testPayment(1L, orderId, PaymentStatus.CONFIRMED);
         when(paymentService.getByOrderId(orderId)).thenReturn(payment);
 
         mockMvc.perform(get("/api/v1/payments/{orderId}", orderId))

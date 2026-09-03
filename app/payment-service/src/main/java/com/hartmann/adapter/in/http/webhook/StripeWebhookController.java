@@ -55,8 +55,8 @@ public class StripeWebhookController {
         }
 
         switch (event.getType()) {
-            case "payment_intent.succeeded" -> handlePaymentIntentEvent(event, PaymentStatus.COMPLETED);
-            case "payment_intent.payment_failed" -> handlePaymentIntentEvent(event, PaymentStatus.FAILED);
+            case "payment_intent.succeeded" -> handlePaymentIntentEvent(event, PaymentStatus.CONFIRMED);
+            case "payment_intent.payment_failed" -> handlePaymentIntentEvent(event, PaymentStatus.ATTEMPT_DECLINED);
             case "refund.updated" -> handleRefundEvent(event);
             default -> LOG.info("Ignoring unhandled Stripe event type: {}", event.getType());
         }

@@ -1,8 +1,8 @@
 package com.hartmann.domain.model;
 
 public enum RefundStatus {
+    INITIATED,
     PENDING,
-    REQUIRES_ACTION,
     SUCCEEDED,
     FAILED
 }

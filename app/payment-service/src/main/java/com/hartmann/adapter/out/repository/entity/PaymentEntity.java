@@ -18,7 +18,8 @@ public record PaymentEntity(
         String currency,
         String status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Instant expiresAt
 ) {
     public static PaymentEntity from(Payment payment) {
         return new PaymentEntity(
@@ -29,7 +30,8 @@ public record PaymentEntity(
                 payment.amount().currency().name(),
                 payment.status().name(),
                 payment.createdAt(),
-                payment.updatedAt()
+                payment.updatedAt(),
+                payment.expiresAt()
         );
     }
 
@@ -46,7 +48,8 @@ public record PaymentEntity(
                 PaymentStatus.valueOf(entity.status()),
                 refunds,
                 entity.createdAt(),
-                entity.updatedAt()
+                entity.updatedAt(),
+                entity.expiresAt()
         );
     }
 }

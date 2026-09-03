@@ -15,7 +15,7 @@ import java.net.HttpURLConnection
 class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
 
     @Test
-    fun `place order - PaymentIntent confirmation fails on a declined card, reservation released`() {
+    fun `place order - a declined card leaves the reservation held so retrying the same PaymentIntent with a valid card still completes the order`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
         val paymentUrl = DockerComposeStack.paymentServiceUrl
@@ -32,20 +32,30 @@ class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
             .statusCode(HttpURLConnection.HTTP_PAYMENT_REQUIRED)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterFailure = OrderApi.getOrder(orderUrl, placedOrder.id)
-            assertThat(orderAfterFailure.status).isEqualTo("CANCELLED")
-            assertThat(orderAfterFailure.cancellationReason).isEqualTo("PAYMENT_FAILED")
+            val payment = PaymentApi.getPaymentByOrderId(paymentUrl, placedOrder.id)
+            assertThat(payment.status).isEqualTo("ATTEMPT_DECLINED")
         }
 
-        // payment-service updates its own record to FAILED before publishing PaymentFailed, so by
-        // the time the order above is CANCELLED this is already settled - a plain GET suffices
-        val payment = PaymentApi.getPaymentByOrderId(paymentUrl, placedOrder.id)
-        assertThat(payment.status).isEqualTo("FAILED")
+        // ATTEMPT_DECLINED is not terminal - the customer may still retry the same PaymentIntent
+        // with a different payment method, so order-service is never told and the reservation
+        // stays held rather than being released.
+        val orderAfterDecline = OrderApi.getOrder(orderUrl, placedOrder.id)
+        assertThat(orderAfterDecline.status).isEqualTo("PLACED")
+        val productAfterDecline = InventoryApi.getProduct(inventoryUrl, productId)
+        assertThat(productAfterDecline.available).isEqualTo(product.available - quantity)
+        assertThat(productAfterDecline.reserved).isEqualTo(product.reserved + quantity)
+
+        // Retrying the same PaymentIntent (same clientSecret) with a valid card is exactly the
+        // recovery path ATTEMPT_DECLINED exists to allow.
+        StripeApi.confirmPaymentIntent(requireNotNull(placedOrder.clientSecret), StripeApi.TEST_CARD_SUCCESS)
+            .statusCode(HttpURLConnection.HTTP_OK)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val productAfterFailure = InventoryApi.getProduct(inventoryUrl, productId)
-            assertThat(productAfterFailure.available).isEqualTo(product.available)
-            assertThat(productAfterFailure.reserved).isEqualTo(product.reserved)
+            val orderAfterRetry = OrderApi.getOrder(orderUrl, placedOrder.id)
+            assertThat(orderAfterRetry.status).isEqualTo("PROCESSING")
+            assertThat(orderAfterRetry.paymentConfirmedAt).isNotNull()
         }
+        val paymentAfterRetry = PaymentApi.getPaymentByOrderId(paymentUrl, placedOrder.id)
+        assertThat(paymentAfterRetry.status).isEqualTo("CONFIRMED")
     }
 }

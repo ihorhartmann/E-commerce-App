@@ -1,10 +1,8 @@
 package com.hartmann.adapter.out.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.out.kafka.dto.PaymentCompletedEvent;
-import com.hartmann.adapter.out.kafka.dto.PaymentFailedEvent;
+import com.hartmann.adapter.out.kafka.dto.OrderIdEvent;
 import com.hartmann.adapter.out.kafka.dto.RefundCompletedEvent;
-import com.hartmann.adapter.out.kafka.dto.RefundFailedEvent;
 import com.hartmann.adapter.common.kafka.KafkaUtils;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.domain.value.Money;
@@ -32,12 +30,17 @@ public class PaymentKafkaProducerImpl implements PaymentKafkaProducer {
 
     @Override
     public void publishPaymentCompleted(long orderId) {
-        send(KafkaConst.PAYMENT_COMPLETED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new PaymentCompletedEvent(orderId));
+        send(KafkaConst.PAYMENT_COMPLETED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new OrderIdEvent(orderId));
     }
 
     @Override
     public void publishPaymentFailed(long orderId) {
-        send(KafkaConst.PAYMENT_FAILED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new PaymentFailedEvent(orderId));
+        send(KafkaConst.PAYMENT_FAILED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new OrderIdEvent(orderId));
+    }
+
+    @Override
+    public void publishPaymentExpired(long orderId) {
+        send(KafkaConst.PAYMENT_EXPIRED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new OrderIdEvent(orderId));
     }
 
     @Override
@@ -48,7 +51,7 @@ public class PaymentKafkaProducerImpl implements PaymentKafkaProducer {
 
     @Override
     public void publishRefundFailed(long orderId) {
-        send(KafkaConst.REFUND_FAILED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new RefundFailedEvent(orderId));
+        send(KafkaConst.REFUND_FAILED_EVENT, KafkaUtils.formatKafkaId(orderId), orderId, new OrderIdEvent(orderId));
     }
 
     // key = orderId (kept as its own parameter, distinct from correlationId, even though this

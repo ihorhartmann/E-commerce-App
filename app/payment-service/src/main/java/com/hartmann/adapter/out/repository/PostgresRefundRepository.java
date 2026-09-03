@@ -58,6 +58,20 @@ public class PostgresRefundRepository implements RefundRepository {
     }
 
     @Override
+    public Refund markPending(long refundId, String externalId, RefundStatus status) {
+        var updated = dsl.update(REFUNDS)
+                .set(EXTERNAL_ID, externalId)
+                .set(STATUS, status.name())
+                .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
+                .where(ID.eq(refundId))
+                .execute();
+        if (updated == 0) {
+            throw new ObjectNotFoundException("Refund with id " + refundId + " not found");
+        }
+        return getById(refundId);
+    }
+
+    @Override
     public List<Refund> findByPaymentId(long paymentId) {
         return dsl.select(ID, PAYMENT_ID, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, CREATED_AT, UPDATED_AT)
                 .from(REFUNDS).where(PAYMENT_ID.eq(paymentId)).fetch(this::toRefund);

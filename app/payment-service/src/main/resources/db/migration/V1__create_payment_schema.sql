@@ -1,12 +1,13 @@
 CREATE TABLE IF NOT EXISTS payment.payments (
     id BIGSERIAL PRIMARY KEY,
     order_id BIGINT NOT NULL,
-    external_id VARCHAR(255) NOT NULL,
+    external_id VARCHAR(255),
     amount NUMERIC(19, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ NOT NULL,
     CONSTRAINT uq_payments_external_id UNIQUE (external_id)
 );
 

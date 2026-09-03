@@ -11,4 +11,11 @@ public interface PaymentService {
     PaymentIntentResult submitPayment(long orderId, Money amount);
 
     Payment updateStatusByExternalId(String externalId, PaymentStatus status);
+
+    /**
+     * Moves every non-terminal payment (INITIATED/PENDING/ATTEMPT_DECLINED) whose expiresAt has
+     * passed to EXPIRED, notifying order-service (via Kafka) about the ones it doesn't already
+     * know the outcome of.
+     */
+    void expireOverduePayments();
 }

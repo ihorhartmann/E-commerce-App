@@ -1,10 +1,8 @@
 package com.hartmann.adapter.out.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.out.kafka.dto.PaymentCompletedEvent;
-import com.hartmann.adapter.out.kafka.dto.PaymentFailedEvent;
+import com.hartmann.adapter.out.kafka.dto.OrderIdEvent;
 import com.hartmann.adapter.out.kafka.dto.RefundCompletedEvent;
-import com.hartmann.adapter.out.kafka.dto.RefundFailedEvent;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -63,8 +61,8 @@ class PaymentKafkaProducerImplTest {
         assertThat(record.topic()).isEqualTo(KafkaConst.PAYMENT_EVENTS_TOPIC);
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
         assertThat(headerValue(record, KafkaConst.MESSAGE_TYPE)).isEqualTo(KafkaConst.PAYMENT_COMPLETED_EVENT);
-        assertThat(objectMapper.readValue(record.value(), PaymentCompletedEvent.class))
-                .isEqualTo(new PaymentCompletedEvent(orderId));
+        assertThat(objectMapper.readValue(record.value(), OrderIdEvent.class))
+                .isEqualTo(new OrderIdEvent(orderId));
     }
 
     @Test
@@ -77,8 +75,22 @@ class PaymentKafkaProducerImplTest {
         assertThat(record.topic()).isEqualTo(KafkaConst.PAYMENT_EVENTS_TOPIC);
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
         assertThat(headerValue(record, KafkaConst.MESSAGE_TYPE)).isEqualTo(KafkaConst.PAYMENT_FAILED_EVENT);
-        assertThat(objectMapper.readValue(record.value(), PaymentFailedEvent.class))
-                .isEqualTo(new PaymentFailedEvent(orderId));
+        assertThat(objectMapper.readValue(record.value(), OrderIdEvent.class))
+                .isEqualTo(new OrderIdEvent(orderId));
+    }
+
+    @Test
+    void publishPaymentExpired_sendsAPaymentExpiredEventKeyedByTheOrderId() {
+        var orderId = 8L;
+
+        producer.publishPaymentExpired(orderId);
+
+        var record = captureSentRecord();
+        assertThat(record.topic()).isEqualTo(KafkaConst.PAYMENT_EVENTS_TOPIC);
+        assertThat(record.key()).isEqualTo(String.valueOf(orderId));
+        assertThat(headerValue(record, KafkaConst.MESSAGE_TYPE)).isEqualTo(KafkaConst.PAYMENT_EXPIRED_EVENT);
+        assertThat(objectMapper.readValue(record.value(), OrderIdEvent.class))
+                .isEqualTo(new OrderIdEvent(orderId));
     }
 
     @Test
@@ -106,7 +118,7 @@ class PaymentKafkaProducerImplTest {
         assertThat(record.topic()).isEqualTo(KafkaConst.PAYMENT_EVENTS_TOPIC);
         assertThat(record.key()).isEqualTo(String.valueOf(orderId));
         assertThat(headerValue(record, KafkaConst.MESSAGE_TYPE)).isEqualTo(KafkaConst.REFUND_FAILED_EVENT);
-        assertThat(objectMapper.readValue(record.value(), RefundFailedEvent.class))
-                .isEqualTo(new RefundFailedEvent(orderId));
+        assertThat(objectMapper.readValue(record.value(), OrderIdEvent.class))
+                .isEqualTo(new OrderIdEvent(orderId));
     }
 }

@@ -2,10 +2,13 @@ package com.hartmann.application.port.out.repository;
 
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
+
 import java.util.List;
 
 public interface RefundRepository {
     Refund create(Refund refund);
+
+    Refund markPending(long refundId, String externalId, RefundStatus status);
 
     List<Refund> findByPaymentId(long paymentId);
 

@@ -131,7 +131,7 @@ class OrderTest {
         assertEquals(Money(BigDecimal("25.00"), Currency.USD), order.totalPrice())
     }
 
-    // --- failReservation / outOfStock / failPayment (PLACED -> CANCELLED, no refund) ---
+    // --- failReservation / outOfStock / failPayment / expirePayment (PLACED -> CANCELLED, no refund) ---
 
     @Test
     fun `failReservation - cancels a placed order without a refund`() {
@@ -171,6 +171,19 @@ class OrderTest {
     @Test
     fun `failPayment - throws when order is not placed`() {
         assertThrows<DomainException> { processingOrder().failPayment() }
+    }
+
+    @Test
+    fun `expirePayment - cancels a placed order`() {
+        val order = placedOrder().expirePayment()
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertEquals(CancellationReason.PAYMENT_EXPIRED, order.cancellationReason)
+    }
+
+    @Test
+    fun `expirePayment - throws when order is not placed`() {
+        assertThrows<DomainException> { processingOrder().expirePayment() }
     }
 
     // --- confirmPayment ---

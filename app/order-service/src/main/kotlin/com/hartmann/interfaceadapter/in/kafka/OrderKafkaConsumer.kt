@@ -47,6 +47,14 @@ class OrderKafkaConsumer(
                     true
                 }
 
+                KafkaConst.PAYMENT_EXPIRED_EVENT -> {
+                    saga.onPaymentExpired(
+                        objectMapper.readValue(payload, OrderIdEvent::class.java).orderId,
+                        correlationId
+                    )
+                    true
+                }
+
                 KafkaConst.REFUND_COMPLETED_EVENT -> {
                     val event = objectMapper.readValue(payload, RefundCompletedEvent::class.java)
                     saga.onRefundCompleted(

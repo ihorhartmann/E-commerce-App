@@ -59,7 +59,7 @@ object E2eSharedSteps {
         }
 
         val payment = PaymentApi.getPaymentByOrderId(paymentBaseUrl, placedOrder.id)
-        assertThat(payment.status).isEqualTo("COMPLETED")
+        assertThat(payment.status).isEqualTo("CONFIRMED")
         assertThat(payment.amount).isEqualByComparingTo(processingOrder.totalPrice.amount)
         assertThat(payment.currency).isEqualTo(processingOrder.totalPrice.currency)
 
