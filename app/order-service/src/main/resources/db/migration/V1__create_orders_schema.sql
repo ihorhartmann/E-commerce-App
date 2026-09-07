@@ -32,3 +32,24 @@ CREATE TABLE orders.order_items (
 );
 
 CREATE INDEX idx_order_items_order_id ON orders.order_items (order_id);
+
+CREATE TABLE orders.processed_kafka_messages (
+    id             VARCHAR(255) PRIMARY KEY,
+    correlation_id VARCHAR(255) NOT NULL,
+    message_type   VARCHAR(255) NOT NULL,
+    processed_at   TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX idx_processed_kafka_messages_processed_at ON orders.processed_kafka_messages (processed_at);
+
+CREATE TABLE orders.idempotent_http_requests (
+    id           VARCHAR(255) PRIMARY KEY,
+    request_hash VARCHAR(64) NOT NULL,
+    status       VARCHAR(30) NOT NULL,
+    http_code    INTEGER,
+    response     JSONB,
+    created_at   TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_idempotent_http_requests_created_at ON orders.idempotent_http_requests (created_at);

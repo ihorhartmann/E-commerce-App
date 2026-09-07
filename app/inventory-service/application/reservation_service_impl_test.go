@@ -8,6 +8,8 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"inventoryservice/application/dto"
+	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
+	idempotencymocks "inventoryservice/application/port/out/idempotency/mocks"
 	"inventoryservice/application/port/out/repository/mocks"
 	"inventoryservice/domain/model"
 	"inventoryservice/domain/values"
@@ -67,7 +69,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 			},
 		)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
 		reservations, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
 
@@ -92,7 +94,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 4}})
 
@@ -111,7 +113,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), gomock.Any()).Times(0)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 
@@ -131,7 +133,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
 
@@ -142,18 +144,37 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 }
 
 func TestReservationServiceImpl_Cancel(t *testing.T) {
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "CancelReservation"}
+
 	t.Run("deletes every reservation held for the order", func(t *testing.T) {
 		orderID := uint64(100)
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
 		r2 := testReservation(t, 2, 11, orderID, 3, model.ReservationHolderBuyer)
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1, 2}).Return(nil).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
 
-		if err := service.Cancel(context.Background(), orderID); err != nil {
+		if err := service.Cancel(context.Background(), msg, orderID); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("skips reprocessing an already-processed message without error", func(t *testing.T) {
+		orderID := uint64(100)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
+		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
+
+		if err := service.Cancel(context.Background(), msg, orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -162,13 +183,15 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 		orderID := uint64(100)
 		wantErr := errors.New("db down")
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
 
-		err := service.Cancel(context.Background(), orderID)
+		err := service.Cancel(context.Background(), msg, orderID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -177,11 +200,15 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 }
 
 func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "HoldReservation"}
+
 	t.Run("moves every reservation for the order to the courier", func(t *testing.T) {
 		orderID := uint64(100)
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
 		r2 := testReservation(t, 2, 11, orderID, 3, model.ReservationHolderBuyer)
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 
@@ -193,9 +220,9 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 			},
 		)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
 
-		if err := service.HoldByCourier(context.Background(), orderID); err != nil {
+		if err := service.HoldByCourier(context.Background(), msg, orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -209,17 +236,34 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 		}
 	})
 
+	t.Run("skips reprocessing an already-processed message without error", func(t *testing.T) {
+		orderID := uint64(100)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
+		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
+
+		if err := service.HoldByCourier(context.Background(), msg, orderID); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("propagates an error from fetching reservations", func(t *testing.T) {
 		orderID := uint64(100)
 		wantErr := errors.New("db down")
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
 
-		err := service.HoldByCourier(context.Background(), orderID)
+		err := service.HoldByCourier(context.Background(), msg, orderID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -231,13 +275,15 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 		wantErr := errors.New("db down")
 		r1 := testReservation(t, 1, 10, orderID, 2, model.ReservationHolderBuyer)
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, wantErr).Times(1)
 
-		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), noopTxExecutor{})
+		service := NewReservationService(reservationRepo, mocks.NewMockProductRepository(gomock.NewController(t)), processedMessageStore, noopTxExecutor{})
 
-		err := service.HoldByCourier(context.Background(), orderID)
+		err := service.HoldByCourier(context.Background(), msg, orderID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -246,6 +292,8 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 }
 
 func TestReservationServiceImpl_Fulfill(t *testing.T) {
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "FulfillReservation"}
+
 	t.Run("removes on-hand stock and deletes the fulfilled reservations", func(t *testing.T) {
 		orderID := uint64(100)
 		productID := uint64(10)
@@ -253,6 +301,8 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		product := testProduct(t, productID, 10)
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(product, nil).Times(1)
@@ -266,9 +316,9 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1}).Return(nil).Times(1)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
-		if err := service.Fulfill(context.Background(), orderID); err != nil {
+		if err := service.Fulfill(context.Background(), msg, orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if updatedProduct == nil || updatedProduct.Quantity() != 8 {
@@ -276,19 +326,38 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		}
 	})
 
+	t.Run("skips reprocessing an already-processed message without error", func(t *testing.T) {
+		orderID := uint64(100)
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
+		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
+
+		if err := service.Fulfill(context.Background(), msg, orderID); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("propagates an error from fetching reservations", func(t *testing.T) {
 		orderID := uint64(100)
 		wantErr := errors.New("db down")
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
-		err := service.Fulfill(context.Background(), orderID)
+		err := service.Fulfill(context.Background(), msg, orderID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -302,15 +371,17 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		r1 := testReservation(t, 1, productID, orderID, 2, model.ReservationHolderCourier)
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByID(gomock.Any(), productID).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
 
-		service := NewReservationService(reservationRepo, productRepo, noopTxExecutor{})
+		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
-		err := service.Fulfill(context.Background(), orderID)
+		err := service.Fulfill(context.Background(), msg, orderID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)

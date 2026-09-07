@@ -148,6 +148,7 @@ interfaces/
 ├── http/
 │   ├── dto/
 │   ├── errors/
+│   ├── idempotency/
 │   └── middleware/
 └── kafka/
     ├── common/
@@ -157,3 +158,11 @@ interfaces/
 
 `interfaces/kafka/kafkago` holds the kafka-go-based implementation of `interfaces/kafka/common.KafkaMessageConsumer` -
 it lives here, not in `infrastructure/kafkago`, because that interface belongs to the `Interfaces` layer.
+
+`interfaces/http/idempotency` holds `HTTPIdempotencyService`, which decides whether a mutating HTTP request should
+proceed, replay a cached response, or be rejected, for `middleware.IdempotencyMiddleware`. It composes
+`application/port/out/idempotency.HTTPRequestStore` (a persistence port for idempotent_http_requests
+rows, implemented by `infrastructure/idempotency`) but owns all of the actual decision logic itself - the store never
+branches on what a conflict or a stale record means. `HTTPIdempotencyService` lives here, not in `Application`,
+because its whole purpose is specific to the HTTP idempotency-key pattern (an `Interfaces`-owned concern, same
+reasoning as `interfaces/kafka/kafkago` above), not to orchestrating domain behavior.

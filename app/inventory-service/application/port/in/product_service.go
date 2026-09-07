@@ -3,6 +3,7 @@ package in
 import (
 	"context"
 	"inventoryservice/application/dto"
+	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/domain/model"
 )
 
@@ -13,5 +14,5 @@ type ProductService interface {
 	Update(ctx context.Context, product *model.Product) (*model.Product, error)
 	Get(ctx context.Context, id uint64) (*model.Product, error)
 	Delete(ctx context.Context, id uint64) error
-	Restock(ctx context.Context, items []dto.ReservationDTO) error
+	Restock(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, items []dto.ReservationDTO) error
 }
