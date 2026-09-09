@@ -9,13 +9,17 @@ import (
 	"os/signal"
 	kafkaconst "shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/in/http/middleware"
+	"shippingservice/adapter/out/idempotency/store"
 	"syscall"
 	"time"
 
 	shippinghttp "shippingservice/adapter/in/http"
+	httpidempotency "shippingservice/adapter/in/http/idempotency"
 	"shippingservice/adapter/in/kafka"
+	"shippingservice/adapter/out/idempotency/sweep"
 	outkafka "shippingservice/adapter/out/kafka"
 	"shippingservice/adapter/out/repository"
+	gormtx "shippingservice/adapter/out/repository/transaction"
 	"shippingservice/application/service"
 	"shippingservice/infrastructure/env"
 	gormconn "shippingservice/infrastructure/gorm"
@@ -40,20 +44,28 @@ func main() {
 	}
 
 	shipmentRepository := repository.NewPostgresShipmentRepository(db)
+	txExecutor := gormtx.NewGormTxManager(db)
+	processedMessageStore := store.NewPostgresProcessedKafkaMessageStore(db)
+	httpRequestStore := store.NewPostgresHTTPRequestStore(db)
+	idempotencyService := httpidempotency.NewHTTPIdempotencyService(httpRequestStore)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 
 	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkaconst.ShippingEventsTopic)
 	shipmentProducer := outkafka.NewShipmentKafkaProducer(messageProducer)
 
-	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer)
+	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer, processedMessageStore, txExecutor)
 
 	messageConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafkaconst.ShippingCommandsTopic, kafkaconst.ConsumerGroupID)
 	shipmentConsumer := kafka.NewShipmentKafkaConsumer(messageConsumer, shipmentService)
 	shipmentConsumer.Start()
 
+	sweepCtx, cancelSweep := context.WithCancel(context.Background())
+	sweep.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
+	sweep.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
+
 	router := gin.Default()
-	router.Use(middleware.LoggingMiddleware(), middleware.ErrorHandlerMiddleware())
+	router.Use(middleware.LoggingMiddleware(), middleware.ErrorHandlerMiddleware(), middleware.NewIdempotencyMiddleware(idempotencyService).Handle)
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -88,6 +100,7 @@ func main() {
 	if err = shipmentConsumer.Close(); err != nil {
 		slog.Error("error closing kafka consumer", "error", err)
 	}
+	cancelSweep()
 	if err = shipmentProducer.Close(); err != nil {
 		slog.Error("error closing kafka producer", "error", err)
 	}

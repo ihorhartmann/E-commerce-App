@@ -6,25 +6,34 @@ import (
 
 	commonkafka "shippingservice/application/port/common/kafka"
 	portin "shippingservice/application/port/in"
+	"shippingservice/application/port/out/idempotency"
+	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	portoutkafka "shippingservice/application/port/out/kafka"
 	"shippingservice/application/port/out/repository"
+	"shippingservice/application/port/out/repository/transaction"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 )
 
 type ShipmentServiceImpl struct {
 	portin.ShipmentService
-	shipmentRepository repository.ShipmentRepository
-	shipmentProducer   portoutkafka.ShipmentKafkaProducer
+	shipmentRepository    repository.ShipmentRepository
+	shipmentProducer      portoutkafka.ShipmentKafkaProducer
+	processedMessageStore idempotency.ProcessedKafkaMessageStore
+	txExecutor            transaction.Executor
 }
 
 func NewShipmentServiceImpl(
 	shipmentRepository repository.ShipmentRepository,
 	shipmentProducer portoutkafka.ShipmentKafkaProducer,
+	processedMessageStore idempotency.ProcessedKafkaMessageStore,
+	txExecutor transaction.Executor,
 ) portin.ShipmentService {
 	return &ShipmentServiceImpl{
-		shipmentRepository: shipmentRepository,
-		shipmentProducer:   shipmentProducer,
+		shipmentRepository:    shipmentRepository,
+		shipmentProducer:      shipmentProducer,
+		processedMessageStore: processedMessageStore,
+		txExecutor:            txExecutor,
 	}
 }
 
@@ -36,18 +45,32 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 	return s.shipmentRepository.GetByTrackingNumber(ctx, trackingNumber)
 }
 
-func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error) {
-	shipment, err := model.NewShipment(orderID, address)
+func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
+	var created *model.Shipment
+	var alreadyProcessed bool
+	err := s.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		var err error
+		alreadyProcessed, err = s.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return err
+		}
+
+		shipment, err := model.NewShipment(orderID, address)
+		if err != nil {
+			return err
+		}
+
+		created, err = s.shipmentRepository.Create(ctx, shipment)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	created, err := s.shipmentRepository.Create(ctx, shipment)
-	if err != nil {
-		return nil, err
+	if alreadyProcessed {
+		return nil, nil
 	}
 
-	if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, created); err != nil {
+	if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, created); err != nil {
 		return nil, err
 	}
 

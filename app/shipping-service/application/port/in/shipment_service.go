@@ -2,6 +2,7 @@ package in
 
 import (
 	"context"
+	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 )
@@ -10,7 +11,7 @@ import (
 
 type ShipmentService interface {
 	GetByTrackingNumber(ctx context.Context, trackingNumber string) (*model.Shipment, error)
-	CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error)
+	CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error)
 	StartDelivery(ctx context.Context, id uint64) (*model.Shipment, error)
 	Deliver(ctx context.Context, id uint64) (*model.Shipment, error)
 	Lose(ctx context.Context, id uint64) (*model.Shipment, error)

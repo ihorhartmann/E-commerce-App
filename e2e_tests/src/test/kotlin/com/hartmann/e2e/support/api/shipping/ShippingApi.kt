@@ -2,6 +2,7 @@ package com.hartmann.e2e.support.api.shipping
 
 import io.restassured.RestAssured.given
 import java.net.HttpURLConnection
+import java.util.UUID
 
 object ShippingApi {
     fun getByTrackingNumber(baseUrl: String, trackingNumber: String): ShipmentResponse =
@@ -24,6 +25,7 @@ object ShippingApi {
 
     private fun transition(baseUrl: String, shipmentId: Long, action: String): ShipmentResponse =
         given()
+            .header("Idempotency-Key", UUID.randomUUID().toString())
             .post("$baseUrl/api/v1/shipments/$shipmentId/$action")
             .then()
             .statusCode(HttpURLConnection.HTTP_OK)

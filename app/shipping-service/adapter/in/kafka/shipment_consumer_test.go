@@ -8,6 +8,7 @@ import (
 	commonkafka "shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/in/kafka/dto"
 	servicemocks "shippingservice/application/port/in/mocks"
+	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	"shippingservice/domain"
 	"shippingservice/domain/value"
 
@@ -20,7 +21,6 @@ func testAddressDTO() dto.AddressDTO {
 
 func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 	t.Run("dispatches CreateShipmentCommand to the shipment service", func(t *testing.T) {
-		correlationID := "corr-1"
 		orderID := uint64(42)
 		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
 		payload, err := json.Marshal(command)
@@ -31,21 +31,21 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: string(commonkafka.CreateShipmentCommand)}
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), correlationID, orderID, wantAddress).
+			CreateShipment(gomock.Any(), msg, orderID, wantAddress).
 			Return(nil, nil).
 			Times(1)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err = consumer.handleMessage(commonkafka.CreateShipmentCommand, "msg-1", correlationID, payload); err != nil {
+		if err = consumer.handleMessage(commonkafka.CreateShipmentCommand, msg.MessageID, msg.CorrelationID, payload); err != nil {
 			t.Errorf("err = %v, want nil", err)
 		}
 	})
 
 	t.Run("returns the service error when shipment creation fails", func(t *testing.T) {
-		correlationID := "corr-2"
 		orderID := uint64(7)
 		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
 		payload, err := json.Marshal(command)
@@ -56,16 +56,17 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-2", CorrelationID: "corr-2", MessageType: string(commonkafka.CreateShipmentCommand)}
 		serviceErr := errors.New("shipment creation failed")
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), correlationID, orderID, wantAddress).
+			CreateShipment(gomock.Any(), msg, orderID, wantAddress).
 			Return(nil, serviceErr).
 			Times(1)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err = consumer.handleMessage(commonkafka.CreateShipmentCommand, "msg-2", correlationID, payload); !errors.Is(err, serviceErr) {
+		if err = consumer.handleMessage(commonkafka.CreateShipmentCommand, msg.MessageID, msg.CorrelationID, payload); !errors.Is(err, serviceErr) {
 			t.Errorf("err = %v, want %v", err, serviceErr)
 		}
 	})

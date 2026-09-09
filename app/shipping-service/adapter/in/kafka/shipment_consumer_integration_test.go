@@ -14,6 +14,7 @@ import (
 	shipmentkafka "shippingservice/adapter/in/kafka"
 	"shippingservice/adapter/in/kafka/dto"
 	servicemocks "shippingservice/application/port/in/mocks"
+	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 	"shippingservice/infrastructure/kafkago"
@@ -153,8 +154,8 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		done := make(chan struct{})
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), correlationID, orderID, wantAddress).
-			DoAndReturn(func(context.Context, string, uint64, value.Address) (*model.Shipment, error) {
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, value.Address) (*model.Shipment, error) {
 				close(done)
 				return nil, nil
 			}).
@@ -206,8 +207,8 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		done := make(chan struct{})
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), correlationID, orderID, wantAddress).
-			DoAndReturn(func(context.Context, string, uint64, value.Address) (*model.Shipment, error) {
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, value.Address) (*model.Shipment, error) {
 				close(done)
 				return nil, nil
 			}).

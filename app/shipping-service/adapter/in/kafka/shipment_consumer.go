@@ -7,6 +7,7 @@ import (
 	"shippingservice/adapter/in/kafka/common"
 	"shippingservice/adapter/in/kafka/dto"
 	portin "shippingservice/application/port/in"
+	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 )
 
 type ShipmentKafkaConsumer struct {
@@ -32,16 +33,18 @@ func (c *ShipmentKafkaConsumer) Close() error {
 	return c.consumer.Close()
 }
 
-func (c *ShipmentKafkaConsumer) handleMessage(messageType commonkafka.MessageType, _ string, correlationID string, payload []byte) error {
+func (c *ShipmentKafkaConsumer) handleMessage(messageType commonkafka.MessageType, messageID string, correlationID string, payload []byte) error {
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: messageID, CorrelationID: correlationID, MessageType: string(messageType)}
+
 	switch messageType {
 	case commonkafka.CreateShipmentCommand:
-		return c.handleCreateShipment(correlationID, payload)
+		return c.handleCreateShipment(msg, payload)
 	default:
 		return nil
 	}
 }
 
-func (c *ShipmentKafkaConsumer) handleCreateShipment(correlationID string, payload []byte) error {
+func (c *ShipmentKafkaConsumer) handleCreateShipment(msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.CreateShipmentCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
 		return err
@@ -52,6 +55,6 @@ func (c *ShipmentKafkaConsumer) handleCreateShipment(correlationID string, paylo
 		return err
 	}
 
-	_, err = c.shipmentService.CreateShipment(context.Background(), correlationID, command.OrderID, address)
+	_, err = c.shipmentService.CreateShipment(context.Background(), msg, command.OrderID, address)
 	return err
 }
