@@ -1,6 +1,8 @@
 package com.hartmann.adapter.in.http.payment;
 
 import com.hartmann.application.port.in.PaymentService;
+import com.hartmann.adapter.in.http.idempotency.HttpIdempotencyService;
+import com.hartmann.adapter.in.http.idempotency.dto.RequestAttempt;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.exception.DomainException;
@@ -8,6 +10,7 @@ import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,9 +20,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -37,6 +42,16 @@ class PaymentControllerTest {
 
     @MockitoBean
     private PaymentService paymentService;
+
+    // IdempotencyFilter runs ahead of every controller in this slice too, so it needs a bean here
+    // regardless of whether a given test cares about idempotency itself.
+    @MockitoBean
+    private HttpIdempotencyService httpIdempotencyService;
+
+    @BeforeEach
+    void stubIdempotencyStart() {
+        when(httpIdempotencyService.claim(any(), any(), any(Duration.class))).thenReturn(RequestAttempt.claimed());
+    }
 
     private Money testAmount() {
         return new Money(new BigDecimal("50.00"), Currency.USD);
@@ -91,6 +106,7 @@ class PaymentControllerTest {
 
         mockMvc.perform(post("/api/v1/payments")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-1")
                         .content(submitPaymentRequestJson(orderId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.paymentId").value(payment.id()))
@@ -107,6 +123,7 @@ class PaymentControllerTest {
 
         mockMvc.perform(post("/api/v1/payments")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-2")
                         .content(submitPaymentRequestJson(orderId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value(message));
@@ -121,6 +138,7 @@ class PaymentControllerTest {
 
         mockMvc.perform(post("/api/v1/payments")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-3")
                         .content(submitPaymentRequestJson(orderId)))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.detail").value("Internal server error"));

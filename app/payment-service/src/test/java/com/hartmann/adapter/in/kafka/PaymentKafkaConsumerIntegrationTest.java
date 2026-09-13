@@ -45,6 +45,8 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -161,7 +163,7 @@ class PaymentKafkaConsumerIntegrationTest {
                 "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}"));
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(paymentId, amount));
+                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), eq(paymentId), eq(amount)));
     }
 
     @Test
@@ -176,7 +178,7 @@ class PaymentKafkaConsumerIntegrationTest {
                 "{\"orderId\":" + orderId + ",\"amount\":15.00,\"currency\":\"USD\"}"));
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(paymentId, amount));
+                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), eq(paymentId), eq(amount)));
     }
 
     @Test

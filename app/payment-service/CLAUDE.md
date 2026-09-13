@@ -131,6 +131,14 @@ HTTP error handling must be declared in an `GlobalExceptionHandler` class locate
 
 See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
+`adapter.in.http.idempotency` holds `HttpIdempotencyService`, which decides whether a mutating HTTP request should
+proceed, replay a cached response, or be rejected, for `IdempotencyFilter`. It composes
+`application.port.out.idempotency.HttpRequestStore` (a persistence port for idempotent_http_requests rows,
+implemented by `adapter.out.idempotency`) but owns all of the actual decision logic itself - the store never
+branches on what a conflict or a stale record means. `HttpIdempotencyService` lives here, not in `Application`,
+because its whole purpose is specific to the HTTP idempotency-key pattern (an `Adapters`-owned concern), not to
+orchestrating domain behavior.
+
 ### Infrastructure
 
 Contains frameworks, drivers, and their configuration.

@@ -4,6 +4,8 @@ import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
+import com.hartmann.application.port.out.idempotency.ProcessedKafkaMessageStore;
+import com.hartmann.application.port.out.idempotency.dto.KafkaMessageMetadata;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,12 +50,19 @@ class RefundServiceImplTest {
     private PaymentGateway paymentGateway;
     @Mock
     private PaymentKafkaProducer paymentKafkaProducer;
+    @Mock
+    private ProcessedKafkaMessageStore processedKafkaMessageStore;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private RefundServiceImpl refundService;
 
     @BeforeEach
     void setUp() {
-        refundService = new RefundServiceImpl(refundRepository, paymentRepository, paymentGateway, paymentKafkaProducer);
+        refundService = new RefundServiceImpl(
+                refundRepository, paymentRepository, paymentGateway, paymentKafkaProducer,
+                processedKafkaMessageStore, transactionManager
+        );
     }
 
     private Money money(String amount) {
@@ -104,7 +114,7 @@ class RefundServiceImplTest {
                 .thenReturn(new SubmitRefundResult("re_new", RefundStatus.PENDING));
         when(refundRepository.markPending(initiatedId, "re_new", RefundStatus.PENDING)).thenReturn(pendingRefund);
 
-        var result = refundService.submitRefund(paymentId, money(amount));
+        var result = refundService.submitRefund(null, paymentId, money(amount));
 
         assertThat(result).isEqualTo(pendingRefund);
 
@@ -114,6 +124,7 @@ class RefundServiceImplTest {
         assertThat(captor.getValue().status()).isEqualTo(RefundStatus.INITIATED);
         verify(refundRepository, times(1)).markPending(initiatedId, "re_new", RefundStatus.PENDING);
         verifyNoInteractions(paymentKafkaProducer);
+        verifyNoInteractions(processedKafkaMessageStore);
     }
 
     @Test
@@ -132,11 +143,12 @@ class RefundServiceImplTest {
                 .thenReturn(new SubmitRefundResult("re_new", RefundStatus.SUCCEEDED));
         when(refundRepository.markPending(initiatedId, "re_new", RefundStatus.SUCCEEDED)).thenReturn(succeededRefund);
 
-        var result = refundService.submitRefund(paymentId, money(amount));
+        var result = refundService.submitRefund(null, paymentId, money(amount));
 
         assertThat(result).isEqualTo(succeededRefund);
         verify(paymentKafkaProducer, times(1)).publishRefundCompleted(orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
+        verifyNoInteractions(processedKafkaMessageStore);
     }
 
     @Test
@@ -153,11 +165,12 @@ class RefundServiceImplTest {
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
         when(paymentGateway.submitRefund("pi_test", money(amount))).thenThrow(expectedException);
 
-        assertThatThrownBy(() -> refundService.submitRefund(paymentId, money(amount)))
+        assertThatThrownBy(() -> refundService.submitRefund(null, paymentId, money(amount)))
                 .isSameAs(expectedException);
 
         verify(refundRepository, times(1)).updateStatus(initiatedId, RefundStatus.FAILED);
         verifyNoInteractions(paymentKafkaProducer);
+        verifyNoInteractions(processedKafkaMessageStore);
     }
 
     @Test
@@ -174,10 +187,55 @@ class RefundServiceImplTest {
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
         when(paymentGateway.submitRefund("pi_test", money(amount))).thenThrow(expectedException);
 
-        assertThatThrownBy(() -> refundService.submitRefund(paymentId, money(amount)))
+        assertThatThrownBy(() -> refundService.submitRefund(null, paymentId, money(amount)))
                 .isSameAs(expectedException);
 
         verify(refundRepository, times(1)).updateStatus(initiatedId, RefundStatus.FAILED);
+        verifyNoInteractions(paymentKafkaProducer);
+        verifyNoInteractions(processedKafkaMessageStore);
+    }
+
+    @Test
+    void submitRefund_marksTheKafkaMessageProcessedThenCreatesAnInitiatedRefundWhenMessageIsPresent() {
+        var paymentId = 1L;
+        var orderId = 100L;
+        var initiatedId = 1L;
+        var amount = "40.00";
+        var message = new KafkaMessageMetadata("msg-1", "corr-1", "RefundRequested");
+
+        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, amount);
+        var pendingRefund = testRefund(initiatedId, paymentId, RefundStatus.PENDING, amount);
+        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentGateway.submitRefund("pi_test", money(amount)))
+                .thenReturn(new SubmitRefundResult("re_new", RefundStatus.PENDING));
+        when(refundRepository.markPending(initiatedId, "re_new", RefundStatus.PENDING)).thenReturn(pendingRefund);
+
+        var result = refundService.submitRefund(message, paymentId, money(amount));
+
+        assertThat(result).isEqualTo(pendingRefund);
+        verify(processedKafkaMessageStore, times(1)).markProcessed(message);
+        verify(refundRepository, times(1)).create(any());
+    }
+
+    @Test
+    void submitRefund_returnsNullWithoutCallingTheGatewayWhenTheKafkaMessageWasAlreadyProcessed() {
+        var paymentId = 1L;
+        var orderId = 100L;
+        var amount = "40.00";
+        var message = new KafkaMessageMetadata("msg-1", "corr-1", "RefundRequested");
+
+        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(processedKafkaMessageStore.markProcessed(message)).thenReturn(true);
+
+        var result = refundService.submitRefund(message, paymentId, money(amount));
+
+        assertThat(result).isNull();
+        verify(processedKafkaMessageStore, times(1)).markProcessed(message);
+        verify(refundRepository, times(0)).create(any());
+        verifyNoInteractions(paymentGateway);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
