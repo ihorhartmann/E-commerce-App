@@ -1,17 +1,18 @@
 package com.hartmann.usecase.port.`in`.saga
 
 import com.hartmann.entities.value.Money
+import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
 
 interface FulfillOrderSaga {
-    fun onPaymentCompleted(orderId: Long, correlationId: String)
-    fun onPaymentFailed(orderId: Long, correlationId: String)
-    fun onPaymentExpired(orderId: Long, correlationId: String)
-    fun onRefundCompleted(orderId: Long, amount: Money, correlationId: String)
-    fun onRefundFailed(orderId: Long, correlationId: String)
-    fun onShipmentCreated(orderId: Long, trackingNumber: String, correlationId: String)
-    fun onShipmentInDelivery(orderId: Long, correlationId: String)
-    fun onShipmentDelivered(orderId: Long)
-    fun onShipmentCancelled(orderId: Long, correlationId: String)
-    fun onShipmentLost(orderId: Long, correlationId: String)
-    fun onShipmentReturnedToInventory(orderId: Long, correlationId: String)
+    fun onPaymentCompleted(message: KafkaMessageMetadata, orderId: Long)
+    fun onPaymentFailed(message: KafkaMessageMetadata, orderId: Long)
+    fun onPaymentExpired(message: KafkaMessageMetadata, orderId: Long)
+    fun onRefundCompleted(message: KafkaMessageMetadata, orderId: Long, amount: Money)
+    fun onRefundFailed(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, trackingNumber: String)
+    fun onShipmentInDelivery(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentDelivered(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentLost(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentReturnedToInventory(message: KafkaMessageMetadata, orderId: Long)
 }

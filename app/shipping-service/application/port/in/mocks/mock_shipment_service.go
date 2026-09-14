@@ -12,6 +12,7 @@ package servicemocks
 import (
 	context "context"
 	reflect "reflect"
+	dto "shippingservice/application/port/out/idempotency/dto"
 	model "shippingservice/domain/model"
 	value "shippingservice/domain/value"
 
@@ -73,18 +74,18 @@ func (mr *MockShipmentServiceMockRecorder) ConfirmReturnedToInventory(ctx, id an
 }
 
 // CreateShipment mocks base method.
-func (m *MockShipmentService) CreateShipment(ctx context.Context, correlationID string, orderID uint64, address value.Address) (*model.Shipment, error) {
+func (m *MockShipmentService) CreateShipment(ctx context.Context, msg dto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateShipment", ctx, correlationID, orderID, address)
+	ret := m.ctrl.Call(m, "CreateShipment", ctx, msg, orderID, address)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateShipment indicates an expected call of CreateShipment.
-func (mr *MockShipmentServiceMockRecorder) CreateShipment(ctx, correlationID, orderID, address any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) CreateShipment(ctx, msg, orderID, address any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateShipment", reflect.TypeOf((*MockShipmentService)(nil).CreateShipment), ctx, correlationID, orderID, address)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateShipment", reflect.TypeOf((*MockShipmentService)(nil).CreateShipment), ctx, msg, orderID, address)
 }
 
 // Deliver mocks base method.

@@ -146,8 +146,9 @@ interfaceadapter/
 ├── in/
 │   ├── http/
 │   │   └── dto/
-│   └── kafka/
-│       └── dto/
+│   ├── kafka/
+│   │   └── dto/
+│   └── scheduled/
 └── out/
     ├── http/
     │   └── dto/
@@ -169,6 +170,19 @@ HTTP error handling must be declared in a `GlobalExceptionHandler` class located
 package.
 
 See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
+
+`interfaceadapter.in.http.idempotency` holds `HttpIdempotencyService`, which decides whether a mutating HTTP request
+should proceed, replay a cached response, or be rejected, for `IdempotencyFilter`. It composes
+`usecase.port.out.idempotency.HttpRequestStore` (a persistence port for idempotent_http_requests rows, implemented
+by `interfaceadapter.out.idempotency`) but owns all of the actual decision logic itself - the store never branches
+on what a conflict or a stale record means. `HttpIdempotencyService` lives here, not in `Use cases`, because its
+whole purpose is specific to the HTTP idempotency-key pattern (an `Interface adapters`-owned concern), not to
+orchestrating domain behavior.
+
+`interfaceadapter.in.scheduled` holds periodic sweeps (e.g. `HttpRequestSweep`, `ProcessedKafkaMessageSweep`) that
+run on a timer. A scheduled job is a self-triggered entry point - it decides on its own schedule to invoke a
+business port, the same role a Kafka consumer or REST controller plays for its own trigger - so it belongs in
+`Interface adapters`, not `Frameworks`, even though nothing here is framework-specific glue.
 
 ##### interfaceadapter/out
 

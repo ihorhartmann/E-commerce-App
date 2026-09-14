@@ -31,6 +31,7 @@ class HttpPaymentClient(
         val response = try {
             restClient.post()
                 .uri("/api/v1/payments")
+                .header("Idempotency-Key", "payment-order-$orderId")
                 .body(SubmitPaymentRequest(orderId, amount.amount, amount.currency.name))
                 .retrieve()
                 .toEntity<SubmitPaymentResponse>()

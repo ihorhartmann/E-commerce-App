@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	dto "inventoryservice/application/dto"
+	dto0 "inventoryservice/application/port/out/idempotency/dto"
 	model "inventoryservice/domain/model"
 	reflect "reflect"
 
@@ -43,45 +44,45 @@ func (m *MockReservationService) EXPECT() *MockReservationServiceMockRecorder {
 }
 
 // Cancel mocks base method.
-func (m *MockReservationService) Cancel(ctx context.Context, orderID uint64) error {
+func (m *MockReservationService) Cancel(ctx context.Context, msg dto0.KafkaMessageMetadata, orderID uint64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Cancel", ctx, orderID)
+	ret := m.ctrl.Call(m, "Cancel", ctx, msg, orderID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Cancel indicates an expected call of Cancel.
-func (mr *MockReservationServiceMockRecorder) Cancel(ctx, orderID any) *gomock.Call {
+func (mr *MockReservationServiceMockRecorder) Cancel(ctx, msg, orderID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockReservationService)(nil).Cancel), ctx, orderID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockReservationService)(nil).Cancel), ctx, msg, orderID)
 }
 
 // Fulfill mocks base method.
-func (m *MockReservationService) Fulfill(ctx context.Context, orderID uint64) error {
+func (m *MockReservationService) Fulfill(ctx context.Context, msg dto0.KafkaMessageMetadata, orderID uint64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Fulfill", ctx, orderID)
+	ret := m.ctrl.Call(m, "Fulfill", ctx, msg, orderID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Fulfill indicates an expected call of Fulfill.
-func (mr *MockReservationServiceMockRecorder) Fulfill(ctx, orderID any) *gomock.Call {
+func (mr *MockReservationServiceMockRecorder) Fulfill(ctx, msg, orderID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fulfill", reflect.TypeOf((*MockReservationService)(nil).Fulfill), ctx, orderID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Fulfill", reflect.TypeOf((*MockReservationService)(nil).Fulfill), ctx, msg, orderID)
 }
 
 // HoldByCourier mocks base method.
-func (m *MockReservationService) HoldByCourier(ctx context.Context, orderID uint64) error {
+func (m *MockReservationService) HoldByCourier(ctx context.Context, msg dto0.KafkaMessageMetadata, orderID uint64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "HoldByCourier", ctx, orderID)
+	ret := m.ctrl.Call(m, "HoldByCourier", ctx, msg, orderID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // HoldByCourier indicates an expected call of HoldByCourier.
-func (mr *MockReservationServiceMockRecorder) HoldByCourier(ctx, orderID any) *gomock.Call {
+func (mr *MockReservationServiceMockRecorder) HoldByCourier(ctx, msg, orderID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HoldByCourier", reflect.TypeOf((*MockReservationService)(nil).HoldByCourier), ctx, orderID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HoldByCourier", reflect.TypeOf((*MockReservationService)(nil).HoldByCourier), ctx, msg, orderID)
 }
 
 // ReserveItems mocks base method.

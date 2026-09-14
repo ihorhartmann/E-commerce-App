@@ -4,6 +4,8 @@ import (
 	"context"
 	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in"
+	"inventoryservice/application/port/out/idempotency"
+	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/application/port/out/repository/transaction"
 	"inventoryservice/domain"
@@ -13,12 +15,17 @@ import (
 
 type ProductServiceImpl struct {
 	in.ProductService
-	productRepository repository.ProductRepository
-	txExecutor        transaction.Executor
+	productRepository     repository.ProductRepository
+	processedMessageStore idempotency.ProcessedKafkaMessageStore
+	txExecutor            transaction.Executor
 }
 
-func NewProductService(products repository.ProductRepository, txExecutor transaction.Executor) in.ProductService {
-	return &ProductServiceImpl{productRepository: products, txExecutor: txExecutor}
+func NewProductService(
+	products repository.ProductRepository,
+	processedMessageStore idempotency.ProcessedKafkaMessageStore,
+	txExecutor transaction.Executor,
+) in.ProductService {
+	return &ProductServiceImpl{productRepository: products, processedMessageStore: processedMessageStore, txExecutor: txExecutor}
 }
 
 func (ps *ProductServiceImpl) Create(ctx context.Context, product *model.Product) (*model.Product, error) {
@@ -52,8 +59,13 @@ func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
 	return ps.productRepository.Delete(ctx, id)
 }
 
-func (ps *ProductServiceImpl) Restock(ctx context.Context, items []dto.ReservationDTO) error {
+func (ps *ProductServiceImpl) Restock(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, items []dto.ReservationDTO) error {
 	return ps.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		alreadyProcessed, err := ps.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return err
+		}
+
 		for _, item := range items {
 			product, err := ps.productRepository.GetByID(ctx, item.ProductID)
 			if err != nil {

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -79,7 +80,7 @@ class OrderKafkaConsumerIntegrationTest {
         }
     }
 
-    @Value("\${spring.kafka.consumer.group-id}")
+    @Value($$"${spring.kafka.consumer.group-id}")
     private lateinit var groupId: String
 
     @MockitoBean
@@ -139,7 +140,7 @@ class OrderKafkaConsumerIntegrationTest {
         send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-            .untilAsserted { verify(saga, times(1)).onPaymentCompleted(orderId, correlationId) }
+            .untilAsserted { verify(saga, times(1)).onPaymentCompleted(any(), eq(orderId)) }
     }
 
     @Test
@@ -156,7 +157,7 @@ class OrderKafkaConsumerIntegrationTest {
         )
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-            .untilAsserted { verify(saga, times(1)).onShipmentCreated(orderId, trackingNumber, correlationId) }
+            .untilAsserted { verify(saga, times(1)).onShipmentCreated(any(), eq(orderId), eq(trackingNumber)) }
     }
 
     @Test
@@ -168,7 +169,7 @@ class OrderKafkaConsumerIntegrationTest {
         send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-            .untilAsserted { verify(saga, times(1)).onPaymentCompleted(orderId, correlationId) }
+            .untilAsserted { verify(saga, times(1)).onPaymentCompleted(any(), eq(orderId)) }
     }
 
     @Test
@@ -201,7 +202,7 @@ class OrderKafkaConsumerIntegrationTest {
         await().atMost(RETRY_MESSAGE_WAIT_TIMEOUT)
             .untilAsserted { assertEquals(before + 1, committedOffset()) }
 
-        verify(saga, atLeast(1)).onPaymentCompleted(orderId, correlationId)
+        verify(saga, atLeast(1)).onPaymentCompleted(any(), eq(orderId))
     }
 
     @Test

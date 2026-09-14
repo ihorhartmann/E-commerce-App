@@ -29,6 +29,7 @@ class HttpInventoryClient(
         val response = try {
             restClient.post()
                 .uri("/api/v1/reservations")
+                .header("Idempotency-Key", "reserve-order-$orderId")
                 .body(request)
                 .retrieve()
                 .toBodilessEntity()

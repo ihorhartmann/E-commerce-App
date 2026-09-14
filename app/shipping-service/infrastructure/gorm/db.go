@@ -18,7 +18,7 @@ func NewDB(config *env.Config) (*gorm.DB, error) {
 		config.DBHost, config.DBPort, config.DBUser, config.DBPassword, config.DBName, schema,
 	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, err
 	}

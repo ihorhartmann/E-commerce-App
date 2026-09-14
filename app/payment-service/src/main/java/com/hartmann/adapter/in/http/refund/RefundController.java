@@ -34,7 +34,7 @@ public class RefundController {
 
     @PostMapping
     public ResponseEntity<RefundResponse> submitRefund(@RequestBody SubmitRefundRequest request) {
-        var refund = refundService.submitRefund(request.paymentId(), SubmitRefundRequest.toMoney(request));
+        var refund = refundService.submitRefund(null, request.paymentId(), SubmitRefundRequest.toMoney(request));
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)

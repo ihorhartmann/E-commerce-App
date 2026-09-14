@@ -104,7 +104,8 @@ This layer may depend on the `Application` and `Domain` layers.
 adapter/
 ├── in/
 │   ├── http/
-│   └── kafka/
+│   ├── kafka/
+│   └── scheduled/
 │
 └── out/
     ├── kafka/
@@ -130,6 +131,19 @@ Examples:
 HTTP error handling must be declared in an `GlobalExceptionHandler` class located in the `adapter.in.http` package.
 
 See the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
+
+`adapter.in.http.idempotency` holds `HttpIdempotencyService`, which decides whether a mutating HTTP request should
+proceed, replay a cached response, or be rejected, for `IdempotencyFilter`. It composes
+`application.port.out.idempotency.HttpRequestStore` (a persistence port for idempotent_http_requests rows,
+implemented by `adapter.out.idempotency`) but owns all of the actual decision logic itself - the store never
+branches on what a conflict or a stale record means. `HttpIdempotencyService` lives here, not in `Application`,
+because its whole purpose is specific to the HTTP idempotency-key pattern (an `Adapters`-owned concern), not to
+orchestrating domain behavior.
+
+`adapter.in.scheduled` holds periodic sweeps (e.g. `PaymentExpirationSweep`, `HttpRequestSweep`, `ProcessedKafkaMessageSweep`)
+that run on a timer. A scheduled job is a self-triggered entry point - it decides on its own schedule to invoke a
+business port, the same role a Kafka consumer or REST controller plays for its own trigger - so it belongs in
+`Adapters`, not `Infrastructure`, even though nothing here is framework-specific glue.
 
 ### Infrastructure
 

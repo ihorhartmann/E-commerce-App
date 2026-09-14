@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"inventoryservice/application/port/in"
+	"inventoryservice/application/port/out/idempotency"
+	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/application/port/out/repository/transaction"
 
@@ -15,17 +17,20 @@ type ReservationServiceImpl struct {
 	in.ReservationService
 	reservationRepository repository.ReservationRepository
 	productRepository     repository.ProductRepository
+	processedMessageStore idempotency.ProcessedKafkaMessageStore
 	txExecutor            transaction.Executor
 }
 
 func NewReservationService(
 	reservationRepository repository.ReservationRepository,
 	productRepository repository.ProductRepository,
+	processedMessageStore idempotency.ProcessedKafkaMessageStore,
 	txExecutor transaction.Executor,
 ) in.ReservationService {
 	return &ReservationServiceImpl{
 		reservationRepository: reservationRepository,
 		productRepository:     productRepository,
+		processedMessageStore: processedMessageStore,
 		txExecutor:            txExecutor,
 	}
 }
@@ -110,22 +115,34 @@ func prepareReservations(
 }
 
 // Cancel deletes every stock reservation held for the given order, in one batch.
-func (rs *ReservationServiceImpl) Cancel(ctx context.Context, orderID uint64) error {
-	reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
-	if err != nil {
-		return err
-	}
+func (rs *ReservationServiceImpl) Cancel(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) error {
+	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		alreadyProcessed, err := rs.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return err
+		}
 
-	ids := make([]uint64, 0, len(reservations))
-	for _, reservation := range reservations {
-		ids = append(ids, reservation.ID())
-	}
+		reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
+		if err != nil {
+			return err
+		}
 
-	return rs.reservationRepository.DeleteByIDs(ctx, ids)
+		ids := make([]uint64, 0, len(reservations))
+		for _, reservation := range reservations {
+			ids = append(ids, reservation.ID())
+		}
+
+		return rs.reservationRepository.DeleteByIDs(ctx, ids)
+	})
 }
 
-func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, orderID uint64) error {
+func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) error {
 	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		alreadyProcessed, err := rs.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return err
+		}
+
 		reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 		if err != nil {
 			return err
@@ -146,8 +163,13 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, orderID uin
 	})
 }
 
-func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, orderID uint64) error {
+func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) error {
 	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		alreadyProcessed, err := rs.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return err
+		}
+
 		reservations, err := rs.reservationRepository.GetByOrderID(ctx, orderID)
 		if err != nil {
 			return err

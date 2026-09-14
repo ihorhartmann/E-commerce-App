@@ -13,6 +13,7 @@ import (
 	"inventoryservice/application/dto"
 	commonkafka "inventoryservice/application/port/common/kafka"
 	"inventoryservice/application/port/in/mocks"
+	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	producerkafkago "inventoryservice/infrastructure/kafkago"
 	inventorykafka "inventoryservice/interfaces/kafka"
 	kafkadto "inventoryservice/interfaces/kafka/dto"
@@ -144,8 +145,8 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		done := make(chan struct{})
 		reservationService.EXPECT().
-			Cancel(gomock.Any(), orderID).
-			DoAndReturn(func(context.Context, uint64) error {
+			Cancel(gomock.Any(), gomock.Any(), orderID).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64) error {
 				close(done)
 				return nil
 			}).
@@ -154,7 +155,7 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		reservationConsumer := inventorykafka.NewReservationKafkaConsumer(consumer, reservationService, productService)
-		reservationConsumer.Start()
+		reservationConsumer.StartAsync()
 		t.Cleanup(func() { closeQuietly(t, "reservationConsumer", reservationConsumer) })
 
 		select {
@@ -185,8 +186,8 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 		productService := mocks.NewMockProductService(gomock.NewController(t))
 		done := make(chan struct{})
 		productService.EXPECT().
-			Restock(gomock.Any(), wantReservationDTOs).
-			DoAndReturn(func(context.Context, []dto.ReservationDTO) error {
+			Restock(gomock.Any(), gomock.Any(), wantReservationDTOs).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, []dto.ReservationDTO) error {
 				close(done)
 				return nil
 			}).
@@ -194,7 +195,7 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		reservationConsumer := inventorykafka.NewReservationKafkaConsumer(consumer, reservationService, productService)
-		reservationConsumer.Start()
+		reservationConsumer.StartAsync()
 		t.Cleanup(func() { closeQuietly(t, "reservationConsumer", reservationConsumer) })
 
 		select {
@@ -226,8 +227,8 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		done := make(chan struct{})
 		reservationService.EXPECT().
-			Cancel(gomock.Any(), orderID).
-			DoAndReturn(func(context.Context, uint64) error {
+			Cancel(gomock.Any(), gomock.Any(), orderID).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64) error {
 				close(done)
 				return nil
 			}).
@@ -236,7 +237,7 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		reservationConsumer := inventorykafka.NewReservationKafkaConsumer(consumer, reservationService, productService)
-		reservationConsumer.Start()
+		reservationConsumer.StartAsync()
 		t.Cleanup(func() { closeQuietly(t, "reservationConsumer", reservationConsumer) })
 
 		select {

@@ -6,6 +6,8 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.usecase.port.out.idempotency.ProcessedKafkaMessageStore
+import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.usecase.port.out.repository.OrderRepository
@@ -15,6 +17,7 @@ import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -45,8 +48,9 @@ class FulfillOrderSagaImplTest {
 
     private val orderRepository = mockk<OrderRepository>()
     private val orderKafkaProducer = mockk<OrderKafkaProducer>(relaxed = true)
+    private val processedKafkaMessageStore = mockk<ProcessedKafkaMessageStore>(relaxed = true)
 
-    private val saga = FulfillOrderSagaImpl(orderRepository, orderKafkaProducer)
+    private val saga = FulfillOrderSagaImpl(orderRepository, orderKafkaProducer, processedKafkaMessageStore)
 
     private var savedOrder: Order? = null
 
@@ -66,26 +70,50 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentCompleted - confirms payment and requests a shipment`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "PaymentCompleted"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = placedOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentCompleted(orderId, correlationId)
+        saga.onPaymentCompleted(message, orderId)
 
         assertEquals(OrderStatus.PROCESSING, savedOrder?.status)
+        verify(exactly = 1) { processedKafkaMessageStore.markProcessed(message) }
         verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.address) }
+    }
+
+    @Test
+    fun `onPaymentCompleted - skips reprocessing an already-processed message`() {
+        val orderId = 1L
+        val messageId = "msg-1"
+        val correlationId = "corr-1"
+        val messageType = "PaymentCompleted"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        every { processedKafkaMessageStore.markProcessed(message) } returns true
+
+        saga.onPaymentCompleted(message, orderId)
+
+        assertNull(savedOrder)
+        verify(exactly = 0) { orderRepository.getOrder(any()) }
+        verify(exactly = 0) { orderRepository.save(any()) }
+        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
     }
 
     @Test
     fun `onPaymentFailed - fails the order and cancels the reservation`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "PaymentFailed"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = placedOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentFailed(orderId, correlationId)
+        saga.onPaymentFailed(message, orderId)
 
         assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
@@ -94,12 +122,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentExpired - expires the order and cancels the reservation`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "PaymentExpired"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = placedOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onPaymentExpired(orderId, correlationId)
+        saga.onPaymentExpired(message, orderId)
 
         assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
@@ -108,13 +139,16 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentCreated"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val trackingNumber = "TRACK-1"
         val order = processingOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCreated(orderId, trackingNumber, correlationId)
+        saga.onShipmentCreated(message, orderId, trackingNumber)
 
         assertEquals(trackingNumber, savedOrder?.shipment?.trackingNumber)
         verify(exactly = 1) { orderKafkaProducer.publishHoldReservation(correlationId, orderId) }
@@ -123,12 +157,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentInDelivery - marks the shipment picked up and fulfills the reservation`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentInDelivery"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderWithShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentInDelivery(orderId, correlationId)
+        saga.onShipmentInDelivery(message, orderId)
 
         assertEquals(true, savedOrder?.wasPickedUp())
         verify(exactly = 1) { orderKafkaProducer.publishFulfillReservation(correlationId, orderId) }
@@ -136,11 +173,15 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onShipmentDelivered - fulfills the order without publishing anything`() {
+        val messageId = "msg-1"
+        val correlationId = "corr-1"
+        val messageType = "ShipmentDelivered"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderInDelivery()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentDelivered(1)
+        saga.onShipmentDelivered(message, 1)
 
         assertEquals(OrderStatus.FULFILLED, savedOrder?.status)
         verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
@@ -154,12 +195,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCancelled - after pickup only requests a refund - reservation already left the warehouse`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentCancelled"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderInDelivery()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(orderId, correlationId)
+        saga.onShipmentCancelled(message, orderId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertEquals(true, savedOrder?.awaitingReturn)
@@ -170,12 +214,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCancelled - before pickup also cancels the reservation`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentCancelled"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderWithShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(orderId, correlationId)
+        saga.onShipmentCancelled(message, orderId)
 
         assertNotEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
@@ -185,12 +232,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentLost - requests a refund without touching the reservation`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentLost"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderInDelivery()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentLost(orderId, correlationId)
+        saga.onShipmentLost(message, orderId)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertNotEquals(true, savedOrder?.awaitingReturn)
@@ -201,12 +251,15 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentReturnedToInventory - publishes a restock command with the order's items`() {
         val orderId = 1L
+        val messageId = "msg-1"
         val correlationId = "corr-1"
+        val messageType = "ShipmentReturnedToInventory"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
         val order = orderInDelivery().cancelShipment()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentReturnedToInventory(orderId, correlationId)
+        saga.onShipmentReturnedToInventory(message, orderId)
 
         verify(exactly = 1) {
             orderKafkaProducer.publishRestock(correlationId, orderId, listOf(RestockItemDto(testItem().productId, testItem().quantity)))
@@ -220,7 +273,9 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onRefundCompleted(1, Money(amount, Currency.USD), "corr-1")
+        val message = KafkaMessageMetadata("msg-1", "corr-1", "RefundCompleted")
+
+        saga.onRefundCompleted(message, 1, Money(amount, Currency.USD))
 
         assertEquals(amount, savedOrder?.refund?.amount?.amount)
         assertEquals(true, savedOrder?.refund?.isConfirmed)
@@ -232,7 +287,9 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onRefundFailed(1, "corr-1")
+        val message = KafkaMessageMetadata("msg-1", "corr-1", "RefundFailed")
+
+        saga.onRefundFailed(message, 1)
 
         assertNotNull(savedOrder?.refund?.failedAt)
     }

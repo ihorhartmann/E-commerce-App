@@ -4,6 +4,7 @@ import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.adapter.in.kafka.dto.RefundRequestedCommand;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
+import com.hartmann.application.port.out.idempotency.dto.KafkaMessageMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -31,13 +32,15 @@ public class PaymentKafkaConsumer {
     @KafkaListener(topics = KafkaConst.PAYMENT_COMMANDS_TOPIC, groupId = "${spring.kafka.consumer.group-id}")
     public void onMessage(
             @Header(KafkaConst.MESSAGE_TYPE) String messageType,
+            @Header(KafkaConst.MESSAGE_ID) String messageId,
             @Header(KafkaConst.CORRELATION_ID) String correlationId,
             @Payload String payload
     ) {
         LOG.debug("received {} messageType={} correlationId={}", KafkaConst.PAYMENT_COMMANDS_TOPIC, messageType, correlationId);
+        var message = new KafkaMessageMetadata(messageId, correlationId, messageType);
 
         if (REFUND_REQUESTED_COMMAND.equals(messageType)) {
-            handleRefundRequested(payload);
+            handleRefundRequested(payload, message);
         } else {
             LOG.info("ignoring unhandled {} messageType={} correlationId={}", KafkaConst.PAYMENT_COMMANDS_TOPIC, messageType, correlationId);
             return;
@@ -46,9 +49,9 @@ public class PaymentKafkaConsumer {
         LOG.info("successfully processed {} messageType={} correlationId={}", KafkaConst.PAYMENT_COMMANDS_TOPIC, messageType, correlationId);
     }
 
-    private void handleRefundRequested(String payload) {
+    private void handleRefundRequested(String payload, KafkaMessageMetadata message) {
         var command = objectMapper.readValue(payload, RefundRequestedCommand.class);
         var payment = paymentService.getByOrderId(command.orderId());
-        refundService.submitRefund(payment.id(), RefundRequestedCommand.toMoney(command));
+        refundService.submitRefund(message, payment.id(), RefundRequestedCommand.toMoney(command));
     }
 }

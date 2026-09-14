@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"inventoryservice/application/port/common/kafka"
+	"inventoryservice/infrastructure/idempotency/store"
 	"inventoryservice/interfaces/http/middleware"
 	"inventoryservice/interfaces/kafka/kafkago"
+	"inventoryservice/interfaces/scheduled"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +19,7 @@ import (
 	gormtx "inventoryservice/infrastructure/gorm/transaction"
 	"inventoryservice/infrastructure/repository"
 	inhttp "inventoryservice/interfaces/http"
+	"inventoryservice/interfaces/http/idempotency"
 	inkafka "inventoryservice/interfaces/kafka"
 
 	"github.com/gofiber/fiber/v2"
@@ -39,19 +43,27 @@ func main() {
 	productRepository := repository.NewPostgresProductRepository(db)
 	reservationRepository := repository.NewPostgresReservationRepository(db)
 	txExecutor := gormtx.NewGormTxManager(db)
+	processedMessageStore := store.NewPostgresProcessedKafkaMessageStore(db)
+	httpRequestStore := store.NewPostgresHTTPRequestStore(db)
+	idempotencyService := idempotency.NewHTTPIdempotencyService(httpRequestStore)
 
-	productUseCases := application.NewProductService(productRepository, txExecutor)
-	reservationUseCases := application.NewReservationService(reservationRepository, productRepository, txExecutor)
+	productUseCases := application.NewProductService(productRepository, processedMessageStore, txExecutor)
+	reservationUseCases := application.NewReservationService(reservationRepository, productRepository, processedMessageStore, txExecutor)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka.InventoryCommandsTopic, kafka.ConsumerGroupID)
 	reservationConsumer := inkafka.NewReservationKafkaConsumer(kafkaConsumer, reservationUseCases, productUseCases)
-	reservationConsumer.Start()
+	reservationConsumer.StartAsync()
+
+	sweepCtx, cancelSweep := context.WithCancel(context.Background())
+	scheduled.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
+	scheduled.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleError,
 	})
 	app.Use(middleware.LoggingMiddleware)
+	app.Use(middleware.NewIdempotencyMiddleware(idempotencyService).Handle)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "ok"})
@@ -75,6 +87,8 @@ func main() {
 	if err = reservationConsumer.Close(); err != nil {
 		slog.Error("error closing kafka consumer", "error", err)
 	}
+
+	cancelSweep()
 
 	if err = app.Shutdown(); err != nil {
 		slog.Error("failed to shut down http server", "error", err)

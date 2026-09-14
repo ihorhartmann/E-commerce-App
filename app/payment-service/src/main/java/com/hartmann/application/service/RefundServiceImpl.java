@@ -5,8 +5,11 @@ import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableExceptio
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
+import com.hartmann.application.port.out.idempotency.ProcessedKafkaMessageStore;
+import com.hartmann.application.port.out.idempotency.dto.KafkaMessageMetadata;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
+import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
@@ -14,8 +17,11 @@ import com.hartmann.domain.value.Money;
 
 import java.util.List;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class RefundServiceImpl implements RefundService {
@@ -23,17 +29,23 @@ public class RefundServiceImpl implements RefundService {
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
     private final PaymentKafkaProducer paymentKafkaProducer;
+    private final ProcessedKafkaMessageStore processedKafkaMessageStore;
+    private final TransactionTemplate transactionTemplate;
 
     public RefundServiceImpl(
             RefundRepository refundRepository,
             PaymentRepository paymentRepository,
             PaymentGateway paymentGateway,
-            PaymentKafkaProducer paymentKafkaProducer
+            PaymentKafkaProducer paymentKafkaProducer,
+            ProcessedKafkaMessageStore processedKafkaMessageStore,
+            PlatformTransactionManager transactionManager
     ) {
         this.refundRepository = refundRepository;
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
         this.paymentKafkaProducer = paymentKafkaProducer;
+        this.processedKafkaMessageStore = processedKafkaMessageStore;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Override
@@ -45,12 +57,21 @@ public class RefundServiceImpl implements RefundService {
     // Same shape as PaymentServiceImpl.submitPayment: two separate writes around the gateway call,
     // no transaction spanning the external HTTP call, so the INITIATED row survives a crash.
     @Override
-    public Refund submitRefund(long paymentId, Money amount) {
+    public Refund submitRefund(@Nullable KafkaMessageMetadata message, long paymentId, Money amount) {
         var payment = paymentRepository.getByIdWithRefunds(paymentId);
-        var draftRefund = payment.createRefund(amount);
-        var initiatedRefund = refundRepository.create(draftRefund);
 
-        var result = submitToGateway(payment.externalId(), amount, initiatedRefund);
+        var initiatedRefund = createInitiatedRefund(payment, amount, message);
+        if (initiatedRefund == null) {
+            return null;
+        }
+
+        SubmitRefundResult result;
+        try {
+            result = paymentGateway.submitRefund(payment.externalId(), amount);
+        } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
+            refundRepository.updateStatus(initiatedRefund.id(), RefundStatus.FAILED);
+            throw e;
+        }
 
         // Unlike Payment, Stripe often resolves a card pendingRefund synchronously - if it already
         // landed on a terminal status here, publish now rather than waiting for a webhook that may
@@ -61,13 +82,16 @@ public class RefundServiceImpl implements RefundService {
         return pendingRefund;
     }
 
-    private SubmitRefundResult submitToGateway(String paymentExternalId, Money amount, Refund initiated) {
-        try {
-            return paymentGateway.submitRefund(paymentExternalId, amount);
-        } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
-            refundRepository.updateStatus(initiated.id(), RefundStatus.FAILED);
-            throw e;
+    private @Nullable Refund createInitiatedRefund(Payment payment, Money amount, @Nullable KafkaMessageMetadata message) {
+        var draftRefund = payment.createRefund(amount);
+        if (message == null) {
+            return refundRepository.create(draftRefund);
         }
+
+        return transactionTemplate.execute(_ -> {
+            boolean alreadyProcessed = processedKafkaMessageStore.markProcessed(message);
+            return alreadyProcessed ? null : refundRepository.create(draftRefund);
+        });
     }
 
     @Override

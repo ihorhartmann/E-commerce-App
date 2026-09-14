@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	dto "inventoryservice/application/dto"
+	dto0 "inventoryservice/application/port/out/idempotency/dto"
 	model "inventoryservice/domain/model"
 	reflect "reflect"
 
@@ -87,17 +88,17 @@ func (mr *MockProductServiceMockRecorder) Get(ctx, id any) *gomock.Call {
 }
 
 // Restock mocks base method.
-func (m *MockProductService) Restock(ctx context.Context, items []dto.ReservationDTO) error {
+func (m *MockProductService) Restock(ctx context.Context, msg dto0.KafkaMessageMetadata, items []dto.ReservationDTO) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Restock", ctx, items)
+	ret := m.ctrl.Call(m, "Restock", ctx, msg, items)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Restock indicates an expected call of Restock.
-func (mr *MockProductServiceMockRecorder) Restock(ctx, items any) *gomock.Call {
+func (mr *MockProductServiceMockRecorder) Restock(ctx, msg, items any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Restock", reflect.TypeOf((*MockProductService)(nil).Restock), ctx, items)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Restock", reflect.TypeOf((*MockProductService)(nil).Restock), ctx, msg, items)
 }
 
 // Update mocks base method.
