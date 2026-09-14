@@ -4,11 +4,13 @@ import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import io.restassured.response.ValidatableResponse
 import java.net.HttpURLConnection
+import java.util.UUID
 
 object OrderApi {
     fun placeOrder(baseUrl: String, request: PlaceOrderRequest): ValidatableResponse =
         given()
             .contentType(ContentType.JSON)
+            .header("Idempotency-Key", UUID.randomUUID().toString())
             .body(request)
             .post("$baseUrl/api/v1/orders")
             .then()

@@ -49,6 +49,7 @@ CREATE TABLE orders.idempotent_http_requests (
     http_code    INTEGER,
     response     JSONB,
     created_at   TIMESTAMPTZ NOT NULL,
+    claimed_at   TIMESTAMPTZ NOT NULL,
     completed_at TIMESTAMPTZ
 );
 
