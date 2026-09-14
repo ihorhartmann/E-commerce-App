@@ -2,7 +2,7 @@ package com.hartmann.interfaceadapter.out.idempotency
 
 import com.hartmann.usecase.port.out.idempotency.HttpRequestStore
 import com.hartmann.usecase.port.out.idempotency.dto.HttpRequestRecord
-import com.hartmann.interfaceadapter.out.idempotency.row.HttpRequestRow
+import com.hartmann.interfaceadapter.out.idempotency.row.toRecord
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -21,12 +21,14 @@ class PostgresHttpRequestStore(
 
     override fun insert(idempotencyKey: String, requestHash: String): Boolean {
         val now = Instant.now()
-        val inserted = jpaRepository.insertIfAbsent(idempotencyKey, requestHash, STATUS_IN_PROGRESS, now, now)
+        val inserted = transactionTemplate.execute {
+            jpaRepository.insertIfAbsent(idempotencyKey, requestHash, STATUS_IN_PROGRESS, now, now)
+        }
         return inserted == 1
     }
 
-    override fun get(idempotencyKey: String): HttpRequestRecord? =
-        jpaRepository.findById(idempotencyKey).orElse(null)?.let(::toRecord)
+    override fun find(idempotencyKey: String): HttpRequestRecord? =
+        jpaRepository.findById(idempotencyKey).orElse(null)?.toRecord()
 
     override fun reclaim(idempotencyKey: String, ttl: Duration): Boolean {
         val cutoff = Instant.now().minus(ttl)
@@ -48,15 +50,5 @@ class PostgresHttpRequestStore(
     }
 
     override fun deleteExpired(cutoff: Instant, limit: Int): Int =
-        jpaRepository.deleteBatchOlderThan(cutoff, limit)
-
-    private fun toRecord(row: HttpRequestRow) = HttpRequestRecord(
-        id = row.id,
-        requestHash = row.requestHash,
-        httpCode = row.httpCode,
-        response = row.response,
-        createdAt = row.createdAt,
-        claimedAt = row.claimedAt,
-        completedAt = row.completedAt,
-    )
+        transactionTemplate.execute { jpaRepository.deleteBatchOlderThan(cutoff, limit) }
 }

@@ -17,8 +17,8 @@ type HTTPRequestStore interface {
 	// Insert tries to insert a new IN_PROGRESS row for idempotencyKey. Returns false (no error) if
 	// idempotencyKey already exists.
 	Insert(ctx context.Context, idempotencyKey string, requestHash string) (bool, error)
-	// Get fetches the existing record for idempotencyKey.
-	Get(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error)
+	// Find fetches the existing record for idempotencyKey.
+	Find(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error)
 	// Reclaim atomically claims idempotencyKey's row if it's still IN_PROGRESS and older than ttl,
 	// so a concurrent retry doing the same thing can't both succeed. Returns false (no error) if
 	// the row no longer matches that condition.

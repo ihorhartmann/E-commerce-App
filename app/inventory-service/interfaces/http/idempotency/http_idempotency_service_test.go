@@ -55,7 +55,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		requestHash := testHash(testFingerprint)
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(true, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), gomock.Any()).Times(0)
+		store.EXPECT().Find(gomock.Any(), gomock.Any()).Times(0)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -76,7 +76,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		record := &storedto.HTTPRequestRecord{ID: idempotencyKey, RequestHash: "different-hash", ClaimedAt: time.Now()}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -101,7 +101,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -122,7 +122,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		record := &storedto.HTTPRequestRecord{ID: idempotencyKey, RequestHash: requestHash, ClaimedAt: time.Now()}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -143,7 +143,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		record := &storedto.HTTPRequestRecord{ID: idempotencyKey, RequestHash: requestHash, ClaimedAt: time.Now().Add(-2 * testTTL)}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), idempotencyKey, testTTL).Return(true, nil).Times(1)
 		service := NewHTTPIdempotencyService(store)
 
@@ -164,7 +164,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		record := &storedto.HTTPRequestRecord{ID: idempotencyKey, RequestHash: requestHash, ClaimedAt: time.Now().Add(-2 * testTTL)}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), idempotencyKey, testTTL).Return(false, nil).Times(1)
 		service := NewHTTPIdempotencyService(store)
 
@@ -185,7 +185,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		wantErr := errors.New("db down")
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, wantErr).Times(1)
-		store.EXPECT().Get(gomock.Any(), gomock.Any()).Times(0)
+		store.EXPECT().Find(gomock.Any(), gomock.Any()).Times(0)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -205,7 +205,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		wantErr := errors.New("db down")
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(nil, wantErr).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(nil, wantErr).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		service := NewHTTPIdempotencyService(store)
 
@@ -226,7 +226,7 @@ func TestHTTPIdempotencyService_Claim(t *testing.T) {
 		record := &storedto.HTTPRequestRecord{ID: idempotencyKey, RequestHash: requestHash, ClaimedAt: time.Now().Add(-2 * testTTL)}
 		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
 		store.EXPECT().Insert(gomock.Any(), idempotencyKey, requestHash).Return(false, nil).Times(1)
-		store.EXPECT().Get(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
+		store.EXPECT().Find(gomock.Any(), idempotencyKey).Return(record, nil).Times(1)
 		store.EXPECT().Reclaim(gomock.Any(), idempotencyKey, testTTL).Return(false, wantErr).Times(1)
 		service := NewHTTPIdempotencyService(store)
 

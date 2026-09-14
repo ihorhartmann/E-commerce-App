@@ -13,7 +13,7 @@ interface HttpRequestStore {
     /** Returns true if a new IN_PROGRESS row was inserted, false if idempotencyKey already existed. */
     fun insert(idempotencyKey: String, requestHash: String): Boolean
 
-    fun get(idempotencyKey: String): HttpRequestRecord?
+    fun find(idempotencyKey: String): HttpRequestRecord?
 
     /** Reclaims a stale IN_PROGRESS row, resetting claimedAt. Returns false if it was already reclaimed by someone else. */
     fun reclaim(idempotencyKey: String, ttl: Duration): Boolean

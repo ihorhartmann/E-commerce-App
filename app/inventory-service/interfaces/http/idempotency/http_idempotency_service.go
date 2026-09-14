@@ -49,7 +49,7 @@ func (s *httpIdempotencyService) Claim(
 		return &dto.RequestAttempt{Result: dto.Claimed}, nil
 	}
 
-	record, err := s.store.Get(ctx, idempotencyKey)
+	record, err := s.store.Find(ctx, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}

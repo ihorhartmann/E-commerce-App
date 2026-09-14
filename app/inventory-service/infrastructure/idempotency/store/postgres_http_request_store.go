@@ -41,7 +41,7 @@ func (s *postgresHTTPRequestStore) Insert(ctx context.Context, idempotencyKey st
 	return false, err
 }
 
-func (s *postgresHTTPRequestStore) Get(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error) {
+func (s *postgresHTTPRequestStore) Find(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error) {
 	var existing row.HTTPRequestRow
 	if err := s.db.WithContext(ctx).First(&existing, "id = ?", idempotencyKey).Error; err != nil {
 		return nil, err

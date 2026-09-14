@@ -1,11 +1,11 @@
-package sweep
+package scheduled
 
 import (
 	"context"
 	"log/slog"
 	"time"
 
-	"shippingservice/application/port/out/idempotency"
+	"inventoryservice/application/port/out/idempotency"
 )
 
 const (

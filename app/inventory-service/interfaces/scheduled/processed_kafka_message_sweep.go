@@ -1,4 +1,4 @@
-package sweep
+package scheduled
 
 import (
 	"context"

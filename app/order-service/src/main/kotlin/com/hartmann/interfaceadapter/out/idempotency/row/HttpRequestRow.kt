@@ -1,5 +1,6 @@
 package com.hartmann.interfaceadapter.out.idempotency.row
 
+import com.hartmann.usecase.port.out.idempotency.dto.HttpRequestRecord
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
@@ -22,4 +23,14 @@ class HttpRequestRow(
     var createdAt: Instant = Instant.now(),
     var claimedAt: Instant = Instant.now(),
     var completedAt: Instant? = null,
+)
+
+fun HttpRequestRow.toRecord() = HttpRequestRecord(
+    id = id,
+    requestHash = requestHash,
+    httpCode = httpCode,
+    response = response,
+    createdAt = createdAt,
+    claimedAt = claimedAt,
+    completedAt = completedAt,
 )

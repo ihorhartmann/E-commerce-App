@@ -82,7 +82,7 @@ class HttpIdempotencyServiceTest {
         var hashCaptor = ArgumentCaptor.forClass(String.class);
         verify(store, times(1)).insert(eq(idempotencyKey), hashCaptor.capture());
         assertThat(hashCaptor.getValue()).isEqualTo(service.hashRequest(request));
-        verify(store, never()).get(any());
+        verify(store, never()).find(any());
         verify(store, never()).reclaim(any(), any());
     }
 
@@ -92,14 +92,14 @@ class HttpIdempotencyServiceTest {
         var request = testRequest();
         var record = testRecord("a-different-hash", Instant.now(), null);
         when(store.insert(eq(idempotencyKey), any())).thenReturn(false);
-        when(store.get(idempotencyKey)).thenReturn(Optional.of(record));
+        when(store.find(idempotencyKey)).thenReturn(Optional.of(record));
 
         var result = service.claim(idempotencyKey, request, TTL);
 
         assertThat(result.requestResult()).isEqualTo(RequestResult.HASH_MISMATCH);
         assertThat(result.record()).isEqualTo(record);
         verify(store, times(1)).insert(eq(idempotencyKey), any());
-        verify(store, times(1)).get(idempotencyKey);
+        verify(store, times(1)).find(idempotencyKey);
         verify(store, never()).reclaim(any(), any());
     }
 
@@ -109,14 +109,14 @@ class HttpIdempotencyServiceTest {
         var request = testRequest();
         var record = testRecord(service.hashRequest(request), Instant.now(), Instant.now());
         when(store.insert(eq(idempotencyKey), any())).thenReturn(false);
-        when(store.get(idempotencyKey)).thenReturn(Optional.of(record));
+        when(store.find(idempotencyKey)).thenReturn(Optional.of(record));
 
         var result = service.claim(idempotencyKey, request, TTL);
 
         assertThat(result.requestResult()).isEqualTo(RequestResult.CACHED);
         assertThat(result.record()).isEqualTo(record);
         verify(store, times(1)).insert(eq(idempotencyKey), any());
-        verify(store, times(1)).get(idempotencyKey);
+        verify(store, times(1)).find(idempotencyKey);
         verify(store, never()).reclaim(any(), any());
     }
 
@@ -126,14 +126,14 @@ class HttpIdempotencyServiceTest {
         var request = testRequest();
         var record = testRecord(service.hashRequest(request), Instant.now(), null);
         when(store.insert(eq(idempotencyKey), any())).thenReturn(false);
-        when(store.get(idempotencyKey)).thenReturn(Optional.of(record));
+        when(store.find(idempotencyKey)).thenReturn(Optional.of(record));
 
         var result = service.claim(idempotencyKey, request, TTL);
 
         assertThat(result.requestResult()).isEqualTo(RequestResult.IN_PROGRESS);
         assertThat(result.record()).isEqualTo(record);
         verify(store, times(1)).insert(eq(idempotencyKey), any());
-        verify(store, times(1)).get(idempotencyKey);
+        verify(store, times(1)).find(idempotencyKey);
         verify(store, never()).reclaim(any(), any());
     }
 
@@ -143,7 +143,7 @@ class HttpIdempotencyServiceTest {
         var request = testRequest();
         var record = testRecord(service.hashRequest(request), Instant.now().minus(TTL).minusSeconds(1), null);
         when(store.insert(eq(idempotencyKey), any())).thenReturn(false);
-        when(store.get(idempotencyKey)).thenReturn(Optional.of(record));
+        when(store.find(idempotencyKey)).thenReturn(Optional.of(record));
         when(store.reclaim(idempotencyKey, TTL)).thenReturn(true);
 
         var result = service.claim(idempotencyKey, request, TTL);
@@ -151,7 +151,7 @@ class HttpIdempotencyServiceTest {
         assertThat(result.requestResult()).isEqualTo(RequestResult.CLAIMED);
         assertThat(result.record()).isNull();
         verify(store, times(1)).insert(eq(idempotencyKey), any());
-        verify(store, times(1)).get(idempotencyKey);
+        verify(store, times(1)).find(idempotencyKey);
         verify(store, times(1)).reclaim(idempotencyKey, TTL);
     }
 
@@ -161,7 +161,7 @@ class HttpIdempotencyServiceTest {
         var request = testRequest();
         var record = testRecord(service.hashRequest(request), Instant.now().minus(TTL).minusSeconds(1), null);
         when(store.insert(eq(idempotencyKey), any())).thenReturn(false);
-        when(store.get(idempotencyKey)).thenReturn(Optional.of(record));
+        when(store.find(idempotencyKey)).thenReturn(Optional.of(record));
         when(store.reclaim(idempotencyKey, TTL)).thenReturn(false);
 
         var result = service.claim(idempotencyKey, request, TTL);
@@ -169,7 +169,7 @@ class HttpIdempotencyServiceTest {
         assertThat(result.requestResult()).isEqualTo(RequestResult.IN_PROGRESS);
         assertThat(result.record()).isEqualTo(record);
         verify(store, times(1)).insert(eq(idempotencyKey), any());
-        verify(store, times(1)).get(idempotencyKey);
+        verify(store, times(1)).find(idempotencyKey);
         verify(store, times(1)).reclaim(idempotencyKey, TTL);
     }
 

@@ -28,7 +28,7 @@ public class HttpIdempotencyService {
             return RequestAttempt.claimed();
         }
 
-        var record = store.get(idempotencyKey).orElseThrow();
+        var record = store.find(idempotencyKey).orElseThrow();
         return resolveExistingClaim(record, requestHash, ttl);
     }
 

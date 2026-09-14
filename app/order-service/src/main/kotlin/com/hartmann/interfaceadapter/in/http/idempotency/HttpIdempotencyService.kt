@@ -29,7 +29,7 @@ class HttpIdempotencyService(
             return RequestAttempt.claimed()
         }
 
-        val record = store.get(idempotencyKey) ?: error("expected an existing record for key=$idempotencyKey")
+        val record = store.find(idempotencyKey) ?: error("expected an existing record for key=$idempotencyKey")
         return resolveExistingClaim(record, requestHash, ttl)
     }
 

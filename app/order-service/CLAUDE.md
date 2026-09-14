@@ -146,8 +146,9 @@ interfaceadapter/
 ├── in/
 │   ├── http/
 │   │   └── dto/
-│   └── kafka/
-│       └── dto/
+│   ├── kafka/
+│   │   └── dto/
+│   └── scheduled/
 └── out/
     ├── http/
     │   └── dto/
@@ -177,6 +178,11 @@ by `interfaceadapter.out.idempotency`) but owns all of the actual decision logic
 on what a conflict or a stale record means. `HttpIdempotencyService` lives here, not in `Use cases`, because its
 whole purpose is specific to the HTTP idempotency-key pattern (an `Interface adapters`-owned concern), not to
 orchestrating domain behavior.
+
+`interfaceadapter.in.scheduled` holds periodic sweeps (e.g. `HttpRequestSweep`, `ProcessedKafkaMessageSweep`) that
+run on a timer. A scheduled job is a self-triggered entry point - it decides on its own schedule to invoke a
+business port, the same role a Kafka consumer or REST controller plays for its own trigger - so it belongs in
+`Interface adapters`, not `Frameworks`, even though nothing here is framework-specific glue.
 
 ##### interfaceadapter/out
 

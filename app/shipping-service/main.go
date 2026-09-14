@@ -16,7 +16,7 @@ import (
 	shippinghttp "shippingservice/adapter/in/http"
 	httpidempotency "shippingservice/adapter/in/http/idempotency"
 	"shippingservice/adapter/in/kafka"
-	"shippingservice/adapter/out/idempotency/sweep"
+	"shippingservice/adapter/in/scheduled"
 	outkafka "shippingservice/adapter/out/kafka"
 	"shippingservice/adapter/out/repository"
 	gormtx "shippingservice/adapter/out/repository/transaction"
@@ -61,8 +61,8 @@ func main() {
 	shipmentConsumer.Start()
 
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
-	sweep.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
-	sweep.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
+	scheduled.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
+	scheduled.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
 
 	router := gin.Default()
 	router.Use(middleware.LoggingMiddleware(), middleware.ErrorHandlerMiddleware(), middleware.NewIdempotencyMiddleware(idempotencyService).Handle)

@@ -71,19 +71,19 @@ func (mr *MockHTTPRequestStoreMockRecorder) DeleteExpired(ctx, cutoff, limit any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpired", reflect.TypeOf((*MockHTTPRequestStore)(nil).DeleteExpired), ctx, cutoff, limit)
 }
 
-// Get mocks base method.
-func (m *MockHTTPRequestStore) Get(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error) {
+// Find mocks base method.
+func (m *MockHTTPRequestStore) Find(ctx context.Context, idempotencyKey string) (*dto.HTTPRequestRecord, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, idempotencyKey)
+	ret := m.ctrl.Call(m, "Find", ctx, idempotencyKey)
 	ret0, _ := ret[0].(*dto.HTTPRequestRecord)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Get indicates an expected call of Get.
-func (mr *MockHTTPRequestStoreMockRecorder) Get(ctx, idempotencyKey any) *gomock.Call {
+// Find indicates an expected call of Find.
+func (mr *MockHTTPRequestStoreMockRecorder) Find(ctx, idempotencyKey any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockHTTPRequestStore)(nil).Get), ctx, idempotencyKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockHTTPRequestStore)(nil).Find), ctx, idempotencyKey)
 }
 
 // Insert mocks base method.

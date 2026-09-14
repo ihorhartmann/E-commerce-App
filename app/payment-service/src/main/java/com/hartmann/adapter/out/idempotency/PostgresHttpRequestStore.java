@@ -67,7 +67,7 @@ public class PostgresHttpRequestStore implements HttpRequestStore {
     }
 
     @Override
-    public Optional<HttpRequestRecord> get(String idempotencyKey) {
+    public Optional<HttpRequestRecord> find(String idempotencyKey) {
         return dsl.selectFrom(IDEMPOTENT_HTTP_REQUESTS)
                 .where(ID.eq(idempotencyKey))
                 .fetchOptional(this::toRecord);

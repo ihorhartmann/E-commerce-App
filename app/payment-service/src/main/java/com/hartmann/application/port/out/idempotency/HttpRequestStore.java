@@ -10,7 +10,7 @@ public interface HttpRequestStore {
     /** Returns true if a new IN_PROGRESS row was inserted, false if idempotencyKey already existed. */
     boolean insert(String idempotencyKey, String requestHash);
 
-    Optional<HttpRequestRecord> get(String idempotencyKey);
+    Optional<HttpRequestRecord> find(String idempotencyKey);
 
     /** Reclaims a stale IN_PROGRESS row, resetting claimedAt. Returns false if it was already reclaimed by someone else. */
     boolean reclaim(String idempotencyKey, Duration ttl);

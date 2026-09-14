@@ -150,14 +150,20 @@ interfaces/
 │   ├── errors/
 │   ├── idempotency/
 │   └── middleware/
-└── kafka/
-    ├── common/
-    ├── dto/
-    └── kafkago/
+├── kafka/
+│   ├── common/
+│   ├── dto/
+│   └── kafkago/
+└── scheduled/
 ```
 
 `interfaces/kafka/kafkago` holds the kafka-go-based implementation of `interfaces/kafka/common.KafkaMessageConsumer` -
 it lives here, not in `infrastructure/kafkago`, because that interface belongs to the `Interfaces` layer.
+
+`interfaces/scheduled` holds periodic sweeps (e.g. `HTTPRequestSweep`, `ProcessedKafkaMessageSweep`) that delete
+expired idempotency rows. A sweep is a self-triggered entry point - it decides on its own schedule to invoke a
+business port, the same role a Kafka consumer or HTTP handler plays for its own trigger - so it belongs in
+`Interfaces`, not `Infrastructure`, even though nothing here is framework-specific glue.
 
 `interfaces/http/idempotency` holds `HTTPIdempotencyService`, which decides whether a mutating HTTP request should
 proceed, replay a cached response, or be rejected, for `middleware.IdempotencyMiddleware`. It composes

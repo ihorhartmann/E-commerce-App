@@ -245,6 +245,6 @@ class OrderControllerTest {
             status { isCreated() }
         }
 
-        verify(httpIdempotencyService, times(1)).complete(eq("key-7"), eq(HttpStatus.CREATED.ordinal), any())
+        verify(httpIdempotencyService, times(1)).complete(eq("key-7"), eq(HttpStatus.CREATED.value()), any())
     }
 }

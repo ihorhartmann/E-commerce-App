@@ -4,9 +4,9 @@ import (
 	"context"
 	"inventoryservice/application/port/common/kafka"
 	"inventoryservice/infrastructure/idempotency/store"
-	"inventoryservice/infrastructure/idempotency/sweep"
 	"inventoryservice/interfaces/http/middleware"
 	"inventoryservice/interfaces/kafka/kafkago"
+	"inventoryservice/interfaces/scheduled"
 	"log/slog"
 	"net/http"
 	"os"
@@ -56,8 +56,8 @@ func main() {
 	reservationConsumer.StartAsync()
 
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
-	sweep.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
-	sweep.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
+	scheduled.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
+	scheduled.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
 
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleError,
