@@ -1,7 +1,8 @@
 package migration
 
 import (
-	row2 "shippingservice/adapter/out/idempotency/store/row"
+	idempotencyrow "shippingservice/adapter/out/idempotency/store/row"
+	outboxrow "shippingservice/adapter/out/outbox/row"
 	"shippingservice/adapter/out/repository/entity"
 
 	"gorm.io/gorm"
@@ -10,7 +11,8 @@ import (
 func Migrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&entity.Shipment{},
-		&row2.ProcessedKafkaMessageRow{},
-		&row2.HTTPRequestRow{},
+		&idempotencyrow.ProcessedKafkaMessageRow{},
+		&idempotencyrow.HTTPRequestRow{},
+		&outboxrow.OutboxMessage{},
 	)
 }

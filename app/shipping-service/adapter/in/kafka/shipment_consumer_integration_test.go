@@ -13,8 +13,10 @@ import (
 	commonkafka "shippingservice/adapter/common/kafka"
 	shipmentkafka "shippingservice/adapter/in/kafka"
 	"shippingservice/adapter/in/kafka/dto"
+	kafkacommon "shippingservice/adapter/out/kafka/common"
 	servicemocks "shippingservice/application/port/in/mocks"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
+	outboxdto "shippingservice/application/port/out/outbox/dto"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 	"shippingservice/infrastructure/kafkago"
@@ -127,6 +129,24 @@ func closeQuietly(t *testing.T, name string, c io.Closer) {
 	}
 }
 
+// sendMessage marshals payload and publishes it as a single-message batch, mirroring how
+// OutboxMessageRelay publishes a real outbox row - this test only needs a message on the wire for
+// the consumer to receive, not the outbox itself.
+func sendMessage(t *testing.T, producer kafkacommon.KafkaMessageProducer, messageType commonkafka.MessageType, correlationID string, key string, payload any) {
+	t.Helper()
+	message, err := outboxdto.NewOutboxMessage(correlationID, messageType.String(), key, payload)
+	if err != nil {
+		t.Fatalf("failed to build outbox message: %v", err)
+	}
+	// The database assigns MessageID on a real insert; this test bypasses the outbox entirely, so
+	// it mints one itself to stand in for that.
+	message.MessageID = uuid.New().String()
+
+	if err = producer.SendBatch([]*outboxdto.OutboxMessage{&message}); err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+}
+
 func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 	t.Run("dispatches a CreateShipmentCommand message to the shipment service", func(t *testing.T) {
 		topic := uuid.New().String()
@@ -142,9 +162,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 			OrderID: orderID,
 			Address: dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
 		}
-		if err := producer.Send(commonkafka.CreateShipmentCommand, correlationID, "42", command); err != nil {
-			t.Fatalf("failed to send message: %v", err)
-		}
+		sendMessage(t, producer, commonkafka.CreateShipmentCommand, correlationID, "42", command)
 
 		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
 		if err != nil {
@@ -185,9 +203,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		producer := kafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
 		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
 
-		if err := producer.Send("SomeUnrelatedEvent", uuid.New().String(), "1", map[string]any{"noop": true}); err != nil {
-			t.Fatalf("failed to send the unrecognized message: %v", err)
-		}
+		sendMessage(t, producer, "SomeUnrelatedEvent", uuid.New().String(), "1", map[string]any{"noop": true})
 
 		correlationID := uuid.New().String()
 		orderID := uint64(7)
@@ -195,9 +211,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 			OrderID: orderID,
 			Address: dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
 		}
-		if err := producer.Send(commonkafka.CreateShipmentCommand, correlationID, "7", command); err != nil {
-			t.Fatalf("failed to send the create shipment message: %v", err)
-		}
+		sendMessage(t, producer, commonkafka.CreateShipmentCommand, correlationID, "7", command)
 
 		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
 		if err != nil {
