@@ -1,4 +1,4 @@
-package com.hartmann.adapter.out.kafka.dto;
+package com.hartmann.adapter.out.outbox.dto;
 
 import com.hartmann.domain.value.Money;
 

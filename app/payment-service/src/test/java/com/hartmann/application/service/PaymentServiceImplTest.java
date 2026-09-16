@@ -2,6 +2,7 @@ package com.hartmann.application.service;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.application.port.out.http.PaymentGateway;
@@ -152,7 +153,7 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(confirmedPayment);
-        verify(paymentKafkaProducer, times(1)).publishPaymentCompleted(orderId);
+        verify(paymentKafkaProducer, times(1)).publishPaymentCompleted(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
@@ -180,7 +181,7 @@ class PaymentServiceImplTest {
 
         paymentService.expireOverduePayments();
 
-        verify(paymentKafkaProducer, times(1)).publishPaymentExpired(orderId);
+        verify(paymentKafkaProducer, times(1)).publishPaymentExpired(KafkaUtils.formatKafkaId(orderId), orderId);
     }
 
     @Test

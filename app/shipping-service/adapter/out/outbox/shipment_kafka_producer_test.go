@@ -3,11 +3,11 @@ package outbox
 import (
 	"context"
 	"errors"
+	kafkadto "shippingservice/adapter/out/outbox/dto"
 	"testing"
 	"time"
 
 	kafkaconst "shippingservice/adapter/common/kafka"
-	kafkadto "shippingservice/adapter/out/kafka/dto"
 	kafkautil "shippingservice/application/port/common/kafka"
 	"shippingservice/application/port/out/outbox/dto"
 	outboxmocks "shippingservice/application/port/out/outbox/mocks"

@@ -76,12 +76,15 @@ string.
   third-party services) are grouped by transport or technology type and must be named like `EntityRepository`,
   `EntityKafkaProducer`, etc.
 * Outbound adapter implementations (the concrete classes/structs that implement those ports) must be named in the
-  format `TechnologyPortName`, e.g. `HttpInventoryClient`, `PostgresOrderRepository`. Exception: Kafka producer/consumer
-  adapters just get an `Impl` suffix instead (e.g. `PaymentKafkaProducerImpl`), since the port name already states the
-  technology (`EntityKafkaProducer`/`EntityKafkaConsumer`), making a `Kafka`-prefixed adapter name redundant.
-  Alternatively, if the technology name itself already contains "Kafka" (e.g. `KafkaGo` for the kafka-go library),
-  `TechnologyPortName` can be kept as-is by dropping the redundant `Kafka` from the port-name portion instead, e.g.
-  `KafkaGoShipmentProducer` implementing `ShipmentKafkaProducer`.
+  format `TechnologyPortName`, e.g. `HttpInventoryClient`, `PostgresOrderRepository`, `OutboxPaymentKafkaProducer`
+  (technology = Outbox, for an adapter that writes to a transactional outbox table instead of publishing to Kafka
+  directly). Exception: when the adapter's technology genuinely is Kafka itself (a direct client, not mediated
+  through some other technology like an outbox), naming it `TechnologyPortName` would be redundant since the port
+  name already states the technology (`EntityKafkaProducer`/`EntityKafkaConsumer`) - such an adapter just gets an
+  `Impl` suffix instead, e.g. `EntityKafkaProducerImpl`. Alternatively, if the technology name itself already
+  contains "Kafka" (e.g. `KafkaGo` for the kafka-go library), `TechnologyPortName` can be kept as-is by dropping the
+  redundant `Kafka` from the port-name portion instead, e.g. `KafkaGoShipmentProducer` implementing
+  `ShipmentKafkaProducer`.
 * HTTP controllers must be named like `EntityController`, e.g. `OrderController`. If a controller doesn't map to a
   single domain entity (e.g. a third-party webhook handler, a health check), name it `PurposeController` instead,
   e.g. `StripeWebhookController`, `HealthController`.

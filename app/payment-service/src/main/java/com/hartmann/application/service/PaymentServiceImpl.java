@@ -2,6 +2,7 @@ package com.hartmann.application.service;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.application.port.out.http.PaymentGateway;
@@ -72,7 +73,8 @@ public class PaymentServiceImpl implements PaymentService {
         var updatedPayment = paymentRepository.updateStatus(payment.id(), status);
 
         if (status == PaymentStatus.CONFIRMED) {
-            paymentKafkaProducer.publishPaymentCompleted(updatedPayment.orderId());
+            var correlationId = KafkaUtils.formatKafkaId(updatedPayment.orderId());
+            paymentKafkaProducer.publishPaymentCompleted(correlationId, updatedPayment.orderId());
         }
         // ATTEMPT_DECLINED is non-terminal - the customer may still retry the same PaymentIntent
         // with a different payment method, so order-service isn't told until this resolves.
@@ -81,12 +83,7 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    // TODO: if publishPaymentExpired throws partway through the loop, the payments already marked
-    // EXPIRED above are never retried (expireOverdue() won't re-select a terminal row) - their
-    // Kafka notification is lost for good. Fix properly via an outbox pattern (write the "expired"
-    // fact and its pending Kafka event atomically in the same DB transaction as expireOverdue(),
-    // then have a separate poller publish/retry from the outbox) rather than wrapping this in
-    // @Transactional, which would hold the DB transaction open across the Kafka calls.
+    @Transactional
     public void expireOverduePayments() {
         var expired = paymentRepository.expireOverdue();
 
@@ -98,7 +95,8 @@ public class PaymentServiceImpl implements PaymentService {
             // submitPayment's HTTP call failed. Only PENDING/ATTEMPT_DECLINED-origin expiries are
             // news to order-service, which is still waiting on an outcome for those.
             if (payment.externalId() != null) {
-                paymentKafkaProducer.publishPaymentExpired(payment.orderId());
+                var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
+                paymentKafkaProducer.publishPaymentExpired(correlationId, payment.orderId());
             }
         }
     }

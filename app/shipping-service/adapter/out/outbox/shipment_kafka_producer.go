@@ -2,9 +2,9 @@ package outbox
 
 import (
 	"context"
+	kafkadto "shippingservice/adapter/out/outbox/dto"
 
 	kafkaconst "shippingservice/adapter/common/kafka"
-	kafkadto "shippingservice/adapter/out/kafka/dto"
 	kafkautil "shippingservice/application/port/common/kafka"
 	portout "shippingservice/application/port/out/kafka"
 	"shippingservice/application/port/out/outbox"

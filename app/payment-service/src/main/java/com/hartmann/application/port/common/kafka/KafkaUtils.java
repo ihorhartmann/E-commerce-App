@@ -1,4 +1,4 @@
-package com.hartmann.adapter.common.kafka;
+package com.hartmann.application.port.common.kafka;
 
 public final class KafkaUtils {
     private KafkaUtils() {

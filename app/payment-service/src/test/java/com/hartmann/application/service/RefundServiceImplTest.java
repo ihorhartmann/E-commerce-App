@@ -2,6 +2,7 @@ package com.hartmann.application.service;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
 import com.hartmann.application.port.out.idempotency.ProcessedKafkaMessageStore;
@@ -146,9 +147,34 @@ class RefundServiceImplTest {
         var result = refundService.submitRefund(null, paymentId, money(amount));
 
         assertThat(result).isEqualTo(succeededRefund);
-        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(orderId, money(amount));
+        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(KafkaUtils.formatKafkaId(orderId), orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
         verifyNoInteractions(processedKafkaMessageStore);
+    }
+
+    @Test
+    void submitRefund_publishesRefundCompletedWithThePropagatedCorrelationIdWhenAMessageIsPresentAndStripeResolvesSynchronously() {
+        var paymentId = 1L;
+        var orderId = 100L;
+        var initiatedId = 1L;
+        var amount = "40.00";
+        var message = new KafkaMessageMetadata("msg-1", "corr-1", "RefundRequested");
+
+        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, amount);
+        var succeededRefund = testRefund(initiatedId, paymentId, RefundStatus.SUCCEEDED, amount);
+        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(processedKafkaMessageStore.markProcessed(message)).thenReturn(false);
+        when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentGateway.submitRefund("pi_test", money(amount)))
+                .thenReturn(new SubmitRefundResult("re_new", RefundStatus.SUCCEEDED));
+        when(refundRepository.markPending(initiatedId, "re_new", RefundStatus.SUCCEEDED)).thenReturn(succeededRefund);
+
+        var result = refundService.submitRefund(message, paymentId, money(amount));
+
+        assertThat(result).isEqualTo(succeededRefund);
+        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(message.correlationId(), orderId, money(amount));
+        verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
@@ -255,7 +281,7 @@ class RefundServiceImplTest {
 
         refundService.updateStatusByExternalId("re_test", status);
 
-        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(orderId, money(amount));
+        verify(paymentKafkaProducer, times(1)).publishRefundCompleted(KafkaUtils.formatKafkaId(orderId), orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
@@ -275,7 +301,7 @@ class RefundServiceImplTest {
 
         refundService.updateStatusByExternalId("re_test", status);
 
-        verify(paymentKafkaProducer, times(1)).publishRefundFailed(orderId);
+        verify(paymentKafkaProducer, times(1)).publishRefundFailed(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
