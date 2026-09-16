@@ -10,5 +10,4 @@ import (
 type ShipmentKafkaProducer interface {
 	PublishShipmentStatusChanged(ctx context.Context, correlationID string, shipment *model.Shipment) error
 	PublishShipmentReturnedToInventory(ctx context.Context, correlationID string, shipment *model.Shipment) error
-	Close() error
 }

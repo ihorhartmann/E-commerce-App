@@ -48,3 +48,15 @@ CREATE TABLE IF NOT EXISTS payment.idempotent_http_requests (
 );
 
 CREATE INDEX idx_idempotent_http_requests_created_at ON payment.idempotent_http_requests (created_at);
+
+CREATE TABLE IF NOT EXISTS payment.outbox_messages (
+                                                       id             VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    correlation_id VARCHAR(255) NOT NULL,
+    message_type   VARCHAR(255) NOT NULL,
+    key            VARCHAR(255) NOT NULL,
+    payload        JSONB NOT NULL,
+    sent_at        TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+CREATE INDEX idx_outbox_messages_sent_at ON payment.outbox_messages (sent_at);

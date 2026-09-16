@@ -2,6 +2,7 @@ package com.hartmann.application.service;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
@@ -77,7 +78,12 @@ public class RefundServiceImpl implements RefundService {
         // landed on a terminal status here, publish now rather than waiting for a webhook that may
         // never fire (pendingRefund.updated isn't guaranteed for an object that never changes again).
         var pendingRefund = refundRepository.markPending(initiatedRefund.id(), result.externalId(), result.status());
-        publishIfTerminal(payment.orderId(), pendingRefund);
+        var correlationId = message != null ? message.correlationId() : KafkaUtils.formatKafkaId(payment.orderId());
+        if (pendingRefund.status() == RefundStatus.SUCCEEDED) {
+            paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), pendingRefund.amount());
+        } else if (pendingRefund.status() == RefundStatus.FAILED) {
+            paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
+        }
 
         return pendingRefund;
     }
@@ -98,21 +104,19 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public Refund updateStatusByExternalId(String externalId, RefundStatus status) {
         var refund = refundRepository.getByExternalId(externalId);
+        var wasTerminal = refund.status().isTerminal();
         var updatedRefund = refundRepository.updateStatus(refund.id(), status);
 
-        if (updatedRefund.status() == RefundStatus.SUCCEEDED || updatedRefund.status() == RefundStatus.FAILED) {
+        if (!wasTerminal && updatedRefund.status().isTerminal()) {
             var payment = paymentRepository.getById(updatedRefund.paymentId());
-            publishIfTerminal(payment.orderId(), updatedRefund);
+            var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
+            if (updatedRefund.status() == RefundStatus.SUCCEEDED) {
+                paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), updatedRefund.amount());
+            } else {
+                paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
+            }
         }
 
         return updatedRefund;
-    }
-
-    private void publishIfTerminal(long orderId, Refund refund) {
-        if (refund.status() == RefundStatus.SUCCEEDED) {
-            paymentKafkaProducer.publishRefundCompleted(orderId, refund.amount());
-        } else if (refund.status() == RefundStatus.FAILED) {
-            paymentKafkaProducer.publishRefundFailed(orderId);
-        }
     }
 }

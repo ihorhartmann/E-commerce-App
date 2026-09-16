@@ -11,7 +11,7 @@ package kafkamocks
 
 import (
 	reflect "reflect"
-	kafka "shippingservice/adapter/common/kafka"
+	dto "shippingservice/application/port/out/outbox/dto"
 
 	gomock "go.uber.org/mock/gomock"
 )
@@ -54,16 +54,16 @@ func (mr *MockKafkaMessageProducerMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockKafkaMessageProducer)(nil).Close))
 }
 
-// Send mocks base method.
-func (m *MockKafkaMessageProducer) Send(messageType kafka.MessageType, correlationId, key string, payload any) error {
+// SendBatch mocks base method.
+func (m *MockKafkaMessageProducer) SendBatch(messages []*dto.OutboxMessage) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Send", messageType, correlationId, key, payload)
+	ret := m.ctrl.Call(m, "SendBatch", messages)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// Send indicates an expected call of Send.
-func (mr *MockKafkaMessageProducerMockRecorder) Send(messageType, correlationId, key, payload any) *gomock.Call {
+// SendBatch indicates an expected call of SendBatch.
+func (mr *MockKafkaMessageProducerMockRecorder) SendBatch(messages any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Send", reflect.TypeOf((*MockKafkaMessageProducer)(nil).Send), messageType, correlationId, key, payload)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendBatch", reflect.TypeOf((*MockKafkaMessageProducer)(nil).SendBatch), messages)
 }

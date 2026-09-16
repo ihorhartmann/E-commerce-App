@@ -1,4 +1,4 @@
-package com.hartmann.adapter.out.kafka.dto;
+package com.hartmann.adapter.out.outbox.dto;
 
 // Shared shape for the payment events that carry nothing beyond which order they're about
 // (PaymentCompleted, PaymentFailed, PaymentExpired, RefundFailed)

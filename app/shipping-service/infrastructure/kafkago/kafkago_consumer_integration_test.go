@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"shippingservice/adapter/common/kafka"
+	"shippingservice/adapter/out/kafka/common"
+	"shippingservice/application/port/out/outbox/dto"
 	"shippingservice/infrastructure/kafkago"
 
 	"github.com/google/uuid"
@@ -127,6 +129,24 @@ func closeQuietly(t *testing.T, name string, c io.Closer) {
 	}
 }
 
+// sendMessage marshals payload and publishes it as a single-message batch, mirroring how
+// OutboxMessageRelay publishes a real outbox row - this test only needs a message on the wire for
+// the consumer to receive, not the outbox itself.
+func sendMessage(t *testing.T, producer common.KafkaMessageProducer, messageType kafka.MessageType, correlationID string, key string, payload any) {
+	t.Helper()
+	message, err := dto.NewOutboxMessage(correlationID, messageType.String(), key, payload)
+	if err != nil {
+		t.Fatalf("failed to build outbox message: %v", err)
+	}
+	// The database assigns MessageID on a real insert; this test bypasses the outbox entirely, so
+	// it mints one itself to stand in for that.
+	message.MessageID = uuid.New().String()
+
+	if err = producer.SendBatch([]*dto.OutboxMessage{&message}); err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+}
+
 type consumedMessage struct {
 	messageType   kafka.MessageType
 	messageID     string
@@ -151,9 +171,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		orderId := uint64(42)
 		wantPayload := payload{OrderID: orderId}
 
-		if err := producer.Send(wantMessageType, wantCorrelationID, strconv.FormatUint(orderId, 10), wantPayload); err != nil {
-			t.Fatalf("failed to send message: %v", err)
-		}
+		sendMessage(t, producer, wantMessageType, wantCorrelationID, strconv.FormatUint(orderId, 10), wantPayload)
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
@@ -201,12 +219,8 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 
 		correlationID1 := uuid.New().String()
 		correlationID2 := uuid.New().String()
-		if err := producer.Send(kafka.CreateShipmentCommand, correlationID1, "1", map[string]any{"n": 1}); err != nil {
-			t.Fatalf("failed to send the first message: %v", err)
-		}
-		if err := producer.Send(kafka.CreateShipmentCommand, correlationID2, "2", map[string]any{"n": 2}); err != nil {
-			t.Fatalf("failed to send the second message: %v", err)
-		}
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correlationID1, "1", map[string]any{"n": 1})
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correlationID2, "2", map[string]any{"n": 2})
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
@@ -247,9 +261,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		// and commit the second one too before the test gets a chance to
 		// close it, making the "advances by exactly one" assertion racy.
 		correlationID1 := uuid.New().String()
-		if err := producer.Send(kafka.CreateShipmentCommand, correlationID1, "1", map[string]any{"n": 1}); err != nil {
-			t.Fatalf("failed to send the first message: %v", err)
-		}
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correlationID1, "1", map[string]any{"n": 1})
 
 		consumer1 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
@@ -272,9 +284,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		}
 
 		correlationID2 := uuid.New().String()
-		if err := producer.Send(kafka.CreateShipmentCommand, correlationID2, "2", map[string]any{"n": 2}); err != nil {
-			t.Fatalf("failed to send the second message: %v", err)
-		}
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correlationID2, "2", map[string]any{"n": 2})
 
 		consumer2 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer2", consumer2) })
@@ -306,9 +316,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
 
 		correlationID := uuid.New().String()
-		if err := producer.Send(kafka.CreateShipmentCommand, correlationID, "1", map[string]any{"n": 1}); err != nil {
-			t.Fatalf("failed to send message: %v", err)
-		}
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correlationID, "1", map[string]any{"n": 1})
 
 		consumer1 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
@@ -373,9 +381,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		producer := kafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
 		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
 		correctCorrelationID := uuid.New().String()
-		if err := producer.Send(kafka.CreateShipmentCommand, correctCorrelationID, "correct", map[string]any{"n": 1}); err != nil {
-			t.Fatalf("failed to send the well-formed message: %v", err)
-		}
+		sendMessage(t, producer, kafka.CreateShipmentCommand, correctCorrelationID, "correct", map[string]any{"n": 1})
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })

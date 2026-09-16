@@ -17,7 +17,7 @@ import (
 	httpidempotency "shippingservice/adapter/in/http/idempotency"
 	"shippingservice/adapter/in/kafka"
 	"shippingservice/adapter/in/scheduled"
-	outkafka "shippingservice/adapter/out/kafka"
+	"shippingservice/adapter/out/outbox"
 	"shippingservice/adapter/out/repository"
 	gormtx "shippingservice/adapter/out/repository/transaction"
 	"shippingservice/application/service"
@@ -44,6 +44,7 @@ func main() {
 	}
 
 	shipmentRepository := repository.NewPostgresShipmentRepository(db)
+	outboxRepository := outbox.NewPostgresOutboxMessageRepository(db)
 	txExecutor := gormtx.NewGormTxManager(db)
 	processedMessageStore := store.NewPostgresProcessedKafkaMessageStore(db)
 	httpRequestStore := store.NewPostgresHTTPRequestStore(db)
@@ -52,7 +53,7 @@ func main() {
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
 
 	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkaconst.ShippingEventsTopic)
-	shipmentProducer := outkafka.NewShipmentKafkaProducer(messageProducer)
+	shipmentProducer := outbox.NewOutboxShipmentKafkaProducer(outboxRepository)
 
 	shipmentService := service.NewShipmentServiceImpl(shipmentRepository, shipmentProducer, processedMessageStore, txExecutor)
 
@@ -63,6 +64,7 @@ func main() {
 	sweepCtx, cancelSweep := context.WithCancel(context.Background())
 	scheduled.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
 	scheduled.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
+	scheduled.NewOutboxMessageRelay(outboxRepository, messageProducer).StartAsync(sweepCtx)
 
 	router := gin.Default()
 	router.Use(middleware.LoggingMiddleware(), middleware.ErrorHandlerMiddleware(), middleware.NewIdempotencyMiddleware(idempotencyService).Handle)
@@ -101,7 +103,7 @@ func main() {
 		slog.Error("error closing kafka consumer", "error", err)
 	}
 	cancelSweep()
-	if err = shipmentProducer.Close(); err != nil {
+	if err = messageProducer.Close(); err != nil {
 		slog.Error("error closing kafka producer", "error", err)
 	}
 

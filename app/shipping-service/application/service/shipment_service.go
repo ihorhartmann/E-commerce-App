@@ -46,35 +46,28 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 }
 
 func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
-	var created *model.Shipment
-	var alreadyProcessed bool
-	err := s.txExecutor.Transaction(ctx, func(ctx context.Context) error {
-		var err error
-		alreadyProcessed, err = s.processedMessageStore.MarkProcessed(ctx, msg)
+	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
+		alreadyProcessed, err := s.processedMessageStore.MarkProcessed(ctx, msg)
 		if alreadyProcessed || err != nil {
-			return err
+			return nil, err
 		}
 
 		shipment, err := model.NewShipment(orderID, address)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		created, err = s.shipmentRepository.Create(ctx, shipment)
-		return err
+		created, err := s.shipmentRepository.Create(ctx, shipment)
+		if err != nil {
+			return nil, err
+		}
+
+		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, created); err != nil {
+			return nil, err
+		}
+
+		return created, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	if alreadyProcessed {
-		return nil, nil
-	}
-
-	if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, created); err != nil {
-		return nil, err
-	}
-
-	return created, nil
 }
 
 func (s *ShipmentServiceImpl) StartDelivery(ctx context.Context, id uint64) (*model.Shipment, error) {
@@ -99,27 +92,29 @@ func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shi
 // REST, with no incoming saga correlationID to reuse - the orderId is the only available
 // correlation point, so it's derived here instead.
 func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
-	shipment, err := s.shipmentRepository.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
+		shipment, err := s.shipmentRepository.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 
-	transitioned, err := shipment.ConfirmReturnedToInventory()
-	if err != nil {
-		return nil, err
-	}
+		transitioned, err := shipment.ConfirmReturnedToInventory()
+		if err != nil {
+			return nil, err
+		}
 
-	updated, err := s.shipmentRepository.Update(ctx, transitioned)
-	if err != nil {
-		return nil, err
-	}
+		updated, err := s.shipmentRepository.Update(ctx, transitioned)
+		if err != nil {
+			return nil, err
+		}
 
-	correlationID := commonkafka.FormatKafkaId(updated.OrderId())
-	if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, updated); err != nil {
-		return nil, err
-	}
+		correlationID := commonkafka.FormatKafkaId(updated.OrderId())
+		if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, updated); err != nil {
+			return nil, err
+		}
 
-	return updated, nil
+		return updated, nil
+	})
 }
 
 // applyTransition is triggered over REST, with no incoming saga correlationID to reuse - the
@@ -129,25 +124,27 @@ func (s *ShipmentServiceImpl) applyTransition(
 	id uint64,
 	transition func(*model.Shipment) (*model.Shipment, error),
 ) (*model.Shipment, error) {
-	shipment, err := s.shipmentRepository.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
+	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
+		shipment, err := s.shipmentRepository.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 
-	transitioned, err := transition(shipment)
-	if err != nil {
-		return nil, err
-	}
+		transitioned, err := transition(shipment)
+		if err != nil {
+			return nil, err
+		}
 
-	updated, err := s.shipmentRepository.Update(ctx, transitioned)
-	if err != nil {
-		return nil, err
-	}
+		updated, err := s.shipmentRepository.Update(ctx, transitioned)
+		if err != nil {
+			return nil, err
+		}
 
-	correlationID := commonkafka.FormatKafkaId(updated.OrderId())
-	if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, updated); err != nil {
-		return nil, err
-	}
+		correlationID := commonkafka.FormatKafkaId(updated.OrderId())
+		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, updated); err != nil {
+			return nil, err
+		}
 
-	return updated, nil
+		return updated, nil
+	})
 }

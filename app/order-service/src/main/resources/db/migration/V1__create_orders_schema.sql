@@ -54,3 +54,16 @@ CREATE TABLE orders.idempotent_http_requests (
 );
 
 CREATE INDEX idx_idempotent_http_requests_created_at ON orders.idempotent_http_requests (created_at);
+
+CREATE TABLE orders.outbox_messages (
+    id             VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    correlation_id VARCHAR(255) NOT NULL,
+    message_type   VARCHAR(255) NOT NULL,
+    topic          VARCHAR(255) NOT NULL,
+    key            VARCHAR(255) NOT NULL,
+    payload        JSONB NOT NULL,
+    sent_at        TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_outbox_messages_sent_at ON orders.outbox_messages (sent_at);

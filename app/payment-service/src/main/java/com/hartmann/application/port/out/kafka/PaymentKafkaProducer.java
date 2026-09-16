@@ -3,13 +3,11 @@ package com.hartmann.application.port.out.kafka;
 import com.hartmann.domain.value.Money;
 
 public interface PaymentKafkaProducer {
-    void publishPaymentCompleted(long orderId);
+    void publishPaymentCompleted(String correlationId, long orderId);
 
-    void publishPaymentFailed(long orderId);
+    void publishPaymentExpired(String correlationId, long orderId);
 
-    void publishPaymentExpired(long orderId);
+    void publishRefundCompleted(String correlationId, long orderId, Money amount);
 
-    void publishRefundCompleted(long orderId, Money amount);
-
-    void publishRefundFailed(long orderId);
+    void publishRefundFailed(String correlationId, long orderId);
 }

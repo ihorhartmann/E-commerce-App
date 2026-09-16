@@ -2,12 +2,11 @@ package kafkago
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/out/kafka/common"
+	"shippingservice/application/port/out/outbox/dto"
 
-	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
@@ -26,30 +25,33 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 	return &kafkaGoMessageProducer{writer: writer}
 }
 
-func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
-	value, err := json.Marshal(payload)
-	if err != nil {
+func (p *kafkaGoMessageProducer) SendBatch(messages []*dto.OutboxMessage) error {
+	slog.Debug("sending kafka message batch", "count", len(messages))
+
+	if err := p.writer.WriteMessages(context.Background(), toLibMessages(messages)...); err != nil {
 		return err
 	}
 
-	slog.Debug("sending kafka message", "messageType", messageType, "correlationId", correlationId, "key", key)
-
-	err = p.writer.WriteMessages(context.Background(), kafkago.Message{
-		Key: []byte(key),
-		Headers: []kafkago.Header{
-			{Key: kafka.MessageTypeHeader, Value: []byte(messageType.String())},
-			{Key: kafka.CorrelationIDHeader, Value: []byte(correlationId)},
-			{Key: kafka.MessageIDHeader, Value: []byte(uuid.New().String())},
-		},
-		Value: value,
-	})
-	if err != nil {
-		return err
-	}
-
-	slog.Info("successfully sent kafka message", "messageType", messageType, "correlationId", correlationId)
+	slog.Info("successfully sent kafka message batch", "count", len(messages))
 
 	return nil
+}
+
+func toLibMessages(messages []*dto.OutboxMessage) []kafkago.Message {
+	libMessages := make([]kafkago.Message, len(messages))
+	for i, message := range messages {
+		libMessages[i] = kafkago.Message{
+			Key: []byte(message.Key),
+			Headers: []kafkago.Header{
+				{Key: kafka.MessageTypeHeader, Value: []byte(message.MessageType)},
+				{Key: kafka.CorrelationIDHeader, Value: []byte(message.CorrelationID)},
+				{Key: kafka.MessageIDHeader, Value: []byte(message.MessageID)},
+			},
+			Value: message.Payload,
+		}
+	}
+
+	return libMessages
 }
 
 func (p *kafkaGoMessageProducer) Close() error {
