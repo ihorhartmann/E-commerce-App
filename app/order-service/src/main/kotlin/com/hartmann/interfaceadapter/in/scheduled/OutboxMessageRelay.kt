@@ -26,7 +26,7 @@ class OutboxMessageRelay(
         private const val BATCH_SIZE = 100
     }
 
-    @Scheduled(fixedDelay = 2_000)
+    @Scheduled(fixedDelay = 200)
     fun relay() {
         val messages = repository.fetchUnsent(BATCH_SIZE)
         if (messages.isEmpty()) {

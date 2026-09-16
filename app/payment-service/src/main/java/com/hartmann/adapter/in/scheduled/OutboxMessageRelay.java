@@ -31,7 +31,7 @@ public class OutboxMessageRelay {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    @Scheduled(fixedDelay = 2_000)
+    @Scheduled(fixedDelay = 200)
     public void relay() {
         var messages = repository.fetchUnsent(BATCH_SIZE);
         if (messages.isEmpty()) {

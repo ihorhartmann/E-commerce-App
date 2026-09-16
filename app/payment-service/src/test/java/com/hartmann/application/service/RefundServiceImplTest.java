@@ -320,4 +320,23 @@ class RefundServiceImplTest {
         verifyNoInteractions(paymentKafkaProducer);
         verify(paymentRepository, times(0)).getById(anyLong());
     }
+
+    @Test
+    void updateStatusByExternalId_publishesNothingWhenTheRefundWasAlreadySucceeded() {
+        var id = 1L;
+        var externalId = "re_test";
+        var status = RefundStatus.SUCCEEDED;
+        var amount = "40.00";
+
+        // e.g. submitRefund already published synchronously, and this call is a later
+        // refund.updated webhook reporting the same already-terminal status.
+        var refund = testRefund(id, 1L, status, amount);
+        when(refundRepository.getByExternalId(externalId)).thenReturn(refund);
+        when(refundRepository.updateStatus(id, status)).thenReturn(refund);
+
+        refundService.updateStatusByExternalId(externalId, status);
+
+        verifyNoInteractions(paymentKafkaProducer);
+        verify(paymentRepository, times(0)).getById(anyLong());
+    }
 }

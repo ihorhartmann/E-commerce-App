@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	outboxRelayInterval  = 2 * time.Second
+	outboxRelayInterval  = 200 * time.Millisecond
 	outboxRelayBatchSize = 100
 )
 

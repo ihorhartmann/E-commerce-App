@@ -79,7 +79,11 @@ public class RefundServiceImpl implements RefundService {
         // never fire (pendingRefund.updated isn't guaranteed for an object that never changes again).
         var pendingRefund = refundRepository.markPending(initiatedRefund.id(), result.externalId(), result.status());
         var correlationId = message != null ? message.correlationId() : KafkaUtils.formatKafkaId(payment.orderId());
-        publishIfTerminal(correlationId, payment.orderId(), pendingRefund);
+        if (pendingRefund.status() == RefundStatus.SUCCEEDED) {
+            paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), pendingRefund.amount());
+        } else if (pendingRefund.status() == RefundStatus.FAILED) {
+            paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
+        }
 
         return pendingRefund;
     }
@@ -100,22 +104,19 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public Refund updateStatusByExternalId(String externalId, RefundStatus status) {
         var refund = refundRepository.getByExternalId(externalId);
+        var wasTerminal = refund.status().isTerminal();
         var updatedRefund = refundRepository.updateStatus(refund.id(), status);
 
-        if (updatedRefund.status() == RefundStatus.SUCCEEDED || updatedRefund.status() == RefundStatus.FAILED) {
+        if (!wasTerminal && updatedRefund.status().isTerminal()) {
             var payment = paymentRepository.getById(updatedRefund.paymentId());
             var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
-            publishIfTerminal(correlationId, payment.orderId(), updatedRefund);
+            if (updatedRefund.status() == RefundStatus.SUCCEEDED) {
+                paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), updatedRefund.amount());
+            } else {
+                paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
+            }
         }
 
         return updatedRefund;
-    }
-
-    private void publishIfTerminal(String correlationId, long orderId, Refund refund) {
-        if (refund.status() == RefundStatus.SUCCEEDED) {
-            paymentKafkaProducer.publishRefundCompleted(correlationId, orderId, refund.amount());
-        } else if (refund.status() == RefundStatus.FAILED) {
-            paymentKafkaProducer.publishRefundFailed(correlationId, orderId);
-        }
     }
 }

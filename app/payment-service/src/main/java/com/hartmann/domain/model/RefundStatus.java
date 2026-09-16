@@ -4,5 +4,9 @@ public enum RefundStatus {
     INITIATED,
     PENDING,
     SUCCEEDED,
-    FAILED
+    FAILED;
+
+    public boolean isTerminal() {
+        return this == SUCCEEDED || this == FAILED;
+    }
 }
