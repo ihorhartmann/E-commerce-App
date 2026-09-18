@@ -16,6 +16,8 @@ spring:
     schemas: payment
   kafka:
     bootstrap-servers: ${KAFKA_HOST}:${KAFKA_PORT}
+    admin:
+      fail-fast: true
     consumer:
       group-id: payment-service
       enable-auto-commit: false

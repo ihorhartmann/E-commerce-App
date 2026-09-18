@@ -98,6 +98,40 @@ is missing, the service must not start and must log an error.
 All services must have graceful shutdown, so that on receiving a termination signal the service can close all Kafka,
 database connections and other resources if there are such.
 
+# Kafka topics, retries and dead-lettering
+
+* Every topic a service produces to or consumes from must be declared explicitly in that service's configuration, never
+  left to broker auto-creation: Spring `NewTopic` beans in a `KafkaTopicConfig` (with `spring.kafka.admin.fail-fast`
+  enabled) in Java/Kotlin services, and a startup step calling kafka-go's `Client.CreateTopics` (ignoring
+  `TopicAlreadyExists`) in Go services. A topic shared by a producer and a consumer is declared by both, with identical
+  settings. If the topics can't be declared because the broker is unreachable, the service must not start.
+* Every consumed topic has its own dead-letter topic (DLT), named `<topic>.DLT` (the suffix is a constant next to the
+  topic-name constants). The service that consumes the source topic declares its DLT, with the same partition count as
+  the source topic and 30 days retention - longer than the source topic's, so a dead-lettered message can still be
+  redriven well after the fact.
+* A failing message is retried in place, blocking its partition, with exponential back-off: 5 attempts in total, waiting
+  1s, 2s, 4s, 8s between them (15s), and then published to its DLT. All services use these same numbers.
+* Failures are classified, and only transient ones are retried:
+    * permanent failures - malformed payload, missing/invalid headers, a business rule rejecting the message, a
+      referenced entity that doesn't exist, a request rejected outright by a third party - go straight to the DLT
+      without any retry, since retrying can't change the outcome;
+    * everything else (database errors, a third-party service being unavailable, ...) is transient and retried. A new
+      kind of failure is transient unless it is explicitly listed as permanent: in Java/Kotlin, in the not-retryable
+      list of the error handler config; in Go, in a check before the retry loop.
+* A dead-lettered message keeps its original key, payload and business headers (`messageId`, `correlationId`,
+  `messageType`), so redriving it reuses the same idempotency key. The failure itself is described by additional headers
+  named as Spring's `DeadLetterPublishingRecoverer` names them, in every service, including the Go ones:
+  `kafka_dlt-original-topic`, `kafka_dlt-original-partition`, `kafka_dlt-original-offset`,
+  `kafka_dlt-original-consumer-group`, `kafka_dlt-exception-fqcn`, `kafka_dlt-exception-message`.
+* A message is never skipped, and its offset never committed, until it has either been handled or been published to
+  the DLT. If publishing to the DLT itself fails, the consumer keeps retrying (blocking the partition) until it
+  succeeds or the service shuts down. Because the business handler runs again on every cycle, it must be idempotent. In
+  Go services this has to be written explicitly: a handler error or a failed DLT publish must never fall through to
+  the next message.
+* Redriving from a DLT is always a manual, deliberate action, never automatic: republish to the original topic with the
+  same key, payload and business headers (never a new `messageId`), without the failure headers, and only after the
+  cause has been fixed.
+
 # Exceptions, errors, DTOs, and Repository Entities
 
 * In Java/Kotlin services, exceptions must live in a separate `exception` package, located next to the file (s) that use
