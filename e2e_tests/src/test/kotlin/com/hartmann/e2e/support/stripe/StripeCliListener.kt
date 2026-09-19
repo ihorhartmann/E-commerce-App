@@ -1,6 +1,7 @@
 package com.hartmann.e2e.support.stripe
 
 import com.hartmann.e2e.support.docker.DockerComposeStack
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -18,6 +19,7 @@ object StripeCliListener {
     private val started: Boolean by lazy {
         process = ProcessBuilder(
             "stripe", "listen",
+            "--all-snapshot",
             "--forward-to", "${DockerComposeStack.paymentServiceUrl}/api/v1/webhooks/stripe",
             "--api-key", DockerComposeStack.stripeSecretKey,
         ).redirectErrorStream(true).start()
@@ -38,9 +40,11 @@ object StripeCliListener {
 
     private fun awaitReady() {
         val ready = CountDownLatch(1)
+        val output = ConcurrentLinkedQueue<String>()
         var signingSecret: String? = null
         val reader = Thread {
             process.inputStream.bufferedReader().forEachLine { line ->
+                output.add(line)
                 SIGNING_SECRET_LINE.find(line)?.let { signingSecret = it.groupValues[1] }
                 if (signingSecret != null) ready.countDown()
             }
@@ -49,7 +53,8 @@ object StripeCliListener {
         reader.start()
 
         check(ready.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-            "stripe listen did not become ready within ${READY_TIMEOUT_SECONDS}s"
+            "stripe listen did not become ready within ${READY_TIMEOUT_SECONDS}s. " +
+                "Process alive=${process.isAlive}, output:\n${output.joinToString("\n").ifBlank { "<none>" }}"
         }
         check(signingSecret == DockerComposeStack.stripeWebhookSecret) {
             "stripe listen's webhook signing secret ($signingSecret) does not match " +

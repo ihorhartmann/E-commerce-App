@@ -11,6 +11,11 @@ object KafkaConst {
     const val PAYMENT_EVENTS_TOPIC = "payment.events"
     const val SHIPPING_EVENTS_TOPIC = "shipping.events"
 
+    // Dead-letter topics: one per consumed topic
+    const val DLT_SUFFIX = ".DLT"
+    const val PAYMENT_EVENTS_DLT_TOPIC = PAYMENT_EVENTS_TOPIC + DLT_SUFFIX
+    const val SHIPPING_EVENTS_DLT_TOPIC = SHIPPING_EVENTS_TOPIC + DLT_SUFFIX
+
     const val CANCEL_RESERVATION_COMMAND = "CancelReservation"
     const val FULFILL_RESERVATION_COMMAND = "FulfillReservation"
     const val HOLD_RESERVATION_COMMAND = "HoldReservation"
