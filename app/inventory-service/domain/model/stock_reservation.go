@@ -63,7 +63,7 @@ func (sr *StockReservation) Holder() ReservationHolder {
 	return sr.holder
 }
 
-// WithHolder returns a copy of the reservation held by the given holder.
-func (sr *StockReservation) WithHolder(holder ReservationHolder) (*StockReservation, error) {
+// UpdateHolder returns a copy of the reservation held by the given holder.
+func (sr *StockReservation) UpdateHolder(holder ReservationHolder) (*StockReservation, error) {
 	return NewStockReservation(sr.id, sr.productId, sr.orderId, sr.quantity, holder)
 }

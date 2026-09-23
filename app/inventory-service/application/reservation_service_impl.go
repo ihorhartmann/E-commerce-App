@@ -149,7 +149,7 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, msg idempot
 		}
 
 		for _, reservation := range reservations {
-			held, err := reservation.WithHolder(model.ReservationHolderCourier)
+			held, err := reservation.UpdateHolder(model.ReservationHolderCourier)
 			if err != nil {
 				return err
 			}

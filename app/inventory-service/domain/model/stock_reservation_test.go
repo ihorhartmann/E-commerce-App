@@ -68,7 +68,7 @@ func TestStockReservation_WithHolder(t *testing.T) {
 	t.Run("returns a copy held by the new holder", func(t *testing.T) {
 		reservation, _ := NewStockReservation(1, 10, 100, 5, ReservationHolderBuyer)
 
-		held, err := reservation.WithHolder(ReservationHolderCourier)
+		held, err := reservation.UpdateHolder(ReservationHolderCourier)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestStockReservation_WithHolder(t *testing.T) {
 	t.Run("rejects an invalid holder", func(t *testing.T) {
 		reservation, _ := NewStockReservation(1, 10, 100, 5, ReservationHolderBuyer)
 
-		_, err := reservation.WithHolder("SOMEWHERE_ELSE")
+		_, err := reservation.UpdateHolder("SOMEWHERE_ELSE")
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
