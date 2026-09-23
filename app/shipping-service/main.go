@@ -26,6 +26,7 @@ import (
 	"shippingservice/infrastructure/kafkago"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -51,6 +52,11 @@ func main() {
 	idempotencyService := httpidempotency.NewHTTPIdempotencyService(httpRequestStore)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
+	if err = kafkago.CreateTopics(context.Background(), brokers); err != nil {
+		slog.Error("failed to declare kafka topics", "error", err)
+		closeDB(db)
+		os.Exit(1)
+	}
 
 	messageProducer := kafkago.NewKafkaGoMessageProducer(brokers, kafkaconst.ShippingEventsTopic)
 	shipmentProducer := outbox.NewOutboxShipmentKafkaProducer(outboxRepository)
@@ -107,11 +113,18 @@ func main() {
 		slog.Error("error closing kafka producer", "error", err)
 	}
 
-	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
-		if err = sqlDB.Close(); err != nil {
-			slog.Error("error closing database connection", "error", err)
-		}
-	}
+	closeDB(db)
 
 	slog.Info("application shut down successfully")
+}
+
+func closeDB(db *gorm.DB) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+
+	if err = sqlDB.Close(); err != nil {
+		slog.Error("error closing database connection", "error", err)
+	}
 }

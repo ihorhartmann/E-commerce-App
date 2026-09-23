@@ -1,4 +1,5 @@
 /.idea/
+/.claude
 /.env
 /order-service.iml
 /payment-service.iml

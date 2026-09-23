@@ -6,6 +6,7 @@ import (
 	"shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/out/kafka/common"
 	"shippingservice/application/port/out/outbox/dto"
+	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -17,9 +18,12 @@ type kafkaGoMessageProducer struct {
 
 func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessageProducer {
 	writer := &kafkago.Writer{
-		Addr:     kafkago.TCP(brokers...),
-		Topic:    topic,
-		Balancer: &kafkago.LeastBytes{},
+		Addr:         kafkago.TCP(brokers...),
+		Topic:        topic,
+		Balancer:     &kafkago.Hash{},
+		RequiredAcks: kafkago.RequireOne,
+		BatchSize:    100,
+		BatchTimeout: 200 * time.Millisecond,
 	}
 
 	return &kafkaGoMessageProducer{writer: writer}

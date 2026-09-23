@@ -125,9 +125,11 @@ database connections and other resources if there are such.
   `kafka_dlt-original-consumer-group`, `kafka_dlt-exception-fqcn`, `kafka_dlt-exception-message`.
 * A message is never skipped, and its offset never committed, until it has either been handled or been published to
   the DLT. If publishing to the DLT itself fails, the consumer keeps retrying (blocking the partition) until it
-  succeeds or the service shuts down. Because the business handler runs again on every cycle, it must be idempotent. In
-  Go services this has to be written explicitly: a handler error or a failed DLT publish must never fall through to
-  the next message.
+  succeeds or the service shuts down. Because delivery is at-least-once (and, in the Spring services, the business
+  handler even runs again on every such cycle), the handler must be idempotent. In Go services this has to be written
+  explicitly: a handler error or a failed DLT publish must never fall through to the next message, and the DLT writer
+  must wait for all in-sync replicas (kafka-go's default `RequireNone` acknowledges nothing, so a lost write would
+  silently drop the message).
 * Redriving from a DLT is always a manual, deliberate action, never automatic: republish to the original topic with the
   same key, payload and business headers (never a new `messageId`), without the failure headers, and only after the
   cause has been fixed.

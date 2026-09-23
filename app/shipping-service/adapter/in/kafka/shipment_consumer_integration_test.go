@@ -4,6 +4,8 @@ package kafka_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -17,6 +19,7 @@ import (
 	servicemocks "shippingservice/application/port/in/mocks"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	outboxdto "shippingservice/application/port/out/outbox/dto"
+	"shippingservice/domain"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 	"shippingservice/infrastructure/kafkago"
@@ -41,6 +44,18 @@ const (
 	// offsetPollInterval is the pause between committed-offset checks in
 	// waitForCommittedOffset.
 	offsetPollInterval = 50 * time.Millisecond
+
+	// retryMessageWaitTimeout bounds how long a subtest waits for a failing message to be dead-lettered
+	// after going through the full back-off (1s + 2s + 4s + 8s = 15s), so messageWaitTimeout would
+	// leave too little margin.
+	retryMessageWaitTimeout = 45 * time.Second
+
+	// nonRetryableDeadLetterTimeout is deliberately shorter than that 15s back-off: a non-retryable
+	// failure showing up in the DLT within this window is what proves it was not retried.
+	nonRetryableDeadLetterTimeout = 10 * time.Second
+
+	// maxAttempts is 1 initial attempt + 4 retries.
+	maxAttempts = 5
 )
 
 var brokerAddr string
@@ -119,9 +134,36 @@ func waitForCommittedOffset(t *testing.T, group, topic string, want int64) {
 	}
 }
 
-// closeQuietly closes c. If that fails, it just logs the error instead of
-// failing the test - a cleanup error shouldn't turn a passing test into a
-// failing one.
+// awaitDeadLetter reads the dead-letter topic's only partition from the start until a message with the
+// given key shows up - the same view a redrive tool would have - and fails the test if none does
+// within timeout.
+func awaitDeadLetter(t *testing.T, dltTopic, key string, timeout time.Duration) kafkagoclient.Message {
+	t.Helper()
+
+	reader := kafkagoclient.NewReader(kafkagoclient.ReaderConfig{
+		Brokers:   []string{brokerAddr},
+		Topic:     dltTopic,
+		Partition: 0,
+		MaxWait:   200 * time.Millisecond,
+	})
+	defer closeQuietly(t, "dead-letter reader", reader)
+	if err := reader.SetOffset(kafkagoclient.FirstOffset); err != nil {
+		t.Fatalf("failed to position the dead-letter reader: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		message, err := reader.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("no message with key %q on %q within %v: %v", key, dltTopic, timeout, err)
+		}
+		if string(message.Key) == key {
+			return message
+		}
+	}
+}
+
 func closeQuietly(t *testing.T, name string, c io.Closer) {
 	t.Helper()
 	if err := c.Close(); err != nil {
@@ -242,5 +284,81 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		// (the first is ignored, not rejected) - wait for both commits to
 		// land before Cleanup closes the consumer.
 		waitForCommittedOffset(t, group, topic, 2)
+	})
+
+	t.Run("sends a command rejected as invalid input to the dead-letter topic after a single attempt", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + commonkafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := kafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		key := "8"
+		orderID := uint64(8)
+		command := dto.CreateShipmentCommand{
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
+		}
+		sendMessage(t, producer, commonkafka.CreateShipmentCommand, uuid.New().String(), key, command)
+
+		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
+		if err != nil {
+			t.Fatalf("failed to build expected address: %v", err)
+		}
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			Return(nil, fmt.Errorf("create shipment: %w", domain.ErrInvalidInput)).
+			Times(1)
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		shipmentConsumer := shipmentkafka.NewShipmentKafkaConsumer(consumer, shipmentService)
+		shipmentConsumer.Start()
+		t.Cleanup(func() { closeQuietly(t, "shipmentConsumer", shipmentConsumer) })
+
+		awaitDeadLetter(t, dltTopic, key, nonRetryableDeadLetterTimeout)
+		waitForCommittedOffset(t, group, topic, 1)
+	})
+
+	t.Run("retries a command that fails transiently five times before dead-lettering it", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + commonkafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := kafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		key := "9"
+		orderID := uint64(9)
+		command := dto.CreateShipmentCommand{
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
+		}
+		sendMessage(t, producer, commonkafka.CreateShipmentCommand, uuid.New().String(), key, command)
+
+		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
+		if err != nil {
+			t.Fatalf("failed to build expected address: %v", err)
+		}
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			Return(nil, errors.New("database unavailable")).
+			Times(maxAttempts)
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		shipmentConsumer := shipmentkafka.NewShipmentKafkaConsumer(consumer, shipmentService)
+		shipmentConsumer.Start()
+		t.Cleanup(func() { closeQuietly(t, "shipmentConsumer", shipmentConsumer) })
+
+		awaitDeadLetter(t, dltTopic, key, retryMessageWaitTimeout)
+		waitForCommittedOffset(t, group, topic, 1)
 	})
 }

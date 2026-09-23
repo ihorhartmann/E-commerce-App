@@ -33,28 +33,28 @@ func (c *ShipmentKafkaConsumer) Close() error {
 	return c.consumer.Close()
 }
 
-func (c *ShipmentKafkaConsumer) handleMessage(messageType commonkafka.MessageType, messageID string, correlationID string, payload []byte) error {
+func (c *ShipmentKafkaConsumer) handleMessage(ctx context.Context, messageType commonkafka.MessageType, messageID string, correlationID string, payload []byte) error {
 	msg := idempotencydto.KafkaMessageMetadata{MessageID: messageID, CorrelationID: correlationID, MessageType: string(messageType)}
 
 	switch messageType {
 	case commonkafka.CreateShipmentCommand:
-		return c.handleCreateShipment(msg, payload)
+		return c.handleCreateShipment(ctx, msg, payload)
 	default:
 		return nil
 	}
 }
 
-func (c *ShipmentKafkaConsumer) handleCreateShipment(msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+func (c *ShipmentKafkaConsumer) handleCreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.CreateShipmentCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return err
+		return NonRetryable(err)
 	}
 
 	address, err := dto.FromAddressDTO(command.Address)
 	if err != nil {
-		return err
+		return NonRetryable(err)
 	}
 
-	_, err = c.shipmentService.CreateShipment(context.Background(), msg, command.OrderID, address)
-	return err
+	_, err = c.shipmentService.CreateShipment(ctx, msg, command.OrderID, address)
+	return classify(err)
 }
