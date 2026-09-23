@@ -4,6 +4,8 @@ package kafka_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -14,6 +16,7 @@ import (
 	commonkafka "inventoryservice/application/port/common/kafka"
 	"inventoryservice/application/port/in/mocks"
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
+	"inventoryservice/domain"
 	producerkafkago "inventoryservice/infrastructure/kafkago"
 	inventorykafka "inventoryservice/interfaces/kafka"
 	kafkadto "inventoryservice/interfaces/kafka/dto"
@@ -39,6 +42,19 @@ const (
 	// offsetPollInterval is the pause between committed-offset checks in
 	// waitForCommittedOffset.
 	offsetPollInterval = 50 * time.Millisecond
+
+	// nonRetryableDeadLetterTimeout is deliberately shorter than the full 15s back-off: a
+	// non-retryable failure showing up in the DLT within this window is what proves it was not
+	// retried.
+	nonRetryableDeadLetterTimeout = 10 * time.Second
+
+	// retryMessageWaitTimeout bounds how long a subtest waits for a failing message to be dead-lettered
+	// after going through the full back-off (1s + 2s + 4s + 8s = 15s), so messageWaitTimeout would
+	// leave too little margin.
+	retryMessageWaitTimeout = 45 * time.Second
+
+	// maxAttempts is 1 initial attempt + 4 retries.
+	maxAttempts = 5
 )
 
 var brokerAddr string
@@ -124,6 +140,36 @@ func closeQuietly(t *testing.T, name string, c io.Closer) {
 	t.Helper()
 	if err := c.Close(); err != nil {
 		t.Logf("failed to close %s: %v", name, err)
+	}
+}
+
+// awaitDeadLetter reads the dead-letter topic's only partition from the start until a message with the
+// given key shows up - the same view a redrive tool would have - and fails the test if none does
+// within timeout.
+func awaitDeadLetter(t *testing.T, dltTopic, key string, timeout time.Duration) kafkagoclient.Message {
+	t.Helper()
+
+	reader := kafkagoclient.NewReader(kafkagoclient.ReaderConfig{
+		Brokers:   []string{brokerAddr},
+		Topic:     dltTopic,
+		Partition: 0,
+		MaxWait:   200 * time.Millisecond,
+	})
+	defer closeQuietly(t, "dead-letter reader", reader)
+	if err := reader.SetOffset(kafkagoclient.FirstOffset); err != nil {
+		t.Fatalf("failed to position the dead-letter reader: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		message, err := reader.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("no message with key %q on %q within %v: %v", key, dltTopic, timeout, err)
+		}
+		if string(message.Key) == key {
+			return message
+		}
 	}
 }
 
@@ -246,5 +292,69 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 			t.Fatal("timed out waiting for the reservation service to be invoked for the recognized message")
 		}
 		waitForCommittedOffset(t, group, topic, 2)
+	})
+
+	t.Run("sends a command rejected as invalid input to the dead-letter topic after a single attempt", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + commonkafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		key := "8"
+		orderID := uint64(8)
+		if err := producer.Send(commonkafka.CancelReservationCommand, uuid.New().String(), key, kafkadto.CancelReservationCommand{OrderID: orderID}); err != nil {
+			t.Fatalf("failed to send message: %v", err)
+		}
+
+		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
+		reservationService.EXPECT().
+			Cancel(gomock.Any(), gomock.Any(), orderID).
+			Return(fmt.Errorf("cancel reservation: %w", domain.ErrInvalidInput)).
+			Times(1)
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		reservationConsumer := inventorykafka.NewReservationKafkaConsumer(consumer, reservationService, productService)
+		reservationConsumer.StartAsync()
+		t.Cleanup(func() { closeQuietly(t, "reservationConsumer", reservationConsumer) })
+
+		awaitDeadLetter(t, dltTopic, key, nonRetryableDeadLetterTimeout)
+		waitForCommittedOffset(t, group, topic, 1)
+	})
+
+	t.Run("retries a command that fails transiently five times before dead-lettering it", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + commonkafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		key := "9"
+		orderID := uint64(9)
+		if err := producer.Send(commonkafka.CancelReservationCommand, uuid.New().String(), key, kafkadto.CancelReservationCommand{OrderID: orderID}); err != nil {
+			t.Fatalf("failed to send message: %v", err)
+		}
+
+		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
+		reservationService.EXPECT().
+			Cancel(gomock.Any(), gomock.Any(), orderID).
+			Return(errors.New("database unavailable")).
+			Times(maxAttempts)
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		reservationConsumer := inventorykafka.NewReservationKafkaConsumer(consumer, reservationService, productService)
+		reservationConsumer.StartAsync()
+		t.Cleanup(func() { closeQuietly(t, "reservationConsumer", reservationConsumer) })
+
+		awaitDeadLetter(t, dltTopic, key, retryMessageWaitTimeout)
+		waitForCommittedOffset(t, group, topic, 1)
 	})
 }

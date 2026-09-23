@@ -4,12 +4,16 @@ package kafkago_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	incommon "inventoryservice/interfaces/kafka"
 	"io"
 	"log"
 	"os"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,6 +44,18 @@ const (
 	// offsetPollInterval is the pause between committed-offset checks in
 	// waitForCommittedOffset.
 	offsetPollInterval = 50 * time.Millisecond
+
+	// retryMessageWaitTimeout bounds how long a subtest waits for a failing message to be dead-lettered
+	// after going through the full back-off (1s + 2s + 4s + 8s = 15s), so messageWaitTimeout would
+	// leave too little margin.
+	retryMessageWaitTimeout = 45 * time.Second
+
+	// nonRetryableDeadLetterTimeout is deliberately shorter than that 15s back-off: a non-retryable
+	// failure showing up in the DLT within this window is what proves it was not retried.
+	nonRetryableDeadLetterTimeout = 10 * time.Second
+
+	// maxAttempts is 1 initial attempt + 4 retries.
+	maxAttempts = 5
 )
 
 var brokerAddr string
@@ -118,6 +134,71 @@ func waitForCommittedOffset(t *testing.T, group, topic string, want int64) {
 	}
 }
 
+// committedOffset reads the consumer group's committed offset for the topic's only partition straight
+// from the broker, or -1 if the group has none yet.
+func committedOffset(t *testing.T, group, topic string) int64 {
+	t.Helper()
+
+	client := &kafkagoclient.Client{Addr: kafkagoclient.TCP(brokerAddr)}
+	ctx, cancel := context.WithTimeout(context.Background(), brokerCallTimeout)
+	defer cancel()
+
+	resp, err := client.OffsetFetch(ctx, &kafkagoclient.OffsetFetchRequest{
+		Addr:    client.Addr,
+		GroupID: group,
+		Topics:  map[string][]int{topic: {0}},
+	})
+	if err != nil || resp.Error != nil {
+		t.Fatalf("failed to fetch the committed offset for group %q topic %q: %v / %v", group, topic, err, resp)
+	}
+	partitions := resp.Topics[topic]
+	if len(partitions) == 0 || partitions[0].Error != nil {
+		return -1
+	}
+
+	return partitions[0].CommittedOffset
+}
+
+// awaitDeadLetter reads the dead-letter topic's only partition from the start until a message with the
+// given key shows up - the same view a redrive tool would have - and fails the test if none does
+// within timeout.
+func awaitDeadLetter(t *testing.T, dltTopic, key string, timeout time.Duration) kafkagoclient.Message {
+	t.Helper()
+
+	reader := kafkagoclient.NewReader(kafkagoclient.ReaderConfig{
+		Brokers:   []string{brokerAddr},
+		Topic:     dltTopic,
+		Partition: 0,
+		MaxWait:   200 * time.Millisecond,
+	})
+	defer closeQuietly(t, "dead-letter reader", reader)
+	if err := reader.SetOffset(kafkagoclient.FirstOffset); err != nil {
+		t.Fatalf("failed to position the dead-letter reader: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		message, err := reader.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("no message with key %q on %q within %v: %v", key, dltTopic, timeout, err)
+		}
+		if string(message.Key) == key {
+			return message
+		}
+	}
+}
+
+func headerValue(headers []kafkagoclient.Header, name string) []byte {
+	for _, header := range headers {
+		if header.Key == name {
+			return header.Value
+		}
+	}
+
+	return nil
+}
+
 // closeQuietly closes c. If that fails, it just logs the error instead of
 // failing the test - a cleanup error shouldn't turn a passing test into a
 // failing one.
@@ -159,7 +240,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 1)
-		consumer.ConsumeAsync(func(mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -212,7 +293,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 2)
-		consumer.ConsumeAsync(func(mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -255,7 +336,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer1 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
 		processed1 := make(chan struct{})
-		consumer1.ConsumeAsync(func(_ kafka.MessageType, _ string, _ string, _ []byte) error {
+		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
 			close(processed1)
 			return nil
 		})
@@ -280,7 +361,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer2 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer2", consumer2) })
 		received2 := make(chan consumedMessage, 1)
-		consumer2.ConsumeAsync(func(mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
 			received2 <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -298,10 +379,11 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		waitForCommittedOffset(t, group, topic, 2)
 	})
 
-	t.Run("does not commit the offset when handling fails, so the message is redelivered", func(t *testing.T) {
+	t.Run("does not commit or dead-letter a message whose retries are cut short by shutdown, so it is redelivered", func(t *testing.T) {
 		topic := uuid.New().String()
 		group := uuid.New().String()
 		createTopic(t, topic)
+		createTopic(t, topic+kafka.DLTSuffix)
 
 		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
 		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
@@ -314,8 +396,9 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer1 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
 		received1 := make(chan struct{})
-		consumer1.ConsumeAsync(func(_ kafka.MessageType, _ string, _ string, _ []byte) error {
-			close(received1)
+		var closeReceived1 sync.Once
+		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
+			closeReceived1.Do(func() { close(received1) })
 			return errors.New("simulated handler failure")
 		})
 
@@ -331,7 +414,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer2 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer2", consumer2) })
 		received2 := make(chan consumedMessage, 1)
-		consumer2.ConsumeAsync(func(mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
 			received2 <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -347,10 +430,12 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		waitForCommittedOffset(t, group, topic, 1)
 	})
 
-	t.Run("skips a message missing a required header without invoking the handler, and keeps consuming afterwards", func(t *testing.T) {
+	t.Run("dead-letters a message missing a required header without invoking the handler, and keeps consuming afterwards", func(t *testing.T) {
 		topic := uuid.New().String()
+		dltTopic := topic + kafka.DLTSuffix
 		group := uuid.New().String()
 		createTopic(t, topic)
+		createTopic(t, dltTopic)
 
 		rawWriter := &kafkagoclient.Writer{
 			Addr:     kafkagoclient.TCP(brokerAddr),
@@ -359,8 +444,9 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		}
 		t.Cleanup(func() { closeQuietly(t, "rawWriter", rawWriter) })
 
+		malformedKey := "incorrect"
 		if err := rawWriter.WriteMessages(context.Background(), kafkagoclient.Message{
-			Key: []byte("incorrect"),
+			Key: []byte(malformedKey),
 			Headers: []kafkagoclient.Header{
 				{Key: kafka.MessageTypeHeader, Value: []byte(kafka.CancelReservationCommand.String())},
 				{Key: kafka.MessageIDHeader, Value: []byte(uuid.New().String())},
@@ -381,7 +467,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 2)
-		consumer.ConsumeAsync(func(mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -399,6 +485,263 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		case extra := <-received:
 			t.Fatalf("handler was invoked a second time unexpectedly with correlationID %v", extra.correlationID)
 		case <-time.After(noExtraMessageWait):
+		}
+
+		deadLetter := awaitDeadLetter(t, dltTopic, malformedKey, messageWaitTimeout)
+		if gotTopic := string(headerValue(deadLetter.Headers, kafka.DLTOriginalTopicHeader)); gotTopic != topic {
+			t.Errorf("original topic = %q, want %q", gotTopic, topic)
+		}
+		waitForCommittedOffset(t, group, topic, 2)
+	})
+
+	t.Run("retries a failing message five times, then dead-letters it with the failure headers and commits the offset", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + kafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		key := "1"
+		handlerFailure := "simulated handler failure"
+		wantCorrelationID := uuid.New().String()
+		if err := producer.Send(kafka.CancelReservationCommand, wantCorrelationID, key, map[string]any{"n": 1}); err != nil {
+			t.Fatalf("failed to send message: %v", err)
+		}
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
+		var handlerCalls atomic.Int32
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
+			handlerCalls.Add(1)
+			return errors.New(handlerFailure)
+		})
+
+		deadLetter := awaitDeadLetter(t, dltTopic, key, retryMessageWaitTimeout)
+
+		if gotHandlerCalls, wantHandlerCalls := handlerCalls.Load(), int32(maxAttempts); gotHandlerCalls != wantHandlerCalls {
+			t.Errorf("handler calls = %d, want %d", gotHandlerCalls, wantHandlerCalls)
+		}
+		var gotPayload struct {
+			N int `json:"n"`
+		}
+		if err := json.Unmarshal(deadLetter.Value, &gotPayload); err != nil || gotPayload.N != 1 {
+			t.Errorf("payload = %q (err %v), want the original {\"n\":1}", deadLetter.Value, err)
+		}
+		// The business headers survive the trip, so a redrive reuses the same messageId (idempotency)
+		// and correlationId (traceability).
+		if gotCorrelationID := string(headerValue(deadLetter.Headers, kafka.CorrelationIDHeader)); gotCorrelationID != wantCorrelationID {
+			t.Errorf("correlationId = %q, want %q", gotCorrelationID, wantCorrelationID)
+		}
+		if gotMessageType, wantMessageType := string(headerValue(deadLetter.Headers, kafka.MessageTypeHeader)), kafka.CancelReservationCommand.String(); gotMessageType != wantMessageType {
+			t.Errorf("messageType = %q, want %q", gotMessageType, wantMessageType)
+		}
+		if gotMessageID := string(headerValue(deadLetter.Headers, kafka.MessageIDHeader)); gotMessageID == "" {
+			t.Error("messageId header is missing")
+		}
+		if gotTopic := string(headerValue(deadLetter.Headers, kafka.DLTOriginalTopicHeader)); gotTopic != topic {
+			t.Errorf("original topic = %q, want %q", gotTopic, topic)
+		}
+		if gotPartition := binary.BigEndian.Uint32(headerValue(deadLetter.Headers, kafka.DLTOriginalPartitionHeader)); gotPartition != 0 {
+			t.Errorf("original partition = %d, want 0", gotPartition)
+		}
+		if gotOffset := binary.BigEndian.Uint64(headerValue(deadLetter.Headers, kafka.DLTOriginalOffsetHeader)); gotOffset != 0 {
+			t.Errorf("original offset = %d, want 0", gotOffset)
+		}
+		if gotGroup := string(headerValue(deadLetter.Headers, kafka.DLTOriginalConsumerGroupHeader)); gotGroup != group {
+			t.Errorf("original consumer group = %q, want %q", gotGroup, group)
+		}
+		if gotMessage := string(headerValue(deadLetter.Headers, kafka.DLTExceptionMessageHeader)); gotMessage != handlerFailure {
+			t.Errorf("exception message = %q, want %q", gotMessage, handlerFailure)
+		}
+		if gotFQCN, wantFQCN := string(headerValue(deadLetter.Headers, kafka.DLTExceptionFQCNHeader)), "*errors.errorString"; gotFQCN != wantFQCN {
+			t.Errorf("exception type = %q, want %q", gotFQCN, wantFQCN)
+		}
+		waitForCommittedOffset(t, group, topic, 1)
+	})
+
+	t.Run("dead-letters a non-retryable failure after a single attempt, and keeps consuming afterwards", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + kafka.DLTSuffix
+		group := uuid.New().String()
+		createTopic(t, topic)
+		createTopic(t, dltTopic)
+
+		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		failingKey := "failing"
+		failingCorrelationID := uuid.New().String()
+		goodCorrelationID := uuid.New().String()
+		if err := producer.Send(kafka.CancelReservationCommand, failingCorrelationID, failingKey, map[string]any{"n": 1}); err != nil {
+			t.Fatalf("failed to send the failing message: %v", err)
+		}
+		if err := producer.Send(kafka.CancelReservationCommand, goodCorrelationID, "good", map[string]any{"n": 2}); err != nil {
+			t.Fatalf("failed to send the good message: %v", err)
+		}
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
+		var failingCalls atomic.Int32
+		received := make(chan string, 2)
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, correlationID string, _ []byte) error {
+			if correlationID == failingCorrelationID {
+				failingCalls.Add(1)
+				return incommon.NonRetryable(errors.New("permanent failure"))
+			}
+			received <- correlationID
+			return nil
+		})
+
+		awaitDeadLetter(t, dltTopic, failingKey, nonRetryableDeadLetterTimeout)
+
+		if gotFailingCalls, wantFailingCalls := failingCalls.Load(), int32(1); gotFailingCalls != wantFailingCalls {
+			t.Errorf("handler calls for the failing message = %d, want %d", gotFailingCalls, wantFailingCalls)
+		}
+		select {
+		case gotCorrelationID := <-received:
+			if gotCorrelationID != goodCorrelationID {
+				t.Errorf("correlationID = %v, want %v", gotCorrelationID, goodCorrelationID)
+			}
+		case <-time.After(messageWaitTimeout):
+			t.Fatal("timed out waiting for the message after the dead-lettered one to be processed")
+		}
+		waitForCommittedOffset(t, group, topic, 2)
+	})
+
+	t.Run("does not skip a message while its dead-letter topic is unavailable, and dead-letters it once the topic exists", func(t *testing.T) {
+		topic := uuid.New().String()
+		dltTopic := topic + kafka.DLTSuffix
+		group := uuid.New().String()
+		// The dead-letter topic is deliberately not created yet.
+		createTopic(t, topic)
+
+		producer := producerkafkago.NewKafkaGoMessageProducer([]string{brokerAddr}, topic)
+		t.Cleanup(func() { closeQuietly(t, "producer", producer) })
+
+		failingKey := "failing"
+		failingCorrelationID := uuid.New().String()
+		goodCorrelationID := uuid.New().String()
+		if err := producer.Send(kafka.CancelReservationCommand, failingCorrelationID, failingKey, map[string]any{"n": 1}); err != nil {
+			t.Fatalf("failed to send the failing message: %v", err)
+		}
+		if err := producer.Send(kafka.CancelReservationCommand, goodCorrelationID, "good", map[string]any{"n": 2}); err != nil {
+			t.Fatalf("failed to send the good message: %v", err)
+		}
+
+		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
+		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
+		failingHandled := make(chan struct{})
+		var closeFailingHandled sync.Once
+		received := make(chan string, 2)
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, correlationID string, _ []byte) error {
+			if correlationID == failingCorrelationID {
+				closeFailingHandled.Do(func() { close(failingHandled) })
+				return incommon.NonRetryable(errors.New("permanent failure"))
+			}
+			received <- correlationID
+			return nil
+		})
+
+		select {
+		case <-failingHandled:
+		case <-time.After(messageWaitTimeout):
+			t.Fatal("timed out waiting for the failing message to be handled")
+		}
+
+		// While the dead-letter topic is missing, the failing message must neither be committed nor
+		// skipped: the message after it is held back too.
+		select {
+		case got := <-received:
+			t.Fatalf("message %v was processed while the dead-letter topic was unavailable, i.e. the failing message was skipped", got)
+		case <-time.After(noExtraMessageWait):
+		}
+		if got := committedOffset(t, group, topic); got >= 1 {
+			t.Errorf("committed offset = %d while the dead-letter topic was unavailable, want none", got)
+		}
+
+		createTopic(t, dltTopic)
+
+		awaitDeadLetter(t, dltTopic, failingKey, messageWaitTimeout)
+		select {
+		case gotCorrelationID := <-received:
+			if gotCorrelationID != goodCorrelationID {
+				t.Errorf("correlationID = %v, want %v", gotCorrelationID, goodCorrelationID)
+			}
+		case <-time.After(messageWaitTimeout):
+			t.Fatal("timed out waiting for the message after the dead-lettered one to be processed")
+		}
+		waitForCommittedOffset(t, group, topic, 2)
+	})
+}
+
+func TestCreateTopics_Integration(t *testing.T) {
+	declaredTopics := []string{kafka.InventoryCommandsTopic, kafka.InventoryCommandsDLTTopic}
+
+	t.Run("creates every declared topic, with the dead-letter topic's retention", func(t *testing.T) {
+		if err := kafkago.CreateTopics(context.Background(), []string{brokerAddr}); err != nil {
+			t.Fatalf("CreateTopics: %v", err)
+		}
+
+		client := &kafkagoclient.Client{Addr: kafkagoclient.TCP(brokerAddr)}
+		ctx, cancel := context.WithTimeout(context.Background(), brokerCallTimeout)
+		defer cancel()
+
+		metadata, err := client.Metadata(ctx, &kafkagoclient.MetadataRequest{Addr: client.Addr, Topics: declaredTopics})
+		if err != nil {
+			t.Fatalf("failed to fetch topic metadata: %v", err)
+		}
+		for _, topic := range metadata.Topics {
+			if topic.Error != nil {
+				t.Errorf("topic %q does not exist: %v", topic.Name, topic.Error)
+			}
+		}
+		if got, want := len(metadata.Topics), len(declaredTopics); got != want {
+			t.Errorf("found %d declared topics, want %d", got, want)
+		}
+
+		configs, err := client.DescribeConfigs(ctx, &kafkagoclient.DescribeConfigsRequest{
+			Addr: client.Addr,
+			Resources: []kafkagoclient.DescribeConfigRequestResource{{
+				ResourceType: kafkagoclient.ResourceTypeTopic,
+				ResourceName: kafka.InventoryCommandsDLTTopic,
+				ConfigNames:  []string{"retention.ms"},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("failed to describe the dead-letter topic config: %v", err)
+		}
+		gotRetention := ""
+		for _, resource := range configs.Resources {
+			for _, entry := range resource.ConfigEntries {
+				if entry.ConfigName == "retention.ms" {
+					gotRetention = entry.ConfigValue
+				}
+			}
+		}
+		if wantRetention := strconv.FormatInt((30 * 24 * time.Hour).Milliseconds(), 10); gotRetention != wantRetention {
+			t.Errorf("retention.ms = %q, want %q", gotRetention, wantRetention)
+		}
+	})
+
+	t.Run("is idempotent: declaring topics that already exist succeeds", func(t *testing.T) {
+		if err := kafkago.CreateTopics(context.Background(), []string{brokerAddr}); err != nil {
+			t.Fatalf("first CreateTopics: %v", err)
+		}
+
+		if err := kafkago.CreateTopics(context.Background(), []string{brokerAddr}); err != nil {
+			t.Errorf("second CreateTopics: %v, want nil", err)
+		}
+	})
+
+	t.Run("fails when the broker is unreachable, instead of letting the service start", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+
+		if err := kafkago.CreateTopics(ctx, []string{"127.0.0.1:1"}); err == nil {
+			t.Error("CreateTopics = nil, want an error")
 		}
 	})
 }
