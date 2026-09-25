@@ -140,7 +140,7 @@ branches on what a conflict or a stale record means. `HttpIdempotencyService` li
 because its whole purpose is specific to the HTTP idempotency-key pattern (an `Adapters`-owned concern), not to
 orchestrating domain behavior.
 
-`adapter.in.scheduled` holds periodic sweeps (e.g. `PaymentExpirationSweep`, `HttpRequestSweep`, `ProcessedKafkaMessageSweep`)
+`adapter.in.scheduled` holds periodic sweeps (e.g. `PaymentExpirationSweep`, `HttpRequestSweep`)
 that run on a timer. A scheduled job is a self-triggered entry point - it decides on its own schedule to invoke a
 business port, the same role a Kafka consumer or REST controller plays for its own trigger - so it belongs in
 `Adapters`, not `Infrastructure`, even though nothing here is framework-specific glue.

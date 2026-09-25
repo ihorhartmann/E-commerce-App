@@ -1,10 +1,12 @@
 package com.hartmann.adapter.in.http.refund;
 
+import com.hartmann.adapter.in.http.IdempotencyFilter;
 import com.hartmann.adapter.in.http.refund.dto.SubmitRefundRequest;
 import com.hartmann.adapter.in.http.refund.dto.RefundResponse;
 import com.hartmann.application.port.in.RefundService;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -33,8 +36,11 @@ public class RefundController {
     }
 
     @PostMapping
-    public ResponseEntity<RefundResponse> submitRefund(@RequestBody SubmitRefundRequest request) {
-        var refund = refundService.submitRefund(null, request.paymentId(), SubmitRefundRequest.toMoney(request));
+    public ResponseEntity<RefundResponse> submitRefund(
+            @RequestHeader(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER) UUID idempotencyKey,
+            @RequestBody SubmitRefundRequest request
+    ) {
+        var refund = refundService.submitRefund(idempotencyKey, null, request.paymentId(), SubmitRefundRequest.toMoney(request));
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)

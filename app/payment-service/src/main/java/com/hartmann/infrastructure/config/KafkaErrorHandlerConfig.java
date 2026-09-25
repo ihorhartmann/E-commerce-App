@@ -1,8 +1,10 @@
 package com.hartmann.infrastructure.config;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
+import com.hartmann.adapter.in.kafka.exception.InvalidMessageHeaderException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.application.service.exception.IdempotencyKeyReusedException;
 import com.hartmann.domain.exception.DomainException;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
@@ -35,8 +37,10 @@ public class KafkaErrorHandlerConfig {
         errorHandler.addNotRetryableExceptions(
                 JacksonException.class,         // payload is not valid JSON / doesn't match the command
                 MessageHandlingException.class, // a required header is missing (@Header binding failed)
+                InvalidMessageHeaderException.class, // a header is present but unusable (messageId isn't a UUID)
                 DomainException.class,        // a business rule rejected the command
                 ObjectNotFoundException.class,  // the payment/refund the command refers to doesn't exist
+                IdempotencyKeyReusedException.class, // the messageId already belongs to a different refund
                 PaymentGatewayException.class   // the payment gateway rejected the request itself
         );
         return errorHandler;

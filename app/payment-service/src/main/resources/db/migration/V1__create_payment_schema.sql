@@ -16,25 +16,18 @@ CREATE INDEX idx_payments_order_id ON payment.payments (order_id);
 CREATE TABLE IF NOT EXISTS payment.refunds (
     id BIGSERIAL PRIMARY KEY,
     payment_id BIGINT NOT NULL REFERENCES payment.payments (id),
+    idempotency_key UUID NOT NULL,
     external_id VARCHAR(255),
     amount NUMERIC(19, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
+    CONSTRAINT uq_refunds_idempotency_key UNIQUE (idempotency_key),
     CONSTRAINT uq_refunds_external_id UNIQUE (external_id)
 );
 
 CREATE INDEX idx_refunds_payment_id ON payment.refunds (payment_id);
-
-CREATE TABLE IF NOT EXISTS payment.processed_kafka_messages (
-    id             VARCHAR(255) PRIMARY KEY,
-    correlation_id VARCHAR(255) NOT NULL,
-    message_type   VARCHAR(255) NOT NULL,
-    processed_at   TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX idx_processed_kafka_messages_processed_at ON payment.processed_kafka_messages (processed_at);
 
 CREATE TABLE IF NOT EXISTS payment.idempotent_http_requests (
     id           VARCHAR(255) PRIMARY KEY,

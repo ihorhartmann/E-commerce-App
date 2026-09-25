@@ -23,6 +23,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +51,12 @@ class StripePaymentGatewayTest {
 
     private Money money(String amount) {
         return new Money(new BigDecimal(amount), Currency.USD);
+    }
+
+    // com.stripe.model.Refund is imported for the gateway's responses, so the domain refund is fully qualified here.
+    private com.hartmann.domain.model.Refund testRefund(long id, UUID idempotencyKey, String amount) {
+        return com.hartmann.domain.model.Refund.createExisting(
+                id, 1L, idempotencyKey, null, money(amount), RefundStatus.INITIATED, Instant.now(), null);
     }
 
     // --- submitPayment ---
@@ -125,53 +134,66 @@ class StripePaymentGatewayTest {
 
     @Test
     void submitRefund_createsARefundAndReturnsItsIdAndMappedStatus() throws Exception {
-        var paymentExternalId = "pi_test";
         var refundId = "re_test";
-        var refund = mock(Refund.class);
-        when(refund.getId()).thenReturn(refundId);
-        when(refund.getStatus()).thenReturn("succeeded");
-        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class))).thenReturn(refund);
+        var stripeRefund = mock(Refund.class);
+        when(stripeRefund.getId()).thenReturn(refundId);
+        when(stripeRefund.getStatus()).thenReturn("succeeded");
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenReturn(stripeRefund);
 
-        var result = gateway.submitRefund(paymentExternalId, money("40.00"));
+        var result = gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "40.00"));
 
         assertThat(result).isEqualTo(new SubmitRefundResult(refundId, RefundStatus.SUCCEEDED));
     }
 
     @Test
-    void submitRefund_sendsTheAmountInCentsAndThePaymentIntentId() throws Exception {
+    void submitRefund_sendsTheAmountInCentsThePaymentIntentIdAndRefundIdMetadata() throws Exception {
         var paymentExternalId = "pi_test";
-        var refund = mock(Refund.class);
-        when(refund.getStatus()).thenReturn("pending");
-        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class))).thenReturn(refund);
+        var refundId = 7L;
+        var stripeRefund = mock(Refund.class);
+        when(stripeRefund.getStatus()).thenReturn("pending");
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenReturn(stripeRefund);
 
-        gateway.submitRefund(paymentExternalId, money("40.00"));
+        gateway.submitRefund(paymentExternalId, testRefund(refundId, UUID.randomUUID(), "40.00"));
 
         var paramsCaptor = ArgumentCaptor.forClass(RefundCreateParams.class);
-        verify(stripeClient.v1().refunds(), times(1)).create(paramsCaptor.capture());
+        verify(stripeClient.v1().refunds(), times(1)).create(paramsCaptor.capture(), any(RequestOptions.class));
         var params = paramsCaptor.getValue();
         assertThat(params.getAmount()).isEqualTo(4000L);
         assertThat(params.getPaymentIntent()).isEqualTo(paymentExternalId);
+        assertThat(params.getMetadata()).isEqualTo(Map.of("refundId", String.valueOf(refundId)));
+    }
+
+    @Test
+    void submitRefund_setsAnIdempotencyKeyScopedToTheRefundsIdempotencyKey() throws Exception {
+        var idempotencyKey = UUID.randomUUID();
+        var stripeRefund = mock(Refund.class);
+        when(stripeRefund.getStatus()).thenReturn("pending");
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenReturn(stripeRefund);
+
+        gateway.submitRefund("pi_test", testRefund(1L, idempotencyKey, "40.00"));
+
+        var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeClient.v1().refunds(), times(1)).create(any(RefundCreateParams.class), optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue().getIdempotencyKey()).isEqualTo("refund-" + idempotencyKey);
     }
 
     @Test
     void submitRefund_throwsPaymentGatewayUnavailableExceptionWhenStripeIsTemporarilyUnavailable() throws Exception {
-        var paymentExternalId = "pi_test";
         var cause = new ApiConnectionException("connection failed");
-        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class))).thenThrow(cause);
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenThrow(cause);
 
-        assertThatThrownBy(() -> gateway.submitRefund(paymentExternalId, money("40.00")))
+        assertThatThrownBy(() -> gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "40.00")))
                 .isInstanceOf(PaymentGatewayUnavailableException.class)
                 .hasCause(cause);
     }
 
     @Test
     void submitRefund_throwsPaymentGatewayExceptionWhenStripeRejectsTheRequest() throws Exception {
-        var paymentExternalId = "pi_test";
         var cause = new InvalidRequestException(
                 "Refund amount exceeds the amount available to refund", "amount", null, null, null, null);
-        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class))).thenThrow(cause);
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenThrow(cause);
 
-        assertThatThrownBy(() -> gateway.submitRefund(paymentExternalId, money("999.00")))
+        assertThatThrownBy(() -> gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "999.00")))
                 .isInstanceOf(PaymentGatewayException.class)
                 .hasCause(cause);
     }

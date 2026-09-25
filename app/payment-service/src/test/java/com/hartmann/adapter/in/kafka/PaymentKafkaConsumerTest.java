@@ -1,9 +1,9 @@
 package com.hartmann.adapter.in.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
+import com.hartmann.adapter.in.kafka.exception.InvalidMessageHeaderException;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.application.port.out.idempotency.dto.KafkaMessageMetadata;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
@@ -19,6 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.times;
@@ -50,30 +51,45 @@ class PaymentKafkaConsumerTest {
     }
 
     @Test
-    void onMessage_dispatchesRefundRequestedToTheRefundService() {
+    void onMessage_dispatchesRefundRequestedToTheRefundServiceKeyedByTheMessageId() {
         var paymentId = 1L;
         var orderId = 100L;
         var amount = new Money(new BigDecimal("40.00"), Currency.USD);
         var payload = "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}";
-        var message = new KafkaMessageMetadata("msg-1", "corr-1", KafkaConst.REFUND_REQUESTED_COMMAND);
+        var messageId = UUID.randomUUID();
+        var correlationId = "corr-1";
         when(paymentService.getByOrderId(orderId)).thenReturn(testPayment(paymentId, orderId));
 
-        consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, message.messageId(), message.correlationId(), payload);
+        consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId.toString(), correlationId, payload);
 
-        verify(refundService, times(1)).submitRefund(message, paymentId, amount);
+        verify(paymentService, times(1)).getByOrderId(orderId);
+        verify(refundService, times(1)).submitRefund(messageId, correlationId, paymentId, amount);
     }
 
     @Test
     void onMessage_ignoresUnrecognizedMessageTypes() {
-        consumer.onMessage("SomeUnrelatedEvent", "msg-2", "corr-2", "{}");
+        consumer.onMessage("SomeUnrelatedEvent", UUID.randomUUID().toString(), "corr-2", "{}");
 
         verifyNoInteractions(paymentService, refundService);
     }
 
     @Test
     void onMessage_throwsWithoutCallingEitherServiceWhenThePayloadIsMalformedJson() {
-        assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, "msg-3", "corr-3", "not json"))
+        var messageId = UUID.randomUUID().toString();
+
+        assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId, "corr-3", "not json"))
                 .isInstanceOf(RuntimeException.class);
+
+        verifyNoInteractions(paymentService, refundService);
+    }
+
+    @Test
+    void onMessage_throwsInvalidMessageHeaderExceptionWithoutCallingEitherServiceWhenTheMessageIdIsNotAUuid() {
+        var payload = "{\"orderId\":100,\"amount\":40.00,\"currency\":\"USD\"}";
+        var messageId = "msg-4";
+
+        assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId, "corr-4", payload))
+                .isInstanceOf(InvalidMessageHeaderException.class);
 
         verifyNoInteractions(paymentService, refundService);
     }

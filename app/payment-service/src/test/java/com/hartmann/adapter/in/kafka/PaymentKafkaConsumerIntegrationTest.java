@@ -199,7 +199,7 @@ class PaymentKafkaConsumerIntegrationTest {
                 "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}"));
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), eq(paymentId), eq(amount)));
+                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), any(), eq(paymentId), eq(amount)));
     }
 
     @Test
@@ -214,7 +214,7 @@ class PaymentKafkaConsumerIntegrationTest {
                 "{\"orderId\":" + orderId + ",\"amount\":15.00,\"currency\":\"USD\"}"));
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), eq(paymentId), eq(amount)));
+                .untilAsserted(() -> verify(refundService, times(1)).submitRefund(any(), any(), eq(paymentId), eq(amount)));
     }
 
     @Test
@@ -294,7 +294,7 @@ class PaymentKafkaConsumerIntegrationTest {
         var amount = new Money(new BigDecimal(amountValue), Currency.USD);
         var correlationId = UUID.randomUUID().toString();
         when(paymentService.getByOrderId(orderId)).thenReturn(testPayment(paymentId, orderId));
-        when(refundService.submitRefund(any(), eq(paymentId), eq(amount)))
+        when(refundService.submitRefund(any(), any(), eq(paymentId), eq(amount)))
                 .thenThrow(new PaymentGatewayUnavailableException("gateway unavailable", new RuntimeException("stripe is down")));
 
         send(commandRecord(KafkaConst.REFUND_REQUESTED_COMMAND, correlationId,
@@ -302,7 +302,22 @@ class PaymentKafkaConsumerIntegrationTest {
 
         awaitDeadLetter(correlationId, RETRY_MESSAGE_WAIT_TIMEOUT);
         verify(paymentService, times(MAX_ATTEMPTS)).getByOrderId(orderId);
-        verify(refundService, times(MAX_ATTEMPTS)).submitRefund(any(), eq(paymentId), eq(amount));
+        verify(refundService, times(MAX_ATTEMPTS)).submitRefund(any(), any(), eq(paymentId), eq(amount));
+    }
+
+    @Test
+    void aMessageWhoseMessageIdIsNotAUuidIsDeadLetteredWithoutBeingDispatchedOrRetried() {
+        var correlationId = UUID.randomUUID().toString();
+        var record = commandRecord(KafkaConst.REFUND_REQUESTED_COMMAND, correlationId,
+                "{\"orderId\":106,\"amount\":5.00,\"currency\":\"USD\"}");
+        record.headers()
+                .remove(KafkaConst.MESSAGE_ID)
+                .add(new RecordHeader(KafkaConst.MESSAGE_ID, "not-a-uuid".getBytes(StandardCharsets.UTF_8)));
+
+        send(record);
+
+        awaitDeadLetter(correlationId, NON_RETRYABLE_DEAD_LETTER_TIMEOUT);
+        verifyNoInteractions(paymentService, refundService);
     }
 
     @Test
