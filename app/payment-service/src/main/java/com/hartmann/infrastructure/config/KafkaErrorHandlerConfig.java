@@ -1,11 +1,7 @@
 package com.hartmann.infrastructure.config;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.in.kafka.exception.InvalidMessageHeaderException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
-import com.hartmann.application.service.exception.IdempotencyKeyReusedException;
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.adapter.in.kafka.exception.NonRetryableException;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +11,6 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import org.springframework.messaging.MessageHandlingException;
-import tools.jackson.core.JacksonException;
 
 import java.time.Duration;
 
@@ -32,16 +27,13 @@ public class KafkaErrorHandlerConfig {
     public CommonErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
         var errorHandler = createErrorHandler(kafkaTemplate);
 
-        // Anything not listed here (DB errors, PaymentGatewayUnavailableException, ...) is treated
-        // as transient and retried. These fail the same way every time, so they go straight to the DLT.
+        // Anything not listed here is treated as transient and retried. Which failures repeat the same
+        // way every time is decided by the consumer, which wraps them in NonRetryableException.
         errorHandler.addNotRetryableExceptions(
-                JacksonException.class,         // payload is not valid JSON / doesn't match the command
-                MessageHandlingException.class, // a required header is missing (@Header binding failed)
-                InvalidMessageHeaderException.class, // a header is present but unusable (messageId isn't a UUID)
-                DomainException.class,        // a business rule rejected the command
-                ObjectNotFoundException.class,  // the payment/refund the command refers to doesn't exist
-                IdempotencyKeyReusedException.class, // the messageId already belongs to a different refund
-                PaymentGatewayException.class   // the payment gateway rejected the request itself
+                NonRetryableException.class,
+                // A required header is missing: @Header binding fails inside the framework, before the
+                // consumer runs, so the consumer never gets the chance to classify it.
+                MessageHandlingException.class
         );
         return errorHandler;
     }

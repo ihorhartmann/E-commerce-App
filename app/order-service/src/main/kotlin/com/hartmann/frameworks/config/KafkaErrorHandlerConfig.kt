@@ -1,8 +1,7 @@
 package com.hartmann.frameworks.config
 
-import com.hartmann.entities.exception.DomainException
+import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
-import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import org.apache.kafka.common.TopicPartition
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,7 +11,6 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer
 import org.springframework.kafka.listener.DefaultErrorHandler
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries
 import org.springframework.messaging.MessageHandlingException
-import tools.jackson.core.JacksonException
 import java.time.Duration
 
 @Configuration
@@ -29,18 +27,13 @@ class KafkaErrorHandlerConfig {
     @Bean
     fun kafkaErrorHandler(kafkaTemplate: KafkaTemplate<String, String>): CommonErrorHandler {
         return createErrorHandler(kafkaTemplate).apply {
-            // Anything not listed here (database errors, ...) is treated as transient and retried.
-            // These fail the same way every time, so they go straight to the DLT.
+            // Anything not listed here is treated as transient and retried. Which failures repeat the
+            // same way every time is decided by the consumer, which wraps them in NonRetryableException.
             addNotRetryableExceptions(
-                JacksonException::class.java, // payload is not valid JSON / doesn't match the event
-                MessageHandlingException::class.java, // a required header is missing (@Header binding failed)
-                // The domain model rejects an invalid state transition or invalid value: DomainException
-                // for a disallowed order transition or unsupported currency, IllegalStateException /
-                // IllegalArgumentException from its check()/require() guards.
-                DomainException::class.java,
-                IllegalStateException::class.java,
-                IllegalArgumentException::class.java,
-                OrderNotFoundException::class.java, // the order the event refers to doesn't exist
+                NonRetryableException::class.java,
+                // A required header is missing: @Header binding fails inside the framework, before the
+                // consumer runs, so the consumer never gets the chance to classify it.
+                MessageHandlingException::class.java,
             )
         }
     }

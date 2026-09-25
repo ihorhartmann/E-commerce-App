@@ -2,13 +2,18 @@ package com.hartmann.interfaceadapter.`in`.kafka
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
+import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import io.mockk.*
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
+import tools.jackson.core.JacksonException
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
 
@@ -106,12 +111,51 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onPaymentEvent - throws without dispatching when the payload is malformed JSON`() {
-        assertThrows<Exception> {
+    fun `onPaymentEvent - throws a NonRetryableException without dispatching when the payload is malformed JSON`() {
+        val exception = assertThrows<NonRetryableException> {
             consumer.onPaymentEvent(KafkaConst.PAYMENT_COMPLETED_EVENT, "msg-6", "corr-6", "not json")
         }
 
+        assertTrue(exception.cause is JacksonException)
         verify { saga wasNot Called }
+    }
+
+    @Test
+    fun `onPaymentEvent - wraps a non-retryable saga failure in a NonRetryableException`() {
+        val orderId = 107L
+        val messageId = "msg-16"
+        val correlationId = "corr-16"
+        val messageType = KafkaConst.PAYMENT_COMPLETED_EVENT
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        val cause = OrderNotFoundException(orderId)
+        every { saga.onPaymentCompleted(message, orderId) } throws cause
+
+        val exception = assertThrows<NonRetryableException> {
+            consumer.onPaymentEvent(messageType, messageId, correlationId, "{\"orderId\":$orderId}")
+        }
+
+        assertSame(cause, exception.cause)
+        verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
+        confirmVerified(saga)
+    }
+
+    @Test
+    fun `onPaymentEvent - rethrows a retryable saga failure unwrapped`() {
+        val orderId = 108L
+        val messageId = "msg-17"
+        val correlationId = "corr-17"
+        val messageType = KafkaConst.PAYMENT_COMPLETED_EVENT
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        val expected = RuntimeException("database unavailable")
+        every { saga.onPaymentCompleted(message, orderId) } throws expected
+
+        val actual = assertThrows<RuntimeException> {
+            consumer.onPaymentEvent(messageType, messageId, correlationId, "{\"orderId\":$orderId}")
+        }
+
+        assertSame(expected, actual)
+        verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
+        confirmVerified(saga)
     }
 
     @Test
@@ -231,11 +275,12 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onShippingEvent - throws without dispatching when the payload is malformed JSON`() {
-        assertThrows<Exception> {
+    fun `onShippingEvent - throws a NonRetryableException without dispatching when the payload is malformed JSON`() {
+        val exception = assertThrows<NonRetryableException> {
             consumer.onShippingEvent(KafkaConst.SHIPMENT_CREATED_EVENT, "msg-15", "corr-15", "not json")
         }
 
+        assertTrue(exception.cause is JacksonException)
         verify { saga wasNot Called }
     }
 }
