@@ -1,22 +1,22 @@
 package com.hartmann.application.service;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
-import com.hartmann.application.port.out.idempotency.ProcessedKafkaMessageStore;
-import com.hartmann.application.port.out.idempotency.dto.KafkaMessageMetadata;
+import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
+import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
+import com.hartmann.application.service.exception.IdempotencyKeyReusedException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
-import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.domain.value.Money;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
@@ -30,7 +30,6 @@ public class RefundServiceImpl implements RefundService {
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
     private final PaymentKafkaProducer paymentKafkaProducer;
-    private final ProcessedKafkaMessageStore processedKafkaMessageStore;
     private final TransactionTemplate transactionTemplate;
 
     public RefundServiceImpl(
@@ -38,14 +37,12 @@ public class RefundServiceImpl implements RefundService {
             PaymentRepository paymentRepository,
             PaymentGateway paymentGateway,
             PaymentKafkaProducer paymentKafkaProducer,
-            ProcessedKafkaMessageStore processedKafkaMessageStore,
             PlatformTransactionManager transactionManager
     ) {
         this.refundRepository = refundRepository;
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
         this.paymentKafkaProducer = paymentKafkaProducer;
-        this.processedKafkaMessageStore = processedKafkaMessageStore;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -55,49 +52,66 @@ public class RefundServiceImpl implements RefundService {
         return refundRepository.findByPaymentId(payment.id());
     }
 
-    // Same shape as PaymentServiceImpl.submitPayment: two separate writes around the gateway call,
-    // no transaction spanning the external HTTP call, so the INITIATED row survives a crash.
+    // Two separate writes around the gateway call, with no transaction spanning the external HTTP
+    // call: the INITIATED row is committed first, so a retry of the same request finds it and resumes
+    // it. The refund stays INITIATED until the gateway gives a definitive answer.
     @Override
-    public Refund submitRefund(@Nullable KafkaMessageMetadata message, long paymentId, Money amount) {
+    public Refund submitRefund(UUID idempotencyKey, @Nullable String correlationId, long paymentId, Money amount) {
         var payment = paymentRepository.getByIdWithRefunds(paymentId);
 
-        var initiatedRefund = createInitiatedRefund(payment, amount, message);
-        if (initiatedRefund == null) {
-            return null;
+        var refund = resolveRefund(payment, idempotencyKey, amount);
+        if (refund.status() != RefundStatus.INITIATED) {
+            return refund;
         }
 
+        var eventCorrelationId = correlationId != null ? correlationId : KafkaUtils.formatKafkaId(payment.orderId());
+
+        // A PaymentGatewayUnavailableException is left to propagate with the refund still INITIATED:
+        // the retry resumes it and resubmits with the same idempotency key, which the gateway answers
+        // with its original result if the first call did go through.
         SubmitRefundResult result;
         try {
-            result = paymentGateway.submitRefund(payment.externalId(), amount);
-        } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
-            refundRepository.updateStatus(initiatedRefund.id(), RefundStatus.FAILED);
+            result = paymentGateway.submitRefund(payment.externalId(), refund);
+        } catch (PaymentGatewayException e) {
+            transactionTemplate.executeWithoutResult(_ -> {
+                refundRepository.updateStatus(refund.id(), RefundStatus.FAILED);
+                paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
+            });
             throw e;
         }
 
-        // Unlike Payment, Stripe often resolves a card pendingRefund synchronously - if it already
-        // landed on a terminal status here, publish now rather than waiting for a webhook that may
-        // never fire (pendingRefund.updated isn't guaranteed for an object that never changes again).
-        var pendingRefund = refundRepository.markPending(initiatedRefund.id(), result.externalId(), result.status());
-        var correlationId = message != null ? message.correlationId() : KafkaUtils.formatKafkaId(payment.orderId());
-        if (pendingRefund.status() == RefundStatus.SUCCEEDED) {
-            paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), pendingRefund.amount());
-        } else if (pendingRefund.status() == RefundStatus.FAILED) {
-            paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
-        }
-
-        return pendingRefund;
+        // Unlike Payment, Stripe often resolves a card refund synchronously - if it already landed on a
+        // terminal status here, publish now rather than waiting for a webhook
+        return transactionTemplate.execute(_ -> {
+            var submittedRefund = refundRepository.markPending(refund.id(), result.externalId(), result.status());
+            if (submittedRefund.status() == RefundStatus.SUCCEEDED) {
+                paymentKafkaProducer.publishRefundCompleted(eventCorrelationId, payment.orderId(), submittedRefund.amount());
+            } else if (submittedRefund.status() == RefundStatus.FAILED) {
+                paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
+            }
+            return submittedRefund;
+        });
     }
 
-    private @Nullable Refund createInitiatedRefund(Payment payment, Money amount, @Nullable KafkaMessageMetadata message) {
-        var draftRefund = payment.createRefund(amount);
-        if (message == null) {
-            return refundRepository.create(draftRefund);
+    private Refund resolveRefund(Payment payment, UUID idempotencyKey, Money amount) {
+        var refund = refundRepository.findByIdempotencyKey(idempotencyKey).orElseGet(() -> {
+            try {
+                return refundRepository.create(payment.createRefund(amount, idempotencyKey));
+            } catch (DuplicateIdempotencyKeyException e) {
+                // Lost the race to a concurrent request with the same key, which inserted its refund
+                // between the find and the create above - resume that one instead. The conflicting row is
+                // committed by the time create returns and refunds are never deleted, so it's always found.
+                return refundRepository.findByIdempotencyKey(idempotencyKey).orElseThrow(() -> new IllegalStateException(
+                        "Refund with idempotency key " + idempotencyKey + " conflicted on insert but can't be found"));
+            }
+        });
+
+        if (!refund.matchesPaymentIdAndAmount(payment.id(), amount)) {
+            throw new IdempotencyKeyReusedException(
+                    "Idempotency key " + idempotencyKey + " was already used for refund " + refund.id());
         }
 
-        return transactionTemplate.execute(_ -> {
-            boolean alreadyProcessed = processedKafkaMessageStore.markProcessed(message);
-            return alreadyProcessed ? null : refundRepository.create(draftRefund);
-        });
+        return refund;
     }
 
     @Override

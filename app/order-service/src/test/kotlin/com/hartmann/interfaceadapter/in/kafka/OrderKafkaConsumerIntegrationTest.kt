@@ -1,12 +1,18 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
 import com.hartmann.frameworks.config.KafkaErrorHandlerConfig
+import com.hartmann.frameworks.config.KafkaTopicConfig
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.common.kafka.KafkaConst
+import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import org.apache.kafka.clients.admin.AdminClient
+import org.apache.kafka.clients.consumer.ConsumerConfig
+import org.apache.kafka.clients.consumer.ConsumerRecord
+import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.clients.producer.KafkaProducer
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.TopicPartition
+import org.apache.kafka.common.header.Headers
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.AfterEach
@@ -17,7 +23,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
-import org.mockito.kotlin.atLeast
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.verifyNoInteractions
@@ -29,6 +34,7 @@ import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
 import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
 import org.springframework.boot.kafka.autoconfigure.KafkaProperties
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.dao.QueryTimeoutException
 import org.springframework.kafka.annotation.EnableKafka
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry
 import org.springframework.kafka.test.utils.ContainerTestUtils
@@ -40,11 +46,12 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.redpanda.RedpandaContainer
 import java.nio.charset.StandardCharsets
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Tag("integration")
-@SpringBootTest(classes = [OrderKafkaConsumer::class, KafkaErrorHandlerConfig::class])
+@SpringBootTest(classes = [OrderKafkaConsumer::class, KafkaErrorHandlerConfig::class, KafkaTopicConfig::class])
 @ImportAutoConfiguration(KafkaAutoConfiguration::class, JacksonAutoConfiguration::class)
 @EnableKafka
 @Testcontainers
@@ -54,20 +61,22 @@ class OrderKafkaConsumerIntegrationTest {
     companion object {
         private val MESSAGE_WAIT_TIMEOUT: Duration = Duration.ofSeconds(20)
 
-        // Longer than MESSAGE_WAIT_TIMEOUT: the offset only advances after 1 initial attempt + 3
-        // retries, 1s apart (KafkaErrorHandlerConfig's FixedBackOff(1000, 3)), so 20s leaves
-        // too little margin.
-        private val RETRY_MESSAGE_WAIT_TIMEOUT: Duration = Duration.ofSeconds(30)
+        // Longer than MESSAGE_WAIT_TIMEOUT: a transiently failing message is only dead-lettered after
+        // 5 retries, i.e. 15s of waiting, so 20s would leave too little margin.
+        private val RETRY_MESSAGE_WAIT_TIMEOUT: Duration = Duration.ofSeconds(45)
+
+        // Deliberately shorter than the 15s a retried message spends backing off before it is dead-lettered:
+        // a non-retryable failure showing up in the DLT within this window is what proves it was not retried.
+        private val NON_RETRYABLE_DEAD_LETTER_TIMEOUT: Duration = Duration.ofSeconds(10)
 
         // Bounds a single synchronous AdminClient round trip to the broker (same value as
         // the Go services' brokerCallTimeout, for the same reason).
         private val BROKER_CALL_TIMEOUT: Duration = Duration.ofSeconds(10)
 
-        // How long to wait before asserting a header-invalid message was never dispatched -
-        // there's no follow-up message here to detect processing via (unlike the offset-based
-        // tests), so this is a fixed settle time rather than a polled condition. Same value as
-        // the Go services' noExtraMessageWait, for the same "confirm nothing extra happened" intent.
-        private val NO_DISPATCH_WAIT: Duration = Duration.ofSeconds(5)
+        private const val MAX_ATTEMPTS = 5
+
+        // Header name Spring's DeadLetterPublishingRecoverer sets on the dead-lettered record.
+        private const val DLT_ORIGINAL_TOPIC_HEADER = "kafka_dlt-original-topic"
 
         @Container
         @JvmStatic
@@ -132,6 +141,27 @@ class OrderKafkaConsumerIntegrationTest {
         }
     }
 
+    // awaitDeadLetter polls the DLT with an independent consumer (its own group, reading from the
+    // start) until a record with the given key shows up - the same view a redrive tool would have.
+    private fun awaitDeadLetter(dltTopic: String, key: String, timeout: Duration): ConsumerRecord<String, String> {
+        val properties = kafkaProperties.buildConsumerProperties()
+        properties[ConsumerConfig.GROUP_ID_CONFIG] = "dlt-reader-${UUID.randomUUID()}"
+        properties[ConsumerConfig.AUTO_OFFSET_RESET_CONFIG] = "earliest"
+
+        KafkaConsumer<String, String>(properties).use { consumer ->
+            consumer.assign(listOf(TopicPartition(dltTopic, 0)))
+
+            val deadline = Instant.now().plus(timeout)
+            while (Instant.now().isBefore(deadline)) {
+                consumer.poll(Duration.ofMillis(500)).firstOrNull { it.key() == key }?.let { return it }
+            }
+        }
+        throw AssertionError("no record with key $key on $dltTopic within $timeout")
+    }
+
+    private fun headerValue(headers: Headers, name: String): String? =
+        headers.lastHeader(name)?.value()?.toString(StandardCharsets.UTF_8)
+
     @Test
     fun `onPaymentEvent - dispatches a PaymentCompleted event to the saga`() {
         val orderId = 100L
@@ -184,36 +214,109 @@ class OrderKafkaConsumerIntegrationTest {
             .untilAsserted { assertEquals(before + 1, committedOffset()) }
     }
 
-    // Now that the listener container factory comes from Spring Boot's own autoconfiguration,
-    // it auto-detects KafkaErrorHandlerConfig's DefaultErrorHandler bean (FixedBackOff(1000, 3))
-    // and actually applies it: 1 initial attempt + 3 retries, 1s apart, then the offset advances
-    // past the poison message. This test still asserts the general shape (advances eventually,
-    // doesn't retry forever) rather than hardcoding the exact attempt count, so it stays
-    // meaningful even if that backoff's numbers are deliberately changed later.
     @Test
-    fun `a message that fails handling is retried and the offset eventually advances`() {
+    fun `onPaymentEvent - a transiently failing message is retried five times then dead-lettered`() {
         val orderId = 104L
         val correlationId = UUID.randomUUID().toString()
-        whenever(saga.onPaymentCompleted(any(), any())).thenThrow(RuntimeException("simulated failure"))
+        val record = eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}")
+        whenever(saga.onPaymentCompleted(any(), eq(orderId))).thenThrow(RuntimeException("simulated failure"))
         val before = committedOffset()
+
+        send(record)
+
+        val deadLetter = awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, correlationId, RETRY_MESSAGE_WAIT_TIMEOUT)
+        verify(saga, times(MAX_ATTEMPTS)).onPaymentCompleted(any(), eq(orderId))
+        assertEquals(record.value(), deadLetter.value())
+        assertEquals(KafkaConst.PAYMENT_EVENTS_TOPIC, headerValue(deadLetter.headers(), DLT_ORIGINAL_TOPIC_HEADER))
+        // The business headers survive the trip so a redrive keeps the same messageId (idempotency)
+        // and correlationId (traceability).
+        assertEquals(headerValue(record.headers(), KafkaConst.MESSAGE_ID), headerValue(deadLetter.headers(), KafkaConst.MESSAGE_ID))
+        assertEquals(correlationId, headerValue(deadLetter.headers(), KafkaConst.CORRELATION_ID))
+        assertEquals(KafkaConst.PAYMENT_COMPLETED_EVENT, headerValue(deadLetter.headers(), KafkaConst.MESSAGE_TYPE))
+        await().atMost(MESSAGE_WAIT_TIMEOUT)
+            .untilAsserted { assertEquals(before + 1, committedOffset()) }
+    }
+
+    // QueryTimeoutException is what a database timeout looks like here: an infrastructure failure
+    // that is deliberately absent from the not-retryable list, unlike the domain-rule failures below.
+    @Test
+    fun `onPaymentEvent - a retryable infrastructure failure is retried five times then dead-lettered`() {
+        val orderId = 105L
+        val correlationId = UUID.randomUUID().toString()
+        whenever(saga.onPaymentCompleted(any(), eq(orderId))).thenThrow(QueryTimeoutException("database timeout"))
 
         send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
 
-        await().atMost(RETRY_MESSAGE_WAIT_TIMEOUT)
-            .untilAsserted { assertEquals(before + 1, committedOffset()) }
-
-        verify(saga, atLeast(1)).onPaymentCompleted(any(), eq(orderId))
+        awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, correlationId, RETRY_MESSAGE_WAIT_TIMEOUT)
+        verify(saga, times(MAX_ATTEMPTS)).onPaymentCompleted(any(), eq(orderId))
     }
 
     @Test
-    fun `a message missing a required header is not dispatched to the saga`() {
-        val record = ProducerRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, "no-headers", "{}")
+    fun `onPaymentEvent - a malformed payload is dead-lettered without being dispatched or retried`() {
+        val correlationId = UUID.randomUUID().toString()
+        val malformedPayload = "this is not json"
+        val before = committedOffset()
+
+        send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, malformedPayload))
+
+        val deadLetter = awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, correlationId, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)
+        assertEquals(malformedPayload, deadLetter.value())
+        verifyNoInteractions(saga)
+        await().atMost(MESSAGE_WAIT_TIMEOUT)
+            .untilAsserted { assertEquals(before + 1, committedOffset()) }
+    }
+
+    @Test
+    fun `onPaymentEvent - a missing order is dead-lettered after a single attempt`() {
+        val orderId = 106L
+        val correlationId = UUID.randomUUID().toString()
+        whenever(saga.onPaymentCompleted(any(), eq(orderId))).thenThrow(OrderNotFoundException(orderId))
+
+        send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
+
+        awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, correlationId, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)
+        verify(saga, times(1)).onPaymentCompleted(any(), eq(orderId))
+    }
+
+    // The domain model signals an invalid transition through check()/require(), i.e. an
+    // IllegalStateException/IllegalArgumentException, not only through its own DomainException.
+    @Test
+    fun `onPaymentEvent - a domain rule violation is dead-lettered after a single attempt`() {
+        val orderId = 107L
+        val correlationId = UUID.randomUUID().toString()
+        whenever(saga.onPaymentCompleted(any(), eq(orderId))).thenThrow(IllegalStateException("refund already confirmed"))
+
+        send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
+
+        awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, correlationId, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)
+        verify(saga, times(1)).onPaymentCompleted(any(), eq(orderId))
+    }
+
+    // Each consumed topic has its own DLT: a failing shipping event must land on shipping.events.DLT,
+    // not on payment.events.DLT.
+    @Test
+    fun `onShippingEvent - a malformed payload is dead-lettered to the shipping events DLT`() {
+        val correlationId = UUID.randomUUID().toString()
+        val malformedPayload = "this is not json"
+
+        send(eventRecord(KafkaConst.SHIPPING_EVENTS_TOPIC, KafkaConst.SHIPMENT_CREATED_EVENT, correlationId, malformedPayload))
+
+        val deadLetter = awaitDeadLetter(KafkaConst.SHIPPING_EVENTS_DLT_TOPIC, correlationId, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)
+        assertEquals(malformedPayload, deadLetter.value())
+        assertEquals(KafkaConst.SHIPPING_EVENTS_TOPIC, headerValue(deadLetter.headers(), DLT_ORIGINAL_TOPIC_HEADER))
+        verifyNoInteractions(saga)
+    }
+
+    @Test
+    fun `a message missing a required header is dead-lettered without being dispatched to the saga`() {
+        val key = "no-headers"
+        val record = ProducerRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, key, "{}")
         record.headers().add(RecordHeader(KafkaConst.MESSAGE_TYPE, KafkaConst.PAYMENT_COMPLETED_EVENT.toByteArray(StandardCharsets.UTF_8)))
         // correlationId header intentionally omitted - @Header binding should fail before the
         // listener body (and therefore the saga) is ever reached.
         send(record)
 
-        TimeUnit.SECONDS.sleep(NO_DISPATCH_WAIT.toSeconds())
+        awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, key, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)
 
         verifyNoInteractions(saga)
     }

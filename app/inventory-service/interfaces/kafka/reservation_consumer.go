@@ -36,35 +36,55 @@ func (rc *ReservationKafkaConsumer) Close() error {
 	return rc.consumer.Close()
 }
 
-func (rc *ReservationKafkaConsumer) handleMessage(messageType kafka.MessageType, messageID string, correlationID string, payload []byte) error {
+func (rc *ReservationKafkaConsumer) handleMessage(ctx context.Context, messageType kafka.MessageType, messageID string, correlationID string, payload []byte) error {
 	msg := idempotencydto.KafkaMessageMetadata{MessageID: messageID, CorrelationID: correlationID, MessageType: string(messageType)}
 
 	switch messageType {
 	case kafka.CancelReservationCommand:
-		var command dto.CancelReservationCommand
-		if err := json.Unmarshal(payload, &command); err != nil {
-			return err
-		}
-		return rc.reservationService.Cancel(context.Background(), msg, command.OrderID)
+		return rc.handleCancelReservation(ctx, msg, payload)
 	case kafka.FulfillReservationCommand:
-		var command dto.FulfillReservationCommand
-		if err := json.Unmarshal(payload, &command); err != nil {
-			return err
-		}
-		return rc.reservationService.Fulfill(context.Background(), msg, command.OrderID)
+		return rc.handleFulfillReservation(ctx, msg, payload)
 	case kafka.HoldReservationCommand:
-		var command dto.HoldReservationCommand
-		if err := json.Unmarshal(payload, &command); err != nil {
-			return err
-		}
-		return rc.reservationService.HoldByCourier(context.Background(), msg, command.OrderID)
+		return rc.handleHoldReservation(ctx, msg, payload)
 	case kafka.RestockCommand:
-		var command dto.RestockCommand
-		if err := json.Unmarshal(payload, &command); err != nil {
-			return err
-		}
-		return rc.productService.Restock(context.Background(), msg, dto.ToReservationDTOs(command.Items))
+		return rc.handleRestock(ctx, msg, payload)
 	default:
 		return nil
 	}
+}
+
+func (rc *ReservationKafkaConsumer) handleCancelReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+	var command dto.CancelReservationCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return NonRetryable(err)
+	}
+
+	return classify(rc.reservationService.Cancel(ctx, msg, command.OrderID))
+}
+
+func (rc *ReservationKafkaConsumer) handleFulfillReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+	var command dto.FulfillReservationCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return NonRetryable(err)
+	}
+
+	return classify(rc.reservationService.Fulfill(ctx, msg, command.OrderID))
+}
+
+func (rc *ReservationKafkaConsumer) handleHoldReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+	var command dto.HoldReservationCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return NonRetryable(err)
+	}
+
+	return classify(rc.reservationService.HoldByCourier(ctx, msg, command.OrderID))
+}
+
+func (rc *ReservationKafkaConsumer) handleRestock(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+	var command dto.RestockCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return NonRetryable(err)
+	}
+
+	return classify(rc.productService.Restock(ctx, msg, dto.ToReservationDTOs(command.Items)))
 }

@@ -23,6 +23,7 @@ import (
 	inkafka "inventoryservice/interfaces/kafka"
 
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -51,6 +52,12 @@ func main() {
 	reservationUseCases := application.NewReservationService(reservationRepository, productRepository, processedMessageStore, txExecutor)
 
 	brokers := []string{config.KafkaHost + ":" + config.KafkaPort}
+	if err = kafkago.CreateTopics(context.Background(), brokers); err != nil {
+		slog.Error("failed to declare kafka topics", "error", err)
+		closeDB(db)
+		os.Exit(1)
+	}
+
 	kafkaConsumer := kafkago.NewKafkaGoMessageConsumer(brokers, kafka.InventoryCommandsTopic, kafka.ConsumerGroupID)
 	reservationConsumer := inkafka.NewReservationKafkaConsumer(kafkaConsumer, reservationUseCases, productUseCases)
 	reservationConsumer.StartAsync()
@@ -95,11 +102,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if sqlDB, sqlErr := db.DB(); sqlErr == nil {
-		if err = sqlDB.Close(); err != nil {
-			slog.Error("error closing database connection", "error", err)
-		}
-	}
+	closeDB(db)
 
 	slog.Info("application shut down successfully")
+}
+
+// closeDB closes db's underlying connection pool, logging a failure instead of returning it -
+// callers use this during shutdown or on a startup failure, when there's nothing left to do with
+// the error but report it.
+func closeDB(db *gorm.DB) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+
+	if err = sqlDB.Close(); err != nil {
+		slog.Error("error closing database connection", "error", err)
+	}
 }

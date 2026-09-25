@@ -1,18 +1,22 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
+import com.hartmann.entities.exception.DomainException
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.RefundCompletedEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
+import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
+import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.messaging.handler.annotation.Header
 import org.springframework.messaging.handler.annotation.Payload
 import org.springframework.stereotype.Component
+import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
 
 @Component
@@ -22,6 +26,19 @@ class OrderKafkaConsumer(
 ) {
     companion object {
         private val LOG = LoggerFactory.getLogger(OrderKafkaConsumer::class.java)
+
+        // These fail the same way on every attempt, so they're wrapped in NonRetryableException and go
+        // straight to the DLT. Anything else (database errors, ...) is transient and retried.
+        private val NON_RETRYABLE_EXCEPTIONS = listOf(
+            JacksonException::class, // payload is not valid JSON / doesn't match the event
+            // The domain model rejects an invalid state transition or invalid value: DomainException
+            // for a disallowed order transition or unsupported currency, IllegalStateException /
+            // IllegalArgumentException from its check()/require() guards.
+            DomainException::class,
+            IllegalStateException::class,
+            IllegalArgumentException::class,
+            OrderNotFoundException::class, // the order the event refers to doesn't exist
+        )
     }
 
     @KafkaListener(topics = [KafkaConst.PAYMENT_EVENTS_TOPIC], groupId = "\${spring.kafka.consumer.group-id}")
@@ -117,17 +134,35 @@ class OrderKafkaConsumer(
     }
 
     /**
-     * Centralizes the receive/dispatch/success logging shared by every listener in this class,
-     * so each `@KafkaListener` method only has to describe its own message-type routing.
+     * Centralizes the receive/dispatch/success logging and the failure classification shared by every
+     * listener in this class, so each `@KafkaListener` method only has to describe its own message-type
+     * routing.
      */
     private fun handleMessage(topic: String, messageType: String, correlationId: String, dispatch: () -> Boolean) {
         LOG.debug("received {} messageType={} correlationId={}", topic, messageType, correlationId)
 
-        if (!dispatch()) {
+        val handled = try {
+            dispatch()
+        } catch (e: Exception) {
+            throw classify(e)
+        }
+
+        if (!handled) {
             LOG.info("ignoring unhandled {} messageType={} correlationId={}", topic, messageType, correlationId)
             return
         }
 
         LOG.info("successfully processed {} messageType={} correlationId={}", topic, messageType, correlationId)
+    }
+
+    /**
+     * Wraps e in NonRetryableException if it, or any exception in its cause chain, is one of
+     * NON_RETRYABLE_EXCEPTIONS, and returns it unchanged otherwise.
+     */
+    private fun classify(e: Exception): Exception {
+        val nonRetryable = generateSequence<Throwable>(e) { it.cause }
+            .any { cause -> NON_RETRYABLE_EXCEPTIONS.any { it.isInstance(cause) } }
+
+        return if (nonRetryable) NonRetryableException(e) else e
     }
 }

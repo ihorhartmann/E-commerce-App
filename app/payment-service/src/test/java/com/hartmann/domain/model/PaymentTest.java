@@ -4,14 +4,17 @@ import com.hartmann.domain.exception.DomainException;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class PaymentTest {
     private static final long EXPIRES_IN_SECONDS = 900;
 
@@ -26,7 +29,7 @@ class PaymentTest {
 
     private Refund testRefund(String amount, RefundStatus status) {
         var now = Instant.now();
-        return Refund.createExisting(1L, 1L, "re_test", money(amount, Currency.USD), status, now, now);
+        return Refund.createExisting(1L, 1L, UUID.randomUUID(), "re_test", money(amount, Currency.USD), status, now, now);
     }
 
     // --- constructor validation ---
@@ -188,7 +191,7 @@ class PaymentTest {
     void createRefund_throwsWhenPaymentIsNotConfirmed() {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", List.of());
 
-        assertThatThrownBy(() -> payment.createRefund(money("10.00", Currency.USD)))
+        assertThatThrownBy(() -> payment.createRefund(money("10.00", Currency.USD), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -196,18 +199,20 @@ class PaymentTest {
     void createRefund_throwsOnCurrencyMismatch() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", List.of());
 
-        assertThatThrownBy(() -> payment.createRefund(money("10.00", Currency.EUR)))
+        assertThatThrownBy(() -> payment.createRefund(money("10.00", Currency.EUR), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
     }
 
     @Test
     void createRefund_buildsAnInitiatedRefundForTheRequestedAmount() {
         var amount = "40.00";
+        var idempotencyKey = UUID.randomUUID();
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", List.of());
 
-        var refund = payment.createRefund(money(amount, Currency.USD));
+        var refund = payment.createRefund(money(amount, Currency.USD), idempotencyKey);
 
         assertThat(refund.paymentId()).isEqualTo(payment.id());
+        assertThat(refund.idempotencyKey()).isEqualTo(idempotencyKey);
         assertThat(refund.amount().amount()).isEqualByComparingTo(amount);
         assertThat(refund.status()).isEqualTo(RefundStatus.INITIATED);
         assertThat(refund.externalId()).isNull();
@@ -217,14 +222,14 @@ class PaymentTest {
     void createRefund_allowsRequestingExactlyTheFullBalanceWithNoExistingRefunds() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", List.of());
 
-        assertThat(payment.createRefund(money("100.00", Currency.USD))).isNotNull();
+        assertThat(payment.createRefund(money("100.00", Currency.USD), UUID.randomUUID())).isNotNull();
     }
 
     @Test
     void createRefund_throwsWhenRequestingMoreThanTheFullBalance() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", List.of());
 
-        assertThatThrownBy(() -> payment.createRefund(money("100.01", Currency.USD)))
+        assertThatThrownBy(() -> payment.createRefund(money("100.01", Currency.USD), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -233,8 +238,8 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00",
                 List.of(testRefund("40.00", RefundStatus.PENDING)));
 
-        assertThat(payment.createRefund(money("60.00", Currency.USD))).isNotNull();
-        assertThatThrownBy(() -> payment.createRefund(money("60.01", Currency.USD)))
+        assertThat(payment.createRefund(money("60.00", Currency.USD), UUID.randomUUID())).isNotNull();
+        assertThatThrownBy(() -> payment.createRefund(money("60.01", Currency.USD), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -243,7 +248,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00",
                 List.of(testRefund("40.00", RefundStatus.FAILED)));
 
-        assertThat(payment.createRefund(money("100.00", Currency.USD))).isNotNull();
+        assertThat(payment.createRefund(money("100.00", Currency.USD), UUID.randomUUID())).isNotNull();
     }
 
     // --- equals ---

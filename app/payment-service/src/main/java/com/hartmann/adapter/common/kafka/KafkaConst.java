@@ -10,6 +10,10 @@ public final class KafkaConst {
     public static final String PAYMENT_EVENTS_TOPIC = "payment.events";
     public static final String PAYMENT_COMMANDS_TOPIC = "payment.commands";
 
+    // Dead-letter topics: one per consumed topic
+    public static final String DLT_SUFFIX = ".DLT";
+    public static final String PAYMENT_COMMANDS_DLT_TOPIC = PAYMENT_COMMANDS_TOPIC + DLT_SUFFIX;
+
     // Message types
     public static final String PAYMENT_COMPLETED_EVENT = "PaymentCompleted";
     public static final String PAYMENT_EXPIRED_EVENT = "PaymentExpired";

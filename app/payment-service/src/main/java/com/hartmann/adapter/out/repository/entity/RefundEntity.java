@@ -7,11 +7,13 @@ import com.hartmann.domain.value.Money;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 // RefundEntity is the refunds table row shape.
 public record RefundEntity(
         long id,
         long paymentId,
+        UUID idempotencyKey,
         String externalId,
         BigDecimal amount,
         String currency,
@@ -23,6 +25,7 @@ public record RefundEntity(
         return new RefundEntity(
                 refund.id(),
                 refund.paymentId(),
+                refund.idempotencyKey(),
                 refund.externalId(),
                 refund.amount().amount(),
                 refund.amount().currency().name(),
@@ -36,6 +39,7 @@ public record RefundEntity(
         return Refund.createExisting(
                 entity.id(),
                 entity.paymentId(),
+                entity.idempotencyKey(),
                 entity.externalId(),
                 new Money(entity.amount(), Currency.valueOf(entity.currency())),
                 RefundStatus.valueOf(entity.status()),

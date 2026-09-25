@@ -19,6 +19,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static org.jooq.impl.DSL.*;
 import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
@@ -40,6 +41,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
 
     private static final Field<Long> REFUND_ID = field(name("refunds", "id"), Long.class);
     private static final Field<Long> REFUND_PAYMENT_ID = field(name("refunds", "payment_id"), Long.class);
+    private static final Field<UUID> REFUND_IDEMPOTENCY_KEY = field(name("refunds", "idempotency_key"), UUID.class);
     private static final Field<String> REFUND_EXTERNAL_ID = field(name("refunds", "external_id"), String.class);
     private static final Field<BigDecimal> REFUND_AMOUNT = field(name("refunds", "amount"), BigDecimal.class);
     private static final Field<String> REFUND_CURRENCY = field(name("refunds", "currency"), String.class);
@@ -135,7 +137,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
     public Payment getByIdWithRefunds(long paymentId) {
         var rows = dsl.select(
                         ID, ORDER_ID, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, CREATED_AT, UPDATED_AT, EXPIRES_AT,
-                        REFUND_ID, REFUND_PAYMENT_ID, REFUND_EXTERNAL_ID, REFUND_AMOUNT, REFUND_CURRENCY,
+                        REFUND_ID, REFUND_PAYMENT_ID, REFUND_IDEMPOTENCY_KEY, REFUND_EXTERNAL_ID, REFUND_AMOUNT, REFUND_CURRENCY,
                         REFUND_STATUS, REFUND_CREATED_AT, REFUND_UPDATED_AT)
                 .from(PAYMENTS)
                 .leftJoin(REFUNDS).on(REFUND_PAYMENT_ID.eq(ID))
@@ -156,6 +158,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
             refunds.add(RefundEntity.toRefund(new RefundEntity(
                     refundId,
                     row.get(REFUND_PAYMENT_ID),
+                    row.get(REFUND_IDEMPOTENCY_KEY),
                     row.get(REFUND_EXTERNAL_ID),
                     row.get(REFUND_AMOUNT),
                     row.get(REFUND_CURRENCY),

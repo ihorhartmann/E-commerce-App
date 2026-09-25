@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 public class Payment {
     // How long a payment attempt stays open (INITIATED/PENDING/ATTEMPT_DECLINED) before the
@@ -111,7 +112,7 @@ public class Payment {
         return expiresAt;
     }
 
-    public Refund createRefund(Money amount) {
+    public Refund createRefund(Money amount, UUID idempotencyKey) {
         if (status != PaymentStatus.CONFIRMED) {
             throw new DomainException("Payment " + id + " is not confirmed and cannot be refunded");
         }
@@ -129,7 +130,7 @@ public class Payment {
                             + " for payment " + id);
         }
 
-        return Refund.createNew(id, null, amount, RefundStatus.INITIATED);
+        return Refund.createNew(id, idempotencyKey, null, amount, RefundStatus.INITIATED);
     }
 
     @Override

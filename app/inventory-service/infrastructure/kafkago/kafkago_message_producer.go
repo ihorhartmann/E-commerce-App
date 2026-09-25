@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"inventoryservice/application/port/common/kafka"
 	"log/slog"
+	"time"
 
 	"inventoryservice/infrastructure/kafka/common"
 
@@ -19,9 +20,12 @@ type kafkaGoMessageProducer struct {
 
 func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessageProducer {
 	writer := &kafkago.Writer{
-		Addr:     kafkago.TCP(brokers...),
-		Topic:    topic,
-		Balancer: &kafkago.LeastBytes{},
+		Addr:         kafkago.TCP(brokers...),
+		Topic:        topic,
+		Balancer:     &kafkago.Hash{},
+		RequiredAcks: kafkago.RequireOne,
+		BatchSize:    100,
+		BatchTimeout: 200 * time.Millisecond,
 	}
 
 	return &kafkaGoMessageProducer{writer: writer}

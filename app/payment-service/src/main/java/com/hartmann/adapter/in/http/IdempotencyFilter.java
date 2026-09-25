@@ -42,7 +42,7 @@ import java.util.Set;
 public class IdempotencyFilter extends OncePerRequestFilter {
     private static final Logger LOG = LoggerFactory.getLogger(IdempotencyFilter.class);
     private static final Duration CLAIM_TTL = Duration.ofSeconds(60);
-    private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+    public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
     private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
     private static final String WEBHOOK_PATH = "/api/v1/webhooks/stripe";
 

@@ -6,6 +6,7 @@ import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.value.Money;
 import com.stripe.StripeClient;
 import com.stripe.exception.ApiConnectionException;
@@ -63,18 +64,23 @@ public class StripePaymentGateway implements PaymentGateway {
     }
 
     @Override
-    public SubmitRefundResult submitRefund(String paymentExternalId, Money amount) {
+    public SubmitRefundResult submitRefund(String paymentExternalId, Refund refund) {
         var params = RefundCreateParams.builder()
                 .setPaymentIntent(paymentExternalId)
-                .setAmount(toMinorUnits(amount))
+                .setAmount(toMinorUnits(refund.amount()))
+                .putMetadata("refundId", String.valueOf(refund.id()))
                 .build();
 
-        LOG.debug("sending create Refund request paymentIntentId={}", paymentExternalId);
-        try {
-            var refund = stripeClient.v1().refunds().create(params);
-            LOG.info("successfully created Refund paymentIntentId={} refundId={}", paymentExternalId, refund.getId());
+        var requestOptions = RequestOptions.builder()
+                .setIdempotencyKey("refund-" + refund.idempotencyKey())
+                .build();
 
-            return new SubmitRefundResult(refund.getId(), StripeRefundStatusMapper.fromStripeStatus(refund.getStatus()));
+        LOG.debug("sending create Refund request paymentIntentId={} refundId={}", paymentExternalId, refund.id());
+        try {
+            var stripeRefund = stripeClient.v1().refunds().create(params, requestOptions);
+            LOG.info("successfully created Refund paymentIntentId={} stripeRefundId={}", paymentExternalId, stripeRefund.getId());
+
+            return new SubmitRefundResult(stripeRefund.getId(), StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus()));
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
             throw new PaymentGatewayUnavailableException(
                     "Stripe is temporarily unavailable for PaymentIntent " + paymentExternalId, e);
