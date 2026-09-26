@@ -200,7 +200,10 @@ Examples:
 * Spring configuration
 * Kafka consumer/producer/error-handler configuration
 
-This layer may depend only on the `Interface adapters` layer.
+This layer may depend only on the `Interface adapters` layer. In rare cases, configuration that wires beans
+together may also reference the `Use cases` layer directly - e.g. a `@Bean` method that must return an outbound
+port interface (per the Dependency Inversion rule in the root CLAUDE.md), or a shared constant such as a Kafka topic
+name in `usecase/port/common`. It must never contain or invoke business logic from it.
 
 These implementations do not contain business-specific logic and are therefore implemented at the framework level.
 

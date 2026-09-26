@@ -24,6 +24,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class StripePaymentGateway implements PaymentGateway {
     private static final Logger LOG = LoggerFactory.getLogger(StripePaymentGateway.class);
+    // Creating a PaymentIntent is called synchronously by the order service, which only retries a
+    // request that never reached this service, so transient Stripe failures are retried here. A
+    // refund is not retried here: its callers already retry it - the Kafka error handler, or an HTTP
+    // client resending its Idempotency-Key - and retrying here too would multiply the attempts.
+    private static final int PAYMENT_INTENT_MAX_NETWORK_RETRIES = 2;
 
     private final StripeClient stripeClient;
 
@@ -47,6 +52,7 @@ public class StripePaymentGateway implements PaymentGateway {
 
         var requestOptions = RequestOptions.builder()
                 .setIdempotencyKey("order-" + orderId)
+                .setMaxNetworkRetries(PAYMENT_INTENT_MAX_NETWORK_RETRIES)
                 .build();
 
         LOG.debug("sending create PaymentIntent request orderId={}", orderId);

@@ -1,8 +1,10 @@
 package com.hartmann.interfaceadapter.`in`.http
 
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
+import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayException
 import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayUnavailableException
+import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.entities.exception.DomainException
 import org.slf4j.Logger
@@ -27,6 +29,10 @@ class GlobalExceptionHandler {
     fun insufficientStock(exception: InsufficientStockException) =
         error(HttpStatus.CONFLICT, exception.message ?: "Insufficient stock")
 
+    @ExceptionHandler(InventoryUnavailableException::class)
+    fun inventoryUnavailable(exception: InventoryUnavailableException) =
+        error(HttpStatus.SERVICE_UNAVAILABLE, exception.message ?: "Inventory service temporarily unavailable")
+
     @ExceptionHandler(PaymentGatewayException::class)
     fun paymentGatewayRejected(exception: PaymentGatewayException) =
         error(HttpStatus.CONFLICT, exception.message ?: "Payment gateway rejected the payment")
@@ -34,6 +40,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(PaymentGatewayUnavailableException::class)
     fun paymentGatewayUnavailable(exception: PaymentGatewayUnavailableException) =
         error(HttpStatus.SERVICE_UNAVAILABLE, exception.message ?: "Payment gateway temporarily unavailable")
+
+    @ExceptionHandler(PaymentServiceUnavailableException::class)
+    fun paymentServiceUnavailable(exception: PaymentServiceUnavailableException) =
+        error(HttpStatus.SERVICE_UNAVAILABLE, exception.message ?: "Payment service temporarily unavailable")
 
     @ExceptionHandler(DomainException::class, IllegalArgumentException::class)
     fun invalid(exception: Exception) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")

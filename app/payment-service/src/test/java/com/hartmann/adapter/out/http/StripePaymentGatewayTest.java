@@ -107,6 +107,18 @@ class StripePaymentGatewayTest {
     }
 
     @Test
+    void submitPayment_letsTheStripeClientRetryTransientNetworkFailures() throws Exception {
+        when(stripeClient.v1().paymentIntents().create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                .thenReturn(mock(PaymentIntent.class));
+
+        gateway.submitPayment(42L, money("79.99"));
+
+        var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeClient.v1().paymentIntents(), times(1)).create(any(PaymentIntentCreateParams.class), optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue().getMaxNetworkRetries()).isEqualTo(2);
+    }
+
+    @Test
     void submitPayment_throwsPaymentGatewayUnavailableExceptionWhenStripeIsTemporarilyUnavailable() throws Exception {
         var orderId = 42L;
         var cause = new ApiConnectionException("connection failed");
@@ -161,6 +173,19 @@ class StripePaymentGatewayTest {
         assertThat(params.getAmount()).isEqualTo(4000L);
         assertThat(params.getPaymentIntent()).isEqualTo(paymentExternalId);
         assertThat(params.getMetadata()).isEqualTo(Map.of("refundId", String.valueOf(refundId)));
+    }
+
+    @Test
+    void submitRefund_leavesNetworkRetriesToTheStripeClientDefault() throws Exception {
+        var stripeRefund = mock(Refund.class);
+        when(stripeRefund.getStatus()).thenReturn("pending");
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenReturn(stripeRefund);
+
+        gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "40.00"));
+
+        var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeClient.v1().refunds(), times(1)).create(any(RefundCreateParams.class), optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue().getMaxNetworkRetries()).isNull();
     }
 
     @Test

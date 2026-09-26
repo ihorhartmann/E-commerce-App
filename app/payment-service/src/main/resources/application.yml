@@ -4,6 +4,10 @@ server:
 stripe:
   secret-key: ${STRIPE_SECRET_KEY}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+  connect-timeout: 2s
+  # The order service's read timeout for a payment call is sized to outlast this read timeout
+  # across every Stripe network retry StripePaymentGateway allows - keep the two in step
+  read-timeout: 8s
 
 spring:
   datasource:

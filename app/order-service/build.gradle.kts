@@ -22,6 +22,8 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation("org.springframework.boot:spring-boot-kafka")
     implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
+    implementation("io.github.resilience4j:resilience4j-retry:2.4.0")
     runtimeOnly("org.postgresql:postgresql:42.7.13")
     testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")

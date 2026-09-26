@@ -156,7 +156,8 @@ Examples:
 * Environment configuration
 * Application configuration
 
-This layer may depend only on the `Adapters` layer.
+This layer may depend only on the `Adapters` layer. In rare cases, configuration that wires beans together may also
+reference the `Application` layer directly - e.g. a `@Bean` method that must return an outbound port interface.
 
 #### Package structure
 

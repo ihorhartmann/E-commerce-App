@@ -11,6 +11,8 @@ import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
+import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
+import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
@@ -135,6 +137,40 @@ class OrderControllerTest {
             content = validPlaceOrderRequestJson
         }.andExpect {
             status { isConflict() }
+            jsonPath("$.error") { value(message) }
+        }
+
+        verify(placeOrderUseCase, times(1)).execute(any())
+    }
+
+    @Test
+    fun `placeOrder - returns 503 when the inventory service is unavailable`() {
+        val message = "inventory down"
+        whenever(placeOrderUseCase.execute(any())).thenThrow(InventoryUnavailableException(message))
+
+        mockMvc.post("/api/v1/orders") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-inventory-unavailable")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.error") { value(message) }
+        }
+
+        verify(placeOrderUseCase, times(1)).execute(any())
+    }
+
+    @Test
+    fun `placeOrder - returns 503 when the payment service is unavailable`() {
+        val message = "payment service down"
+        whenever(placeOrderUseCase.execute(any())).thenThrow(PaymentServiceUnavailableException(message))
+
+        mockMvc.post("/api/v1/orders") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-payment-service-unavailable")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isServiceUnavailable() }
             jsonPath("$.error") { value(message) }
         }
 

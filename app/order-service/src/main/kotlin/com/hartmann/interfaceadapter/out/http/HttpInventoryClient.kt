@@ -5,23 +5,19 @@ import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.interfaceadapter.out.http.dto.toCreateReservationRequest
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.springframework.http.client.ClientHttpRequestInterceptor
-import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
 
-@Component
-class HttpInventoryClient(
-    @Value($$"${inventory-service.url}") baseUrl: String,
-    loggingInterceptor: ClientHttpRequestInterceptor,
-) : InventoryClient {
+/**
+ * Transport-level failures (a ResourceAccessException) are deliberately left to propagate as-is:
+ * Resilience4jInventoryClient, which wraps this client, needs the underlying cause to tell a request
+ * that never reached the inventory service (safe to retry) from one that may have.
+ */
+class HttpInventoryClient(private val restClient: RestClient) : InventoryClient {
     companion object {
         private val LOG = LoggerFactory.getLogger(HttpInventoryClient::class.java)
     }
-
-    private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()
 
     override fun reserve(orderId: Long, items: List<OrderItem>) {
         val request = toCreateReservationRequest(orderId, items)
