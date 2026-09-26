@@ -8,24 +8,20 @@ import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentRequest
 import com.hartmann.interfaceadapter.out.http.dto.SubmitPaymentResponse
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.springframework.http.client.ClientHttpRequestInterceptor
-import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.toEntity
 
-@Component
-class HttpPaymentClient(
-    @Value($$"${payment-service.url}") baseUrl: String,
-    loggingInterceptor: ClientHttpRequestInterceptor,
-) : PaymentClient {
+/**
+ * Transport-level failures (a ResourceAccessException) are deliberately left to propagate as-is:
+ * Resilience4jPaymentClient, which wraps this client, needs the underlying cause to tell a request
+ * that never reached the payment service (safe to retry) from one that may have.
+ */
+class HttpPaymentClient(private val restClient: RestClient) : PaymentClient {
     companion object {
         private val LOG = LoggerFactory.getLogger(HttpPaymentClient::class.java)
     }
-
-    private val restClient = RestClient.builder().baseUrl(baseUrl).requestInterceptor(loggingInterceptor).build()
 
     override fun submitPayment(orderId: Long, amount: Money): SubmitPaymentResult {
         val response = try {
@@ -40,7 +36,7 @@ class HttpPaymentClient(
                 HttpStatus.CONFLICT ->
                     throw PaymentGatewayException("Payment gateway rejected the payment for order $orderId")
                 HttpStatus.SERVICE_UNAVAILABLE ->
-                    throw PaymentGatewayUnavailableException("Payment gateway temporarily unavailable for order $orderId")
+                    throw PaymentGatewayUnavailableException("Payment gateway temporarily unavailable for order $orderId", e)
                 else -> {
                     LOG.error(e.message, e)
                     throw e
