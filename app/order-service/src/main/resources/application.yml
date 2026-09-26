@@ -1,11 +1,18 @@
 server:
   port: ${ORDER_SERVICE_PORT}
 
+http-client:
+  connect-timeout: 2s
+
 inventory-service:
   url: ${INVENTORY_SERVICE_URL}
+  read-timeout: 5s
 
 payment-service:
   url: ${PAYMENT_SERVICE_URL}
+  # Must outlast the payment service's own worst case for one call: up to 3 Stripe attempts
+  # (2s connect + 8s read timeout each) plus the Stripe SDK's backoff between them
+  read-timeout: 35s
 
 spring:
   datasource:
