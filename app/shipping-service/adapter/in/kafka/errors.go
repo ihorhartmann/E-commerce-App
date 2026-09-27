@@ -3,6 +3,7 @@ package kafka
 import (
 	"errors"
 
+	"shippingservice/application/port/out/repository"
 	"shippingservice/domain"
 )
 
@@ -35,7 +36,8 @@ func NonRetryable(err error) error {
 }
 
 var nonRetryableErrors = map[error]struct{}{
-	domain.ErrInvalidInput: {},
+	domain.ErrInvalidInput:              {},
+	repository.ErrShipmentAlreadyExists: {}, // the order already has a shipment - retrying can't change that
 }
 
 // classify marks err as non-retryable if it, or an error it wraps, is one of nonRetryableErrors,

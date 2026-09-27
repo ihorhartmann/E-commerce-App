@@ -10,7 +10,7 @@ import (
 // Shipment is the shipments table row shape.
 type Shipment struct {
 	ID             uint64    `gorm:"primaryKey"`
-	OrderID        uint64    `gorm:"index;not null"`
+	OrderID        uint64    `gorm:"uniqueIndex:uq_shipments_order_id;not null"`
 	TrackingNumber string    `gorm:"uniqueIndex;not null"`
 	City           string    `gorm:"not null"`
 	PostalCode     string    `gorm:"not null"`

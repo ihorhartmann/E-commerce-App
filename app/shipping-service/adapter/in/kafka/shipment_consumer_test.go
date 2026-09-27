@@ -11,6 +11,7 @@ import (
 	"shippingservice/adapter/in/kafka/dto"
 	servicemocks "shippingservice/application/port/in/mocks"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
+	"shippingservice/application/port/out/repository"
 	"shippingservice/domain"
 	"shippingservice/domain/value"
 
@@ -108,6 +109,37 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		}
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want it to wrap %v", err, domain.ErrInvalidInput)
+		}
+	})
+
+	t.Run("marks a service error caused by the order already having a shipment as non-retryable", func(t *testing.T) {
+		orderID := uint64(9)
+		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
+		payload, err := json.Marshal(command)
+		if err != nil {
+			t.Fatalf("failed to marshal command: %v", err)
+		}
+		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
+		if err != nil {
+			t.Fatalf("failed to build expected address: %v", err)
+		}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-7", MessageType: string(commonkafka.CreateShipmentCommand)}
+		serviceErr := fmt.Errorf("%w: order %d", repository.ErrShipmentAlreadyExists, orderID)
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().
+			CreateShipment(gomock.Any(), msg, orderID, wantAddress).
+			Return(nil, serviceErr).
+			Times(1)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, msg.MessageID, msg.CorrelationID, payload)
+
+		if !errors.Is(err, ErrNonRetryable) {
+			t.Errorf("err = %v, want a non-retryable error", err)
+		}
+		if !errors.Is(err, repository.ErrShipmentAlreadyExists) {
+			t.Errorf("err = %v, want it to wrap %v", err, repository.ErrShipmentAlreadyExists)
 		}
 	})
 
