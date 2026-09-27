@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
+import java.util.UUID
 
 @Repository
 class PostgresOutboxMessageRepository(
@@ -36,6 +37,6 @@ class PostgresOutboxMessageRepository(
             return
         }
 
-        transactionTemplate.execute { jpaRepository.markSentBatch(messageIds, sentAt) }
+        transactionTemplate.execute { jpaRepository.markSentBatch(messageIds.map { UUID.fromString(it) }, sentAt) }
     }
 }

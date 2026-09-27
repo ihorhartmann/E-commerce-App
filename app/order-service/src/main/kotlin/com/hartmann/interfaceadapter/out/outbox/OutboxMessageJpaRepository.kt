@@ -5,8 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import java.time.Instant
+import java.util.UUID
 
-interface OutboxMessageJpaRepository : JpaRepository<OutboxMessageRow, String> {
+interface OutboxMessageJpaRepository : JpaRepository<OutboxMessageRow, UUID> {
     @Query(
         value = "SELECT * FROM orders.outbox_messages WHERE sent_at IS NULL ORDER BY created_at LIMIT :limit",
         nativeQuery = true,
@@ -18,5 +19,5 @@ interface OutboxMessageJpaRepository : JpaRepository<OutboxMessageRow, String> {
         value = "UPDATE orders.outbox_messages SET sent_at = :sentAt WHERE id IN (:messageIds)",
         nativeQuery = true,
     )
-    fun markSentBatch(messageIds: List<String>, sentAt: Instant): Int
+    fun markSentBatch(messageIds: List<UUID>, sentAt: Instant): Int
 }

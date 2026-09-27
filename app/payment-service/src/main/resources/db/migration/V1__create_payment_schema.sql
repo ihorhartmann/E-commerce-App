@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS payment.idempotent_http_requests (
 CREATE INDEX idx_idempotent_http_requests_created_at ON payment.idempotent_http_requests (created_at);
 
 CREATE TABLE IF NOT EXISTS payment.outbox_messages (
-                                                       id             VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    id             UUID PRIMARY KEY DEFAULT uuidv7(),
     correlation_id VARCHAR(255) NOT NULL,
     message_type   VARCHAR(255) NOT NULL,
     key            VARCHAR(255) NOT NULL,

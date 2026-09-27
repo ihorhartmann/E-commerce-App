@@ -56,7 +56,7 @@ CREATE TABLE orders.idempotent_http_requests (
 CREATE INDEX idx_idempotent_http_requests_created_at ON orders.idempotent_http_requests (created_at);
 
 CREATE TABLE orders.outbox_messages (
-    id             VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    id             UUID PRIMARY KEY DEFAULT uuidv7(),
     correlation_id VARCHAR(255) NOT NULL,
     message_type   VARCHAR(255) NOT NULL,
     topic          VARCHAR(255) NOT NULL,
