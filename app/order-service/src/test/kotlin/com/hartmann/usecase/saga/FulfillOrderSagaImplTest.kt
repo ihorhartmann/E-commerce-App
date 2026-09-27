@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -70,7 +71,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentCompleted - confirms payment and requests a shipment`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "PaymentCompleted"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -88,7 +89,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentCompleted - skips reprocessing an already-processed message`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "PaymentCompleted"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -105,7 +106,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentFailed - fails the order and cancels the reservation`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "PaymentFailed"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -122,7 +123,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onPaymentExpired - expires the order and cancels the reservation`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "PaymentExpired"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -139,7 +140,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentCreated"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -157,7 +158,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentInDelivery - marks the shipment picked up and fulfills the reservation`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentInDelivery"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -173,7 +174,7 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onShipmentDelivered - fulfills the order without publishing anything`() {
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentDelivered"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -195,7 +196,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCancelled - after pickup only requests a refund - reservation already left the warehouse`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentCancelled"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -214,7 +215,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentCancelled - before pickup also cancels the reservation`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentCancelled"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -232,7 +233,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentLost - requests a refund without touching the reservation`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentLost"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -251,7 +252,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onShipmentReturnedToInventory - publishes a restock command with the order's items`() {
         val orderId = 1L
-        val messageId = "msg-1"
+        val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentReturnedToInventory"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
@@ -273,7 +274,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        val message = KafkaMessageMetadata("msg-1", "corr-1", "RefundCompleted")
+        val message = KafkaMessageMetadata(UUID.randomUUID(), "corr-1", "RefundCompleted")
 
         saga.onRefundCompleted(message, 1, Money(amount, Currency.USD))
 
@@ -287,7 +288,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        val message = KafkaMessageMetadata("msg-1", "corr-1", "RefundFailed")
+        val message = KafkaMessageMetadata(UUID.randomUUID(), "corr-1", "RefundFailed")
 
         saga.onRefundFailed(message, 1)
 

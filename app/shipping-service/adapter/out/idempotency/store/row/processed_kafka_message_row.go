@@ -1,9 +1,13 @@
 package row
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type ProcessedKafkaMessageRow struct {
-	ID            string    `gorm:"primaryKey"`
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
 	CorrelationID string    `gorm:"not null"`
 	MessageType   string    `gorm:"not null"`
 	ProcessedAt   time.Time `gorm:"not null;index"`

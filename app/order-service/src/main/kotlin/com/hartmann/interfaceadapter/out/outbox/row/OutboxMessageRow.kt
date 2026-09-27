@@ -10,6 +10,7 @@ import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.generator.EventType
 import org.hibernate.type.SqlTypes
 import java.time.Instant
+import java.util.UUID
 
 @Entity
 @Table(name = "outbox_messages", schema = "orders")
@@ -17,7 +18,7 @@ class OutboxMessageRow(
     @Id
     @Generated(event = [EventType.INSERT])
     @Column(insertable = false, updatable = false)
-    var id: String = "",
+    var id: UUID? = null,
     var correlationId: String = "",
     var messageType: String = "",
     var topic: String = "",
@@ -29,8 +30,8 @@ class OutboxMessageRow(
     var createdAt: Instant = Instant.now(),
 )
 
-fun toOutboxMessage(row: OutboxMessageRow) = OutboxMessage(
-    messageId = row.id,
+fun toOutboxMessage(row: OutboxMessageRow) = OutboxMessage.createExisting(
+    messageId = requireNotNull(row.id) { "outbox message row has no id" },
     correlationId = row.correlationId,
     messageType = row.messageType,
     topic = row.topic,

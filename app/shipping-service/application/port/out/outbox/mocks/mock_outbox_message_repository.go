@@ -15,35 +15,36 @@ import (
 	dto "shippingservice/application/port/out/outbox/dto"
 	time "time"
 
+	uuid "github.com/google/uuid"
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockOutboxMessageRepository is a mock of OutboxMessageRepository interface.
-type MockOutboxMessageRepository struct {
+// MockMessageRepository is a mock of MessageRepository interface.
+type MockMessageRepository struct {
 	ctrl     *gomock.Controller
-	recorder *MockOutboxMessageRepositoryMockRecorder
+	recorder *MockMessageRepositoryMockRecorder
 	isgomock struct{}
 }
 
-// MockOutboxMessageRepositoryMockRecorder is the mock recorder for MockOutboxMessageRepository.
-type MockOutboxMessageRepositoryMockRecorder struct {
-	mock *MockOutboxMessageRepository
+// MockMessageRepositoryMockRecorder is the mock recorder for MockMessageRepository.
+type MockMessageRepositoryMockRecorder struct {
+	mock *MockMessageRepository
 }
 
-// NewMockOutboxMessageRepository creates a new mock instance.
-func NewMockOutboxMessageRepository(ctrl *gomock.Controller) *MockOutboxMessageRepository {
-	mock := &MockOutboxMessageRepository{ctrl: ctrl}
-	mock.recorder = &MockOutboxMessageRepositoryMockRecorder{mock}
+// NewMockMessageRepository creates a new mock instance.
+func NewMockMessageRepository(ctrl *gomock.Controller) *MockMessageRepository {
+	mock := &MockMessageRepository{ctrl: ctrl}
+	mock.recorder = &MockMessageRepositoryMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockOutboxMessageRepository) EXPECT() *MockOutboxMessageRepositoryMockRecorder {
+func (m *MockMessageRepository) EXPECT() *MockMessageRepositoryMockRecorder {
 	return m.recorder
 }
 
 // FetchUnsent mocks base method.
-func (m *MockOutboxMessageRepository) FetchUnsent(ctx context.Context, limit int) ([]*dto.OutboxMessage, error) {
+func (m *MockMessageRepository) FetchUnsent(ctx context.Context, limit int) ([]*dto.OutboxMessage, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FetchUnsent", ctx, limit)
 	ret0, _ := ret[0].([]*dto.OutboxMessage)
@@ -52,13 +53,13 @@ func (m *MockOutboxMessageRepository) FetchUnsent(ctx context.Context, limit int
 }
 
 // FetchUnsent indicates an expected call of FetchUnsent.
-func (mr *MockOutboxMessageRepositoryMockRecorder) FetchUnsent(ctx, limit any) *gomock.Call {
+func (mr *MockMessageRepositoryMockRecorder) FetchUnsent(ctx, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchUnsent", reflect.TypeOf((*MockOutboxMessageRepository)(nil).FetchUnsent), ctx, limit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchUnsent", reflect.TypeOf((*MockMessageRepository)(nil).FetchUnsent), ctx, limit)
 }
 
 // Insert mocks base method.
-func (m *MockOutboxMessageRepository) Insert(ctx context.Context, message dto.OutboxMessage) error {
+func (m *MockMessageRepository) Insert(ctx context.Context, message dto.OutboxMessage) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Insert", ctx, message)
 	ret0, _ := ret[0].(error)
@@ -66,13 +67,13 @@ func (m *MockOutboxMessageRepository) Insert(ctx context.Context, message dto.Ou
 }
 
 // Insert indicates an expected call of Insert.
-func (mr *MockOutboxMessageRepositoryMockRecorder) Insert(ctx, message any) *gomock.Call {
+func (mr *MockMessageRepositoryMockRecorder) Insert(ctx, message any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Insert", reflect.TypeOf((*MockOutboxMessageRepository)(nil).Insert), ctx, message)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Insert", reflect.TypeOf((*MockMessageRepository)(nil).Insert), ctx, message)
 }
 
 // MarkSentBatch mocks base method.
-func (m *MockOutboxMessageRepository) MarkSentBatch(ctx context.Context, messageIDs []string, sentAt time.Time) error {
+func (m *MockMessageRepository) MarkSentBatch(ctx context.Context, messageIDs []uuid.UUID, sentAt time.Time) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "MarkSentBatch", ctx, messageIDs, sentAt)
 	ret0, _ := ret[0].(error)
@@ -80,7 +81,7 @@ func (m *MockOutboxMessageRepository) MarkSentBatch(ctx context.Context, message
 }
 
 // MarkSentBatch indicates an expected call of MarkSentBatch.
-func (mr *MockOutboxMessageRepositoryMockRecorder) MarkSentBatch(ctx, messageIDs, sentAt any) *gomock.Call {
+func (mr *MockMessageRepositoryMockRecorder) MarkSentBatch(ctx, messageIDs, sentAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkSentBatch", reflect.TypeOf((*MockOutboxMessageRepository)(nil).MarkSentBatch), ctx, messageIDs, sentAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkSentBatch", reflect.TypeOf((*MockMessageRepository)(nil).MarkSentBatch), ctx, messageIDs, sentAt)
 }

@@ -182,7 +182,7 @@ func sendMessage(t *testing.T, producer kafkacommon.KafkaMessageProducer, messag
 	}
 	// The database assigns MessageID on a real insert; this test bypasses the outbox entirely, so
 	// it mints one itself to stand in for that.
-	message.MessageID = uuid.New().String()
+	message.MessageID = uuid.New()
 
 	if err = producer.SendBatch([]*outboxdto.OutboxMessage{&message}); err != nil {
 		t.Fatalf("failed to send message: %v", err)

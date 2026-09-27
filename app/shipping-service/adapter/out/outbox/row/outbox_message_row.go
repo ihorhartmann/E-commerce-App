@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
+
 	"shippingservice/application/port/out/outbox/dto"
 )
 
 type OutboxMessage struct {
-	ID            string     `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	ID            uuid.UUID  `gorm:"primaryKey;type:uuid;default:uuidv7()"`
 	CorrelationID string     `gorm:"not null"`
 	MessageType   string     `gorm:"not null"`
 	Key           string     `gorm:"not null"`

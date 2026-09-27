@@ -8,6 +8,8 @@ import (
 	"shippingservice/adapter/in/kafka/dto"
 	portin "shippingservice/application/port/in"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
+
+	"github.com/google/uuid"
 )
 
 type ShipmentKafkaConsumer struct {
@@ -33,7 +35,7 @@ func (c *ShipmentKafkaConsumer) Close() error {
 	return c.consumer.Close()
 }
 
-func (c *ShipmentKafkaConsumer) handleMessage(ctx context.Context, messageType commonkafka.MessageType, messageID string, correlationID string, payload []byte) error {
+func (c *ShipmentKafkaConsumer) handleMessage(ctx context.Context, messageType commonkafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) error {
 	msg := idempotencydto.KafkaMessageMetadata{MessageID: messageID, CorrelationID: correlationID, MessageType: string(messageType)}
 
 	switch messageType {

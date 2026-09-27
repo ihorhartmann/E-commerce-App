@@ -1,9 +1,13 @@
 package dto
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/google/uuid"
+)
 
 type OutboxMessage struct {
-	MessageID     string
+	MessageID     uuid.UUID
 	CorrelationID string
 	MessageType   string
 	Key           string

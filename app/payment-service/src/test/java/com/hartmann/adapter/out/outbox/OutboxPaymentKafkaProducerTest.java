@@ -37,7 +37,7 @@ class OutboxPaymentKafkaProducerTest {
     }
 
     private OutboxMessage wantOutboxMessage(String correlationId, String messageType, long orderId, Object payload) {
-        return new OutboxMessage(null, correlationId, messageType, KafkaUtils.formatKafkaId(orderId), objectMapper.writeValueAsString(payload));
+        return OutboxMessage.createNew(correlationId, messageType, KafkaUtils.formatKafkaId(orderId), objectMapper.writeValueAsString(payload));
     }
 
     @Test

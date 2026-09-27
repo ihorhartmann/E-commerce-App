@@ -50,7 +50,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 		shipment := testShipment(t, orderID, "TRACK-1", model.InDelivery)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentInDeliveryEvent, correlationID, shipment)
 
-		repository := outboxmocks.NewMockOutboxMessageRepository(gomock.NewController(t))
+		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)
 		producer := NewOutboxShipmentKafkaProducer(repository)
 
@@ -65,7 +65,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 		shipment := testShipment(t, orderID, "TRACK-2", model.Cancelled)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentCancelledEvent, correlationID, shipment)
 
-		repository := outboxmocks.NewMockOutboxMessageRepository(gomock.NewController(t))
+		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)
 		producer := NewOutboxShipmentKafkaProducer(repository)
 
@@ -81,7 +81,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 	t.Run("propagates the repository's error without swallowing it", func(t *testing.T) {
 		wantErr := errors.New("db down")
 		shipment := testShipment(t, 42, "TRACK-1", model.InDelivery)
-		repository := outboxmocks.NewMockOutboxMessageRepository(gomock.NewController(t))
+		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(wantErr).Times(1)
 		producer := NewOutboxShipmentKafkaProducer(repository)
 
@@ -98,7 +98,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentReturnedToInventory(t *testi
 		shipment := testShipment(t, orderID, "TRACK-3", model.Cancelled)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment)
 
-		repository := outboxmocks.NewMockOutboxMessageRepository(gomock.NewController(t))
+		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)
 		producer := NewOutboxShipmentKafkaProducer(repository)
 

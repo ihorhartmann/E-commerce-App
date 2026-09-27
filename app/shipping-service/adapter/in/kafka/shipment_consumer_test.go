@@ -15,6 +15,8 @@ import (
 	"shippingservice/domain/value"
 
 	"go.uber.org/mock/gomock"
+
+	"github.com/google/uuid"
 )
 
 func testAddressDTO() dto.AddressDTO {
@@ -33,7 +35,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: string(commonkafka.CreateShipmentCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: string(commonkafka.CreateShipmentCommand)}
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
@@ -58,7 +60,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-2", CorrelationID: "corr-2", MessageType: string(commonkafka.CreateShipmentCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-2", MessageType: string(commonkafka.CreateShipmentCommand)}
 		serviceErr := errors.New("shipment creation failed")
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
@@ -89,7 +91,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-6", CorrelationID: "corr-6", MessageType: string(commonkafka.CreateShipmentCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-6", MessageType: string(commonkafka.CreateShipmentCommand)}
 		serviceErr := fmt.Errorf("create shipment: %w", domain.ErrInvalidInput)
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
@@ -114,7 +116,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		shipmentService.EXPECT().CreateShipment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err := consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, "msg-3", "corr-3", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
+		if err := consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, uuid.New(), "corr-3", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
 			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
 		}
 	})
@@ -130,7 +132,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		shipmentService.EXPECT().CreateShipment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, "msg-4", "corr-4", payload)
+		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, uuid.New(), "corr-4", payload)
 
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
@@ -145,7 +147,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		shipmentService.EXPECT().CreateShipment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err := consumer.handleMessage(context.Background(), "SomeUnrelatedEvent", "msg-5", "corr-5", []byte(`{}`)); err != nil {
+		if err := consumer.handleMessage(context.Background(), "SomeUnrelatedEvent", uuid.New(), "corr-5", []byte(`{}`)); err != nil {
 			t.Errorf("err = %v, want nil", err)
 		}
 	})

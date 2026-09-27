@@ -9,7 +9,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import tools.jackson.databind.ObjectMapper
@@ -36,7 +36,7 @@ class OutboxOrderKafkaProducerTest {
         producer.publishCancelReservation(correlationId, orderId)
 
         val message = captureInsertedMessage()
-        assertTrue(message.messageId.isEmpty())
+        assertThrows<IllegalStateException> { message.messageId }
         assertEquals(KafkaConst.INVENTORY_COMMANDS_TOPIC, message.topic)
         assertEquals(orderId.toString(), message.key)
         assertEquals(KafkaConst.CANCEL_RESERVATION_COMMAND, message.messageType)

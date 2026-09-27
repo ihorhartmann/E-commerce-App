@@ -49,7 +49,7 @@ func toLibMessages(messages []*dto.OutboxMessage) []kafkago.Message {
 			Headers: []kafkago.Header{
 				{Key: kafka.MessageTypeHeader, Value: []byte(message.MessageType)},
 				{Key: kafka.CorrelationIDHeader, Value: []byte(message.CorrelationID)},
-				{Key: kafka.MessageIDHeader, Value: []byte(message.MessageID)},
+				{Key: kafka.MessageIDHeader, Value: []byte(message.MessageID.String())},
 			},
 			Value: message.Payload,
 		}

@@ -8,6 +8,8 @@ import (
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/interfaces/kafka/common"
 	"inventoryservice/interfaces/kafka/dto"
+
+	"github.com/google/uuid"
 )
 
 type ReservationKafkaConsumer struct {
@@ -36,7 +38,7 @@ func (rc *ReservationKafkaConsumer) Close() error {
 	return rc.consumer.Close()
 }
 
-func (rc *ReservationKafkaConsumer) handleMessage(ctx context.Context, messageType kafka.MessageType, messageID string, correlationID string, payload []byte) error {
+func (rc *ReservationKafkaConsumer) handleMessage(ctx context.Context, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) error {
 	msg := idempotencydto.KafkaMessageMetadata{MessageID: messageID, CorrelationID: correlationID, MessageType: string(messageType)}
 
 	switch messageType {

@@ -14,6 +14,8 @@ import (
 	"inventoryservice/application/port/out/repository/mocks"
 	"inventoryservice/domain"
 	"inventoryservice/domain/model"
+
+	"github.com/google/uuid"
 )
 
 // noopTxExecutor runs the action directly, without an actual transaction - the application-layer
@@ -172,7 +174,7 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 }
 
 func TestProductServiceImpl_Restock(t *testing.T) {
-	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "Restock"}
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "Restock"}
 
 	t.Run("adds the requested quantity back to each product", func(t *testing.T) {
 		p1ID := uint64(1)

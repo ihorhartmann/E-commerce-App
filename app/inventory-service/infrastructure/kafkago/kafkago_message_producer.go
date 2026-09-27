@@ -37,6 +37,11 @@ func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlation
 		return err
 	}
 
+	messageID, err := uuid.NewV7()
+	if err != nil {
+		return err
+	}
+
 	slog.Debug("sending kafka message", "messageType", messageType, "correlationId", correlationId, "key", key)
 
 	err = p.writer.WriteMessages(context.Background(), kafkago.Message{
@@ -44,7 +49,7 @@ func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlation
 		Headers: []kafkago.Header{
 			{Key: kafka.MessageTypeHeader, Value: []byte(messageType.String())},
 			{Key: kafka.CorrelationIDHeader, Value: []byte(correlationId)},
-			{Key: kafka.MessageIDHeader, Value: []byte(uuid.New().String())},
+			{Key: kafka.MessageIDHeader, Value: []byte(messageID.String())},
 		},
 		Value: value,
 	})

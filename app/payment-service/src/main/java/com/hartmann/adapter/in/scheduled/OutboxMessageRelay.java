@@ -56,7 +56,7 @@ public class OutboxMessageRelay {
         record.headers()
                 .add(new RecordHeader(KafkaConst.MESSAGE_TYPE, message.messageType().getBytes(StandardCharsets.UTF_8)))
                 .add(new RecordHeader(KafkaConst.CORRELATION_ID, message.correlationId().getBytes(StandardCharsets.UTF_8)))
-                .add(new RecordHeader(KafkaConst.MESSAGE_ID, message.messageId().getBytes(StandardCharsets.UTF_8)));
+                .add(new RecordHeader(KafkaConst.MESSAGE_ID, message.messageId().toString().getBytes(StandardCharsets.UTF_8)));
         return record;
     }
 }

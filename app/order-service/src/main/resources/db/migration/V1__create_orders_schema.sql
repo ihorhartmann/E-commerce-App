@@ -34,7 +34,7 @@ CREATE TABLE orders.order_items (
 CREATE INDEX idx_order_items_order_id ON orders.order_items (order_id);
 
 CREATE TABLE orders.processed_kafka_messages (
-    id             VARCHAR(255) PRIMARY KEY,
+    id             UUID PRIMARY KEY,
     correlation_id VARCHAR(255) NOT NULL,
     message_type   VARCHAR(255) NOT NULL,
     processed_at   TIMESTAMPTZ NOT NULL
@@ -56,7 +56,7 @@ CREATE TABLE orders.idempotent_http_requests (
 CREATE INDEX idx_idempotent_http_requests_created_at ON orders.idempotent_http_requests (created_at);
 
 CREATE TABLE orders.outbox_messages (
-    id             VARCHAR(255) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    id             UUID PRIMARY KEY DEFAULT uuidv7(),
     correlation_id VARCHAR(255) NOT NULL,
     message_type   VARCHAR(255) NOT NULL,
     topic          VARCHAR(255) NOT NULL,

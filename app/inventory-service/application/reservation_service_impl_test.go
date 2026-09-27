@@ -13,6 +13,8 @@ import (
 	"inventoryservice/application/port/out/repository/mocks"
 	"inventoryservice/domain/model"
 	"inventoryservice/domain/values"
+
+	"github.com/google/uuid"
 )
 
 func testMoney(t *testing.T) values.Money {
@@ -144,7 +146,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 }
 
 func TestReservationServiceImpl_Cancel(t *testing.T) {
-	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "CancelReservation"}
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "CancelReservation"}
 
 	t.Run("deletes every reservation held for the order", func(t *testing.T) {
 		orderID := uint64(100)
@@ -200,7 +202,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 }
 
 func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
-	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "HoldReservation"}
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "HoldReservation"}
 
 	t.Run("moves every reservation for the order to the courier", func(t *testing.T) {
 		orderID := uint64(100)
@@ -292,7 +294,7 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 }
 
 func TestReservationServiceImpl_Fulfill(t *testing.T) {
-	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "FulfillReservation"}
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "FulfillReservation"}
 
 	t.Run("removes on-hand stock and deletes the fulfilled reservations", func(t *testing.T) {
 		orderID := uint64(100)

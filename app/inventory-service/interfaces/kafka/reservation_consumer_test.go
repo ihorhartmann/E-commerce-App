@@ -16,6 +16,8 @@ import (
 	"inventoryservice/domain"
 
 	"go.uber.org/mock/gomock"
+
+	"github.com/google/uuid"
 )
 
 func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
@@ -25,7 +27,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: string(kafka.CancelReservationCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: string(kafka.CancelReservationCommand)}
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationService.EXPECT().Cancel(gomock.Any(), msg, orderID).Return(nil).Times(1)
@@ -43,7 +45,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-8", CorrelationID: "corr-8", MessageType: string(kafka.CancelReservationCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-8", MessageType: string(kafka.CancelReservationCommand)}
 		serviceErr := errors.New("cancel reservation failed")
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
@@ -67,7 +69,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-9", CorrelationID: "corr-9", MessageType: string(kafka.CancelReservationCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-9", MessageType: string(kafka.CancelReservationCommand)}
 		serviceErr := fmt.Errorf("cancel reservation: %w", domain.ErrInvalidInput)
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
@@ -91,7 +93,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-2", CorrelationID: "corr-2", MessageType: string(kafka.FulfillReservationCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-2", MessageType: string(kafka.FulfillReservationCommand)}
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationService.EXPECT().Fulfill(gomock.Any(), msg, orderID).Return(nil).Times(1)
@@ -109,7 +111,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-3", CorrelationID: "corr-3", MessageType: string(kafka.HoldReservationCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-3", MessageType: string(kafka.HoldReservationCommand)}
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationService.EXPECT().HoldByCourier(gomock.Any(), msg, orderID).Return(nil).Times(1)
@@ -129,7 +131,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 			t.Fatalf("failed to marshal command: %v", err)
 		}
 		wantReservationDTOs := []dto.ReservationDTO{{ProductID: 1, Quantity: 5}, {ProductID: 2, Quantity: 3}}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-4", CorrelationID: "corr-4", MessageType: string(kafka.RestockCommand)}
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-4", MessageType: string(kafka.RestockCommand)}
 
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationService.EXPECT().Cancel(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
@@ -150,7 +152,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		productService.EXPECT().Restock(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewReservationKafkaConsumer(nil, reservationService, productService)
 
-		if err := consumer.handleMessage(context.Background(), kafka.CancelReservationCommand, "msg-5", "corr-5", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
+		if err := consumer.handleMessage(context.Background(), kafka.CancelReservationCommand, uuid.New(), "corr-5", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
 			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
 		}
 	})
@@ -162,7 +164,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		productService.EXPECT().Restock(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewReservationKafkaConsumer(nil, reservationService, productService)
 
-		if err := consumer.handleMessage(context.Background(), kafka.RestockCommand, "msg-6", "corr-6", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
+		if err := consumer.handleMessage(context.Background(), kafka.RestockCommand, uuid.New(), "corr-6", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
 			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
 		}
 	})
@@ -173,7 +175,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		productService := mocks.NewMockProductService(gomock.NewController(t))
 		consumer := NewReservationKafkaConsumer(nil, reservationService, productService)
 
-		if err := consumer.handleMessage(context.Background(), "SomeUnrelatedEvent", "msg-7", "corr-7", []byte(`{}`)); err != nil {
+		if err := consumer.handleMessage(context.Background(), "SomeUnrelatedEvent", uuid.New(), "corr-7", []byte(`{}`)); err != nil {
 			t.Errorf("err = %v, want nil", err)
 		}
 	})

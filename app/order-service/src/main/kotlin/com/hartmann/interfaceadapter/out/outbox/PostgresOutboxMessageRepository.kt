@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
+import java.util.UUID
 
 @Repository
 class PostgresOutboxMessageRepository(
@@ -31,7 +32,7 @@ class PostgresOutboxMessageRepository(
     override fun fetchUnsent(limit: Int): List<OutboxMessage> =
         jpaRepository.findUnsent(limit).map { toOutboxMessage(it) }
 
-    override fun markSentBatch(messageIds: List<String>, sentAt: Instant) {
+    override fun markSentBatch(messageIds: List<UUID>, sentAt: Instant) {
         if (messageIds.isEmpty()) {
             return
         }
