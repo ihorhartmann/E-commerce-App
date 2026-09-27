@@ -32,11 +32,11 @@ class PostgresOutboxMessageRepository(
     override fun fetchUnsent(limit: Int): List<OutboxMessage> =
         jpaRepository.findUnsent(limit).map { toOutboxMessage(it) }
 
-    override fun markSentBatch(messageIds: List<String>, sentAt: Instant) {
+    override fun markSentBatch(messageIds: List<UUID>, sentAt: Instant) {
         if (messageIds.isEmpty()) {
             return
         }
 
-        transactionTemplate.execute { jpaRepository.markSentBatch(messageIds.map { UUID.fromString(it) }, sentAt) }
+        transactionTemplate.execute { jpaRepository.markSentBatch(messageIds, sentAt) }
     }
 }

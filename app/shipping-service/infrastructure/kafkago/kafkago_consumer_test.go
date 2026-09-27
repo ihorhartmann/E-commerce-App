@@ -10,6 +10,8 @@ import (
 	"shippingservice/adapter/common/kafka"
 
 	kafkago "github.com/segmentio/kafka-go"
+
+	"github.com/google/uuid"
 )
 
 // mockDeadLetterProducer records the messages published to it, failing the first failFirst calls.
@@ -39,11 +41,11 @@ func (f *mockDeadLetterProducer) Close() error {
 func TestParseHeaders(t *testing.T) {
 	t.Run("extracts messageType, messageId and correlationId when all headers are present", func(t *testing.T) {
 		wantMessageType := kafka.CreateShipmentCommand
-		wantMessageID := "msg-1"
+		wantMessageID := uuid.New()
 		wantCorrelationID := "corr-1"
 		headers := []kafkago.Header{
 			{Key: kafka.MessageTypeHeader, Value: []byte(wantMessageType.String())},
-			{Key: kafka.MessageIDHeader, Value: []byte(wantMessageID)},
+			{Key: kafka.MessageIDHeader, Value: []byte(wantMessageID.String())},
 			{Key: kafka.CorrelationIDHeader, Value: []byte(wantCorrelationID)},
 		}
 
@@ -64,12 +66,12 @@ func TestParseHeaders(t *testing.T) {
 
 	t.Run("ignores unknown headers while extracting the required ones", func(t *testing.T) {
 		wantMessageType := kafka.CreateShipmentCommand
-		wantMessageID := "msg-1"
+		wantMessageID := uuid.New()
 		wantCorrelationID := "corr-1"
 		headers := []kafkago.Header{
 			{Key: "someOtherHeader", Value: []byte("ignored")},
 			{Key: kafka.MessageTypeHeader, Value: []byte(wantMessageType.String())},
-			{Key: kafka.MessageIDHeader, Value: []byte(wantMessageID)},
+			{Key: kafka.MessageIDHeader, Value: []byte(wantMessageID.String())},
 			{Key: kafka.CorrelationIDHeader, Value: []byte(wantCorrelationID)},
 		}
 
@@ -90,7 +92,7 @@ func TestParseHeaders(t *testing.T) {
 
 	t.Run("returns an error when the messageType header is missing", func(t *testing.T) {
 		headers := []kafkago.Header{
-			{Key: kafka.MessageIDHeader, Value: []byte("msg-1")},
+			{Key: kafka.MessageIDHeader, Value: []byte(uuid.NewString())},
 			{Key: kafka.CorrelationIDHeader, Value: []byte("corr-1")},
 		}
 
@@ -110,10 +112,22 @@ func TestParseHeaders(t *testing.T) {
 		}
 	})
 
+	t.Run("returns an error when the messageId header is not a UUID", func(t *testing.T) {
+		headers := []kafkago.Header{
+			{Key: kafka.MessageTypeHeader, Value: []byte(kafka.CreateShipmentCommand.String())},
+			{Key: kafka.MessageIDHeader, Value: []byte("not-a-uuid")},
+			{Key: kafka.CorrelationIDHeader, Value: []byte("corr-1")},
+		}
+
+		if _, _, _, err := parseHeaders(headers); err == nil {
+			t.Error("err = nil, want an error")
+		}
+	})
+
 	t.Run("returns an error when the correlationId header is missing", func(t *testing.T) {
 		headers := []kafkago.Header{
 			{Key: kafka.MessageTypeHeader, Value: []byte(kafka.CreateShipmentCommand.String())},
-			{Key: kafka.MessageIDHeader, Value: []byte("msg-1")},
+			{Key: kafka.MessageIDHeader, Value: []byte(uuid.NewString())},
 		}
 
 		if _, _, _, err := parseHeaders(headers); err == nil {
@@ -138,7 +152,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 			Value:     []byte(`{"orderId":7}`),
 			Headers: []kafkago.Header{
 				{Key: kafka.MessageTypeHeader, Value: []byte(kafka.CreateShipmentCommand.String())},
-				{Key: kafka.MessageIDHeader, Value: []byte("msg-1")},
+				{Key: kafka.MessageIDHeader, Value: []byte(uuid.NewString())},
 				{Key: kafka.CorrelationIDHeader, Value: []byte("corr-1")},
 			},
 		}
@@ -155,7 +169,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		producer := &mockDeadLetterProducer{}
 		gotHandlerCalls := 0
 
-		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			return nil
 		})
@@ -176,7 +190,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		failures := 2
 		gotHandlerCalls := 0
 
-		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			if gotHandlerCalls <= failures {
 				return errors.New("transient failure")
@@ -200,7 +214,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		source := validMessage()
 		gotHandlerCalls := 0
 
-		got := newConsumer(producer).process(context.Background(), source, func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), source, func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			return errors.New("transient failure")
 		})
@@ -223,7 +237,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		producer := &mockDeadLetterProducer{}
 		gotHandlerCalls := 0
 
-		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			return inkafka.NonRetryable(errors.New("permanent failure"))
 		})
@@ -245,7 +259,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		message.Headers = nil
 		gotHandlerCalls := 0
 
-		got := newConsumer(producer).process(context.Background(), message, func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), message, func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			return nil
 		})
@@ -268,7 +282,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		gotHandlerCalls := 0
 
-		got := consumer.process(ctx, validMessage(), func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := consumer.process(ctx, validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
 			cancel()
 			return errors.New("transient failure")
@@ -291,7 +305,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 	t.Run("returns false without dead-lettering when the dead-letter publish fails", func(t *testing.T) {
 		producer := &mockDeadLetterProducer{failFirst: 1 << 30}
 
-		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, string, string, []byte) error {
+		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			return inkafka.NonRetryable(errors.New("permanent failure"))
 		})
 

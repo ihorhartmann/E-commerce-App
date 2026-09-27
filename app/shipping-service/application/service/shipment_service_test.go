@@ -15,6 +15,8 @@ import (
 	repomocks "shippingservice/application/port/out/repository/mocks"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
+
+	"github.com/google/uuid"
 )
 
 // noopTxExecutor runs the action directly, without an actual transaction - the application-layer
@@ -88,7 +90,7 @@ func TestShipmentServiceImpl_GetByTrackingNumber(t *testing.T) {
 }
 
 func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
-	msg := idempotencydto.KafkaMessageMetadata{MessageID: "msg-1", CorrelationID: "corr-1", MessageType: "CreateShipment"}
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "CreateShipment"}
 
 	t.Run("persists a new shipment via the repository, then publishes the status change", func(t *testing.T) {
 		orderID := uint64(100)

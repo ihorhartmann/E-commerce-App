@@ -52,7 +52,7 @@ class OutboxOrderKafkaProducer(
     }
 
     private fun insert(correlationId: String, topic: String, messageType: String, key: String, payload: Any) {
-        val message = OutboxMessage(
+        val message = OutboxMessage.createNew(
             correlationId = correlationId,
             messageType = messageType,
             topic = topic,

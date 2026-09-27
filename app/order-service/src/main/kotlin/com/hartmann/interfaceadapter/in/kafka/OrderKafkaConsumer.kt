@@ -6,6 +6,7 @@ import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.RefundCompletedEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
+import com.hartmann.interfaceadapter.`in`.kafka.exception.InvalidMessageHeaderException
 import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
@@ -18,6 +19,7 @@ import org.springframework.messaging.handler.annotation.Payload
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.ObjectMapper
+import java.util.UUID
 
 @Component
 class OrderKafkaConsumer(
@@ -38,6 +40,7 @@ class OrderKafkaConsumer(
             IllegalStateException::class,
             IllegalArgumentException::class,
             OrderNotFoundException::class, // the order the event refers to doesn't exist
+            InvalidMessageHeaderException::class, // a header is present but unusable (messageId isn't a UUID)
         )
     }
 
@@ -48,8 +51,7 @@ class OrderKafkaConsumer(
         @Header(KafkaConst.CORRELATION_ID) correlationId: String,
         @Payload payload: String,
     ) {
-        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        handleMessage(KafkaConst.PAYMENT_EVENTS_TOPIC, messageType, correlationId) {
+        handleMessage(KafkaConst.PAYMENT_EVENTS_TOPIC, messageType, messageId, correlationId) { message ->
             when (messageType) {
                 KafkaConst.PAYMENT_COMPLETED_EVENT -> {
                     saga.onPaymentCompleted(message, objectMapper.readValue(payload, OrderIdEvent::class.java).orderId)
@@ -89,8 +91,7 @@ class OrderKafkaConsumer(
         @Header(KafkaConst.CORRELATION_ID) correlationId: String,
         @Payload payload: String,
     ) {
-        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        handleMessage(KafkaConst.SHIPPING_EVENTS_TOPIC, messageType, correlationId) {
+        handleMessage(KafkaConst.SHIPPING_EVENTS_TOPIC, messageType, messageId, correlationId) { message ->
             when (messageType) {
                 KafkaConst.SHIPMENT_CREATED_EVENT -> {
                     val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
@@ -138,11 +139,17 @@ class OrderKafkaConsumer(
      * listener in this class, so each `@KafkaListener` method only has to describe its own message-type
      * routing.
      */
-    private fun handleMessage(topic: String, messageType: String, correlationId: String, dispatch: () -> Boolean) {
+    private fun handleMessage(
+        topic: String,
+        messageType: String,
+        messageId: String,
+        correlationId: String,
+        dispatch: (KafkaMessageMetadata) -> Boolean,
+    ) {
         LOG.debug("received {} messageType={} correlationId={}", topic, messageType, correlationId)
 
         val handled = try {
-            dispatch()
+            dispatch(KafkaMessageMetadata(parseMessageId(messageId), correlationId, messageType))
         } catch (e: Exception) {
             throw classify(e)
         }
@@ -154,6 +161,13 @@ class OrderKafkaConsumer(
 
         LOG.info("successfully processed {} messageType={} correlationId={}", topic, messageType, correlationId)
     }
+
+    private fun parseMessageId(messageId: String): UUID =
+        try {
+            UUID.fromString(messageId)
+        } catch (e: IllegalArgumentException) {
+            throw InvalidMessageHeaderException("messageId $messageId is not a UUID", e)
+        }
 
     /**
      * Wraps e in NonRetryableException if it, or any exception in its cause chain, is one of

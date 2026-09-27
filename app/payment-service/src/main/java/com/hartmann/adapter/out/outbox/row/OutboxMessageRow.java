@@ -19,6 +19,6 @@ public record OutboxMessageRow(
     }
 
     public static OutboxMessage toOutboxMessage(OutboxMessageRow row) {
-        return new OutboxMessage(row.id().toString(), row.correlationId(), row.messageType(), row.key(), row.payload());
+        return OutboxMessage.createExisting(row.id(), row.correlationId(), row.messageType(), row.key(), row.payload());
     }
 }

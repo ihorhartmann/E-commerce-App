@@ -5,8 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import java.time.Instant
+import java.util.UUID
 
-interface ProcessedKafkaMessageJpaRepository : JpaRepository<ProcessedKafkaMessageRow, String> {
+interface ProcessedKafkaMessageJpaRepository : JpaRepository<ProcessedKafkaMessageRow, UUID> {
     @Modifying
     @Query(
         value = """
@@ -33,5 +34,5 @@ interface ProcessedKafkaMessageJpaRepository : JpaRepository<ProcessedKafkaMessa
         """,
         nativeQuery = true,
     )
-    fun insertIfAbsent(id: String, correlationId: String, messageType: String, processedAt: Instant): Int
+    fun insertIfAbsent(id: UUID, correlationId: String, messageType: String, processedAt: Instant): Int
 }

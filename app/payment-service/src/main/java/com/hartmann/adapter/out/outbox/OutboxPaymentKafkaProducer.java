@@ -43,7 +43,7 @@ public class OutboxPaymentKafkaProducer implements PaymentKafkaProducer {
 
     private void insert(String correlationId, String messageType, long orderId, Object payload) {
         var key = KafkaUtils.formatKafkaId(orderId);
-        var message = new OutboxMessage(null, correlationId, messageType, key, objectMapper.writeValueAsString(payload));
+        var message = OutboxMessage.createNew(correlationId, messageType, key, objectMapper.writeValueAsString(payload));
         outboxRepository.insert(message);
     }
 }

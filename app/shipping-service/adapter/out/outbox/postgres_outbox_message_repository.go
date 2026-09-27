@@ -10,6 +10,8 @@ import (
 	"shippingservice/application/port/out/outbox/dto"
 
 	"gorm.io/gorm"
+
+	"github.com/google/uuid"
 )
 
 type postgresOutboxMessageRepository struct {
@@ -49,7 +51,7 @@ func (r *postgresOutboxMessageRepository) FetchUnsent(ctx context.Context, limit
 	return messages, nil
 }
 
-func (r *postgresOutboxMessageRepository) MarkSentBatch(ctx context.Context, messageIDs []string, sentAt time.Time) error {
+func (r *postgresOutboxMessageRepository) MarkSentBatch(ctx context.Context, messageIDs []uuid.UUID, sentAt time.Time) error {
 	if len(messageIDs) == 0 {
 		return nil
 	}

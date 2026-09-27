@@ -2,6 +2,7 @@ package com.hartmann.usecase.port.out.outbox
 
 import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
 import java.time.Instant
+import java.util.UUID
 
 interface OutboxMessageRepository {
     /**
@@ -14,5 +15,5 @@ interface OutboxMessageRepository {
     fun fetchUnsent(limit: Int): List<OutboxMessage>
 
     /** Records that every message in messageIds was published to Kafka at sentAt. */
-    fun markSentBatch(messageIds: List<String>, sentAt: Instant)
+    fun markSentBatch(messageIds: List<UUID>, sentAt: Instant)
 }

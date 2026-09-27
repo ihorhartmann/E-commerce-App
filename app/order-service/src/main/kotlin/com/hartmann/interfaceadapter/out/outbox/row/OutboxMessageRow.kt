@@ -30,8 +30,8 @@ class OutboxMessageRow(
     var createdAt: Instant = Instant.now(),
 )
 
-fun toOutboxMessage(row: OutboxMessageRow) = OutboxMessage(
-    messageId = requireNotNull(row.id) { "outbox message row has no id" }.toString(),
+fun toOutboxMessage(row: OutboxMessageRow) = OutboxMessage.createExisting(
+    messageId = requireNotNull(row.id) { "outbox message row has no id" },
     correlationId = row.correlationId,
     messageType = row.messageType,
     topic = row.topic,

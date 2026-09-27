@@ -49,7 +49,7 @@ class OutboxMessageRelay(
         record.headers()
             .add(RecordHeader(KafkaConst.MESSAGE_TYPE, message.messageType.toByteArray(StandardCharsets.UTF_8)))
             .add(RecordHeader(KafkaConst.CORRELATION_ID, message.correlationId.toByteArray(StandardCharsets.UTF_8)))
-            .add(RecordHeader(KafkaConst.MESSAGE_ID, message.messageId.toByteArray(StandardCharsets.UTF_8)))
+            .add(RecordHeader(KafkaConst.MESSAGE_ID, message.messageId.toString().toByteArray(StandardCharsets.UTF_8)))
         return record
     }
 }

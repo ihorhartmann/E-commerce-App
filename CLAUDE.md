@@ -165,6 +165,7 @@ database connections and other resources if there are such.
       `PaymentResponse.from(payment)` for the `to<Dto>` direction, and `SubmitPaymentRequest.toMoney(request)`
       (taking the DTO as an explicit parameter, not `request.toMoney()`) for the `from<Dto>` direction. Never place
       either on the domain class, since that would make the domain layer depend on DTOs.
+* A DTO may contain factory logic for its creation (e.g. `OutboxMessage.createNew`/`createExisting`).
 * Trivial DTOs built by direct 1:1 field copying (no nested DTOs, no list/collection transformation, no type
   conversion or validation) do not need a mapping function at all - construct them directly at the call site, e.g.
   `CancelReservationCommand(orderId)`. Add a `from`/`to` function only when skipping it would leave visible mapping

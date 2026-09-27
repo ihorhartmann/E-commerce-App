@@ -3,6 +3,7 @@ package kafkago
 import (
 	"context"
 	"errors"
+	"fmt"
 	"inventoryservice/application/port/common/kafka"
 	inkafka "inventoryservice/interfaces/kafka"
 	"io"
@@ -13,6 +14,7 @@ import (
 
 	"inventoryservice/interfaces/kafka/common"
 
+	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
@@ -21,7 +23,7 @@ const (
 	startupFetchTimeout = 5 * time.Second
 )
 
-type messageHandler = func(ctx context.Context, messageType kafka.MessageType, messageID string, correlationID string, payload []byte) error
+type messageHandler = func(ctx context.Context, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) error
 
 type kafkaGoMessageConsumer struct {
 	common.KafkaMessageConsumer
@@ -60,7 +62,7 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 	}
 }
 
-func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, messageType kafka.MessageType, messageId string, correlationId string, payload []byte) error) {
+func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, messageType kafka.MessageType, messageId uuid.UUID, correlationId string, payload []byte) error) {
 	c.wg.Go(func() {
 		// Until the first message arrives, each fetch has a time limit, and if it runs out we
 		// throw away the Reader and start a new one. This is needed because kafka-go's Reader
@@ -209,29 +211,34 @@ func (c *kafkaGoMessageConsumer) Close() error {
 	return nil
 }
 
-// parseHeaders extracts the headers a handler actually relies on - messageType for routing and
-// correlationId for tracing, both required - and messageId, which is carried through as an opaque
-// string without being validated as a UUID.
-func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, messageID string, correlationID string, err error) {
+// parseHeaders extracts the headers a handler actually relies on, all required: messageType for
+// routing, messageId - which must be a UUID - as the idempotency key, and correlationId for tracing.
+func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, messageID uuid.UUID, correlationID string, err error) {
+	var rawMessageID string
 	for _, header := range headers {
 		switch header.Key {
 		case kafka.MessageTypeHeader:
 			messageType = kafka.MessageType(header.Value)
 		case kafka.MessageIDHeader:
-			messageID = string(header.Value)
+			rawMessageID = string(header.Value)
 		case kafka.CorrelationIDHeader:
 			correlationID = string(header.Value)
 		}
 	}
 
 	if messageType == "" {
-		return "", "", "", errors.New("missing messageType header")
+		return "", uuid.Nil, "", errors.New("missing messageType header")
 	}
-	if messageID == "" {
-		return "", "", "", errors.New("missing messageID header")
+	if rawMessageID == "" {
+		return "", uuid.Nil, "", errors.New("missing messageID header")
 	}
 	if correlationID == "" {
-		return "", "", "", errors.New("missing correlationId header")
+		return "", uuid.Nil, "", errors.New("missing correlationId header")
+	}
+
+	messageID, err = uuid.Parse(rawMessageID)
+	if err != nil {
+		return "", uuid.Nil, "", fmt.Errorf("messageId %q is not a UUID: %w", rawMessageID, err)
 	}
 
 	return messageType, messageID, correlationID, nil

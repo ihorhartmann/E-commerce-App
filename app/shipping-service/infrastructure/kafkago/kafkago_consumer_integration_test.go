@@ -221,7 +221,7 @@ func sendMessage(t *testing.T, producer common.KafkaMessageProducer, messageType
 	}
 	// The database assigns MessageID on a real insert; this test bypasses the outbox entirely, so
 	// it mints one itself to stand in for that.
-	message.MessageID = uuid.New().String()
+	message.MessageID = uuid.New()
 
 	if err = producer.SendBatch([]*dto.OutboxMessage{&message}); err != nil {
 		t.Fatalf("failed to send message: %v", err)
@@ -230,7 +230,7 @@ func sendMessage(t *testing.T, producer common.KafkaMessageProducer, messageType
 
 type consumedMessage struct {
 	messageType   kafka.MessageType
-	messageID     string
+	messageID     uuid.UUID
 	correlationID string
 	payload       []byte
 }
@@ -257,7 +257,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 1)
-		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id uuid.UUID, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -270,8 +270,8 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 			if msg.correlationID != wantCorrelationID {
 				t.Errorf("correlationID = %v, want %v", msg.correlationID, wantCorrelationID)
 			}
-			if _, err := uuid.Parse(msg.messageID); err != nil {
-				t.Errorf("messageID = %q is not a valid uuid: %v", msg.messageID, err)
+			if msg.messageID == uuid.Nil {
+				t.Errorf("messageID = %v, want a non-nil uuid", msg.messageID)
 			}
 			var gotPayload payload
 			if err := json.Unmarshal(msg.payload, &gotPayload); err != nil {
@@ -306,7 +306,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 2)
-		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id uuid.UUID, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -347,7 +347,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer1 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
 		processed1 := make(chan struct{})
-		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
+		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, _ string, _ []byte) error {
 			close(processed1)
 			return nil
 		})
@@ -370,7 +370,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer2 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer2", consumer2) })
 		received2 := make(chan consumedMessage, 1)
-		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id uuid.UUID, corr string, p []byte) error {
 			received2 <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -404,7 +404,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		t.Cleanup(func() { closeQuietly(t, "consumer1", consumer1) })
 		received1 := make(chan struct{})
 		var closeReceived1 sync.Once
-		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
+		consumer1.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, _ string, _ []byte) error {
 			closeReceived1.Do(func() { close(received1) })
 			return errors.New("simulated handler failure")
 		})
@@ -421,7 +421,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer2 := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer2", consumer2) })
 		received2 := make(chan consumedMessage, 1)
-		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer2.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id uuid.UUID, corr string, p []byte) error {
 			received2 <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -472,7 +472,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		received := make(chan consumedMessage, 2)
-		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id, corr string, p []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, mt kafka.MessageType, id uuid.UUID, corr string, p []byte) error {
 			received <- consumedMessage{mt, id, corr, p}
 			return nil
 		})
@@ -517,7 +517,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		var handlerCalls atomic.Int32
-		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, _ string, _ []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, _ string, _ []byte) error {
 			handlerCalls.Add(1)
 			return errors.New(handlerFailure)
 		})
@@ -585,7 +585,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		t.Cleanup(func() { closeQuietly(t, "consumer", consumer) })
 		var failingCalls atomic.Int32
 		received := make(chan string, 2)
-		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, correlationID string, _ []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, correlationID string, _ []byte) error {
 			if correlationID == failingCorrelationID {
 				failingCalls.Add(1)
 				return incommon.NonRetryable(errors.New("permanent failure"))
@@ -631,7 +631,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		failingHandled := make(chan struct{})
 		var closeFailingHandled sync.Once
 		received := make(chan string, 2)
-		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ string, correlationID string, _ []byte) error {
+		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, correlationID string, _ []byte) error {
 			if correlationID == failingCorrelationID {
 				closeFailingHandled.Do(func() { close(failingHandled) })
 				return incommon.NonRetryable(errors.New("permanent failure"))

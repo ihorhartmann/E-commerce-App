@@ -4,6 +4,7 @@ import com.hartmann.application.port.out.outbox.dto.OutboxMessage;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 public interface OutboxMessageRepository {
     /**
@@ -16,5 +17,5 @@ public interface OutboxMessageRepository {
     List<OutboxMessage> fetchUnsent(int limit);
 
     /** Records that every message in messageIds was published to Kafka at sentAt. */
-    void markSentBatch(List<String> messageIds, Instant sentAt);
+    void markSentBatch(List<UUID> messageIds, Instant sentAt);
 }

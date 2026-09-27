@@ -7,6 +7,8 @@ import (
 
 	kafkacommon "shippingservice/adapter/out/kafka/common"
 	"shippingservice/application/port/out/outbox"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -57,7 +59,7 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 		return
 	}
 
-	messageIDs := make([]string, len(messages))
+	messageIDs := make([]uuid.UUID, len(messages))
 	for i, message := range messages {
 		messageIDs[i] = message.MessageID
 	}

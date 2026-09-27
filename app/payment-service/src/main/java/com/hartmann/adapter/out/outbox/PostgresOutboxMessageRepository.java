@@ -76,14 +76,14 @@ public class PostgresOutboxMessageRepository implements OutboxMessageRepository 
     }
 
     @Override
-    public void markSentBatch(List<String> messageIds, Instant sentAt) {
+    public void markSentBatch(List<UUID> messageIds, Instant sentAt) {
         if (messageIds.isEmpty()) {
             return;
         }
 
         dsl.update(OUTBOX_MESSAGES)
                 .set(SENT_AT, sentAt.atOffset(ZoneOffset.UTC))
-                .where(ID.in(messageIds.stream().map(UUID::fromString).toList()))
+                .where(ID.in(messageIds))
                 .execute();
     }
 }
