@@ -1,6 +1,5 @@
 package com.hartmann.usecase.saga
 
-import com.hartmann.entities.model.Order
 import com.hartmann.entities.value.Money
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.ProcessedKafkaMessageStore
@@ -35,7 +34,7 @@ class FulfillOrderSagaImpl(
             val updatedOrder = order.failPayment()
 
             orderRepository.save(updatedOrder)
-            cancelReservations(updatedOrder, message.correlationId)
+            orderKafkaProducer.publishCancelReservation(message.correlationId, updatedOrder.id)
         }
 
     @Transactional
@@ -45,7 +44,7 @@ class FulfillOrderSagaImpl(
             val updatedOrder = order.expirePayment()
 
             orderRepository.save(updatedOrder)
-            cancelReservations(updatedOrder, message.correlationId)
+            orderKafkaProducer.publishCancelReservation(message.correlationId, updatedOrder.id)
         }
 
     @Transactional
@@ -79,24 +78,25 @@ class FulfillOrderSagaImpl(
     override fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
-            val wasPickedUp = order.wasPickedUp()
-            val updatedOrder = order.cancelShipment().requestRefund()
+            val updatedOrder = order.cancelShipment()
 
             orderRepository.save(updatedOrder)
-            if (!wasPickedUp) {
-                cancelReservations(updatedOrder, message.correlationId)
+            if (updatedOrder.requiresReservationRelease()) {
+                orderKafkaProducer.publishCancelReservation(message.correlationId, updatedOrder.id)
             }
-            publishRefundRequested(updatedOrder, message.correlationId)
+            val refundAmount = updatedOrder.refundAmount()
+            orderKafkaProducer.publishRefundRequested(message.correlationId, updatedOrder.id, refundAmount.amount, refundAmount.currency.name)
         }
 
     @Transactional
     override fun onShipmentLost(message: KafkaMessageMetadata, orderId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
-            val updatedOrder = order.loseShipment().requestRefund()
+            val updatedOrder = order.loseShipment()
 
             orderRepository.save(updatedOrder)
-            publishRefundRequested(updatedOrder, message.correlationId)
+            val refundAmount = updatedOrder.refundAmount()
+            orderKafkaProducer.publishRefundRequested(message.correlationId, updatedOrder.id, refundAmount.amount, refundAmount.currency.name)
         }
 
     @Transactional
@@ -136,14 +136,5 @@ class FulfillOrderSagaImpl(
         }
 
         action()
-    }
-
-    private fun cancelReservations(order: Order, correlationId: String) {
-        orderKafkaProducer.publishCancelReservation(correlationId, order.id)
-    }
-
-    private fun publishRefundRequested(order: Order, correlationId: String) {
-        val total = order.totalPrice()
-        orderKafkaProducer.publishRefundRequested(correlationId, order.id, total.amount, total.currency.name)
     }
 }

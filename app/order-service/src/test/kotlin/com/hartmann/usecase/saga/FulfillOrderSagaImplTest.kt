@@ -209,7 +209,9 @@ class FulfillOrderSagaImplTest {
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }
-        verify(exactly = 1) { orderKafkaProducer.publishRefundRequested(correlationId, orderId, any(), any()) }
+        verify(exactly = 1) {
+            orderKafkaProducer.publishRefundRequested(correlationId, orderId, BigDecimal("20.00"), Currency.USD.name)
+        }
     }
 
     @Test
@@ -270,7 +272,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onRefundCompleted - confirms the refund with the reported amount and currency`() {
         val amount = BigDecimal("20.00")
-        val order = orderInDelivery().cancelShipment().requestRefund()
+        val order = orderInDelivery().cancelShipment()
         stubGetOrder(order)
         stubSave()
 
@@ -284,7 +286,7 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onRefundFailed - flags the refund as failed`() {
-        val order = orderInDelivery().cancelShipment().requestRefund()
+        val order = orderInDelivery().cancelShipment()
         stubGetOrder(order)
         stubSave()
 

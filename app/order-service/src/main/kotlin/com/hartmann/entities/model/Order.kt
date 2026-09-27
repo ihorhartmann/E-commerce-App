@@ -84,13 +84,17 @@ class Order private constructor(
         return withState(status = OrderStatus.FULFILLED, shipment = currentShipment.deliver())
     }
 
-    /** The goods are lost, not coming back - no return to wait for. */
+    /**
+     * The goods are lost, not coming back - no return to wait for. The order was already paid, so a
+     * refund of [refundAmount] is requested right away.
+     */
     fun loseShipment(): Order {
         requireStatus("lose shipment", OrderStatus.PROCESSING)
         return withState(
             status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.SHIPMENT_LOST,
             awaitingReturn = false,
+            refund = RefundInfo.request(),
         )
     }
 
@@ -100,6 +104,7 @@ class Order private constructor(
      * moves it to CANCEL_REQUESTED, but flags [awaitingReturn] - [returnToStock] and
      * [confirmRefund] each check whether the other already completed (refund confirmation is
      * typically much faster than the courier's physical trip back) before finalizing to CANCELLED.
+     * Either way the order was already paid, so a refund of [refundAmount] is requested right away.
      */
     fun cancelShipment(): Order {
         requireStatus("cancel shipment", OrderStatus.PROCESSING)
@@ -107,12 +112,20 @@ class Order private constructor(
             status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
             awaitingReturn = wasPickedUp(),
+            refund = RefundInfo.request(),
         )
     }
 
-    fun requestRefund(): Order {
-        requireStatus("request refund", OrderStatus.CANCEL_REQUESTED)
-        return withState(refund = RefundInfo.request())
+    /** A cancelled order is refunded in full - everything the customer paid for its items. */
+    fun refundAmount(): Money = totalPrice()
+
+    /**
+     * Whether this order is cancelled while its stock is still reserved in inventory, so the reservation
+     * must be released. Stock is reserved only if the reservation succeeded, and stays reserved until pickup.
+     */
+    fun requiresReservationRelease(): Boolean = when (cancellationReason) {
+        null, CancellationReason.RESERVATION_FAILED, CancellationReason.OUT_OF_STOCK -> false
+        else -> !wasPickedUp()
     }
 
     /** The courier physically returned the goods. Finalizes to CANCELLED if the refund already confirmed. */
@@ -127,11 +140,14 @@ class Order private constructor(
      * Payment service confirmed the refund actually went through. Finalizes to CANCELLED unless
      * this cancellation still needs the goods to physically come back first ([awaitingReturn]) -
      * in that case only the refund is recorded, and [returnToStock] finalizes the order once the
-     * goods arrive.
+     * goods arrive. The refunded amount must be the requested [refundAmount].
      */
     fun confirmRefund(amount: Money): Order {
         requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
         val currentRefund = requireNotNull(refund) { "order $id has no refund request to confirm" }
+        if (amount != refundAmount()) {
+            throw DomainException("refunded $amount for order $id, but ${refundAmount()} was requested")
+        }
         val nextStatus = if (awaitingReturn) OrderStatus.CANCEL_REQUESTED else OrderStatus.CANCELLED
         return withState(status = nextStatus, refund = currentRefund.confirm(amount))
     }
