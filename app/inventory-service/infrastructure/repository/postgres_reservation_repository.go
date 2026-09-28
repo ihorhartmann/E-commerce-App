@@ -75,17 +75,6 @@ func (r *postgresReservationRepository) GetByID(ctx context.Context, reservation
 	return entity.FromStockReservationEntity(&row)
 }
 
-func (r *postgresReservationRepository) FindByProductIDs(ctx context.Context, productIDs []uint64) ([]*model.StockReservation, error) {
-	db := transaction.FromWithDefault(ctx, r.db)
-
-	var rows []*entity.StockReservation
-	if err := db.WithContext(ctx).Find(&rows, "product_id IN ?", productIDs).Error; err != nil {
-		return nil, err
-	}
-
-	return toReservations(rows)
-}
-
 func (r *postgresReservationRepository) GetByOrderID(ctx context.Context, orderID uint64) ([]*model.StockReservation, error) {
 	db := transaction.FromWithDefault(ctx, r.db)
 

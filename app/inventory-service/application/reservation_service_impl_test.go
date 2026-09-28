@@ -35,6 +35,17 @@ func testProduct(t *testing.T, id uint64, quantity uint) *model.Product {
 	return product
 }
 
+// testProductStock builds a stored product together with its stock reservations, as GetStocksByIDs
+// returns it.
+func testProductStock(t *testing.T, id uint64, quantity uint, reservations ...*model.StockReservation) *model.ProductStock {
+	t.Helper()
+	stock, err := model.NewProductStock(testProduct(t, id, quantity), reservations)
+	if err != nil {
+		t.Fatalf("unexpected error building test product stock: %v", err)
+	}
+	return stock
+}
+
 // testNewProduct builds a not-yet-persisted product (id 0), as it exists before a repository
 // assigns it a real id on Create.
 func testNewProduct(t *testing.T, quantity uint) *model.Product {
@@ -59,12 +70,11 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 	t.Run("creates reservations when enough stock is available", func(t *testing.T) {
 		productID := uint64(1)
 		quantity := uint(4)
-		product := testProduct(t, productID, 10)
+		stock := testProductStock(t, productID, 10)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
-		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
+		productRepo.EXPECT().GetStocksByIDs(gomock.Any(), []uint64{productID}).Return([]*model.ProductStock{stock}, nil).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 			func(ctx context.Context, reservations []*model.StockReservation) ([]*model.StockReservation, error) {
 				return reservations, nil
@@ -88,17 +98,59 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 
 	t.Run("fails when requested quantity exceeds available stock", func(t *testing.T) {
 		productID := uint64(1)
-		product := testProduct(t, productID, 3)
+		stock := testProductStock(t, productID, 3)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
-		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, nil).Times(1)
+		productRepo.EXPECT().GetStocksByIDs(gomock.Any(), []uint64{productID}).Return([]*model.ProductStock{stock}, nil).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
 		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 4}})
+
+		if !errors.Is(err, model.ErrInsufficientStock) {
+			t.Errorf("err = %v, want %v", err, model.ErrInsufficientStock)
+		}
+	})
+
+	t.Run("fails when the product's existing reservations leave too little available", func(t *testing.T) {
+		productID := uint64(1)
+		existing := testReservation(t, 1, productID, 99, 8, model.ReservationHolderBuyer)
+		stock := testProductStock(t, productID, 10, existing)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+
+		productRepo.EXPECT().GetStocksByIDs(gomock.Any(), []uint64{productID}).Return([]*model.ProductStock{stock}, nil).Times(1)
+		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		// 10 on hand, 8 already reserved by another order: only 2 left.
+		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 3}})
+
+		if !errors.Is(err, model.ErrInsufficientStock) {
+			t.Errorf("err = %v, want %v", err, model.ErrInsufficientStock)
+		}
+	})
+
+	t.Run("counts earlier lines of the same product against later ones", func(t *testing.T) {
+		productID := uint64(1)
+		productIDs := []uint64{productID, productID}
+		stock := testProductStock(t, productID, 10)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+
+		productRepo.EXPECT().GetStocksByIDs(gomock.Any(), productIDs).Return([]*model.ProductStock{stock}, nil).Times(1)
+		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		// 6 + 5 exceeds the 10 on hand, though each line alone would fit.
+		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{
+			{ProductID: productID, Quantity: 6},
+			{ProductID: productID, Quantity: 5},
+		})
 
 		if !errors.Is(err, model.ErrInsufficientStock) {
 			t.Errorf("err = %v, want %v", err, model.ErrInsufficientStock)
@@ -111,28 +163,7 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
-		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
-		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), gomock.Any()).Times(0)
-		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
-
-		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
-
-		_, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: 1}})
-
-		if !errors.Is(err, wantErr) {
-			t.Errorf("err = %v, want %v", err, wantErr)
-		}
-	})
-
-	t.Run("propagates an error from fetching existing reservations", func(t *testing.T) {
-		productID := uint64(1)
-		wantErr := errors.New("db down")
-		product := testProduct(t, productID, 10)
-		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
-
-		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
-		reservationRepo.EXPECT().FindByProductIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
+		productRepo.EXPECT().GetStocksByIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})

@@ -14,14 +14,16 @@ type ProductResponse struct {
 	Available   uint     `json:"available"`
 }
 
-func ToProductResponse(product *model.Product) *ProductResponse {
+func ToProductResponse(stock *model.ProductStock) *ProductResponse {
+	product := stock.Product()
+
 	return &ProductResponse{
 		ID:          product.ID(),
 		Name:        product.Name(),
 		Description: product.Description(),
 		Price:       toMoneyDTO(product.Price()),
 		Quantity:    product.Quantity(),
-		Reserved:    product.Reserved(),
-		Available:   product.Available(),
+		Reserved:    stock.Reserved(),
+		Available:   stock.Available(),
 	}
 }

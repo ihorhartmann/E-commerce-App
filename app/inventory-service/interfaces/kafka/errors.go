@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"inventoryservice/domain"
+	"inventoryservice/domain/model"
 )
 
 // ErrNonRetryable marks a message-handling failure that repeats identically on every attempt (a
@@ -35,7 +36,11 @@ func NonRetryable(err error) error {
 }
 
 var nonRetryableErrors = map[error]struct{}{
-	domain.ErrInvalidInput: {},
+	domain.ErrInvalidInput:               {},
+	model.ErrInsufficientStock:           {},
+	model.ErrForeignReservation:          {},
+	model.ErrInvalidHolderTransition:     {},
+	model.ErrReservationNotHeldByCourier: {},
 }
 
 // classify marks err as non-retryable if it, or an error it wraps, is one of nonRetryableErrors,

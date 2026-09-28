@@ -14,6 +14,7 @@ import (
 	kafkadto "inventoryservice/interfaces/kafka/dto"
 
 	"inventoryservice/domain"
+	"inventoryservice/domain/model"
 
 	"go.uber.org/mock/gomock"
 
@@ -84,6 +85,38 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		}
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want it to wrap %v", err, domain.ErrInvalidInput)
+		}
+	})
+
+	t.Run("marks a service error caused by a domain rule rejecting the command as non-retryable", func(t *testing.T) {
+		domainErrs := []error{
+			model.ErrInsufficientStock,
+			model.ErrForeignReservation,
+			model.ErrInvalidHolderTransition,
+			model.ErrReservationNotHeldByCourier,
+		}
+		for _, domainErr := range domainErrs {
+			orderID := uint64(45)
+			payload, err := json.Marshal(kafkadto.FulfillReservationCommand{OrderID: orderID})
+			if err != nil {
+				t.Fatalf("failed to marshal command: %v", err)
+			}
+			msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-10", MessageType: string(kafka.FulfillReservationCommand)}
+			serviceErr := fmt.Errorf("fulfill reservation: %w", domainErr)
+
+			reservationService := mocks.NewMockReservationService(gomock.NewController(t))
+			reservationService.EXPECT().Fulfill(gomock.Any(), msg, orderID).Return(serviceErr).Times(1)
+			productService := mocks.NewMockProductService(gomock.NewController(t))
+			consumer := NewReservationKafkaConsumer(nil, reservationService, productService)
+
+			err = consumer.handleMessage(context.Background(), kafka.FulfillReservationCommand, msg.MessageID, msg.CorrelationID, payload)
+
+			if !errors.Is(err, ErrNonRetryable) {
+				t.Errorf("%v: err = %v, want a non-retryable error", domainErr, err)
+			}
+			if !errors.Is(err, domainErr) {
+				t.Errorf("err = %v, want it to wrap %v", err, domainErr)
+			}
 		}
 	})
 

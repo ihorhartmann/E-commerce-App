@@ -29,13 +29,17 @@ func testMoney(t *testing.T) values.Money {
 	return money
 }
 
-func testProduct(t *testing.T, id uint64, quantity uint) *model.Product {
+func testProductStock(t *testing.T, id uint64, quantity uint, reservations ...*model.StockReservation) *model.ProductStock {
 	t.Helper()
 	product, err := model.NewExistingProduct(id, "Widget", "a widget", testMoney(t), quantity)
 	if err != nil {
 		t.Fatalf("unexpected error building test product: %v", err)
 	}
-	return product
+	stock, err := model.NewProductStock(product, reservations)
+	if err != nil {
+		t.Fatalf("unexpected error building test product stock: %v", err)
+	}
+	return stock
 }
 
 func newProductTestApp(productService *mocks.MockProductService) *fiber.App {
@@ -63,7 +67,7 @@ func TestProductController_CreateProduct(t *testing.T) {
 	t.Run("returns 201 with the created product", func(t *testing.T) {
 		quantity := uint(10)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		createdProduct := testProduct(t, 1, quantity)
+		createdProduct := testProductStock(t, 1, quantity)
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Return(createdProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
@@ -161,7 +165,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		id := uint64(1)
 		quantity := uint(20)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		updatedProduct := testProduct(t, id, quantity)
+		updatedProduct := testProductStock(t, id, quantity)
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(updatedProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
@@ -231,11 +235,15 @@ func TestProductController_UpdateProduct(t *testing.T) {
 }
 
 func TestProductController_GetProduct(t *testing.T) {
-	t.Run("returns 200 with the product", func(t *testing.T) {
+	t.Run("returns 200 with the product and its reserved and available quantity", func(t *testing.T) {
 		id := uint64(1)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		product := testProduct(t, id, 10)
-		productService.EXPECT().Get(gomock.Any(), id).Return(product, nil).Times(1)
+		reservation, err := model.NewStockReservation(1, id, 100, 3, model.ReservationHolderBuyer)
+		if err != nil {
+			t.Fatalf("unexpected error building test reservation: %v", err)
+		}
+		stock := testProductStock(t, id, 10, reservation)
+		productService.EXPECT().Get(gomock.Any(), id).Return(stock, nil).Times(1)
 		app := newProductTestApp(productService)
 
 		req := httptest.NewRequest("GET", "/products/1", nil)
@@ -253,6 +261,12 @@ func TestProductController_GetProduct(t *testing.T) {
 		}
 		if body["name"] != "Widget" {
 			t.Errorf("name = %v, want %q", body["name"], "Widget")
+		}
+		if body["reserved"] != float64(3) {
+			t.Errorf("reserved = %v, want 3", body["reserved"])
+		}
+		if body["available"] != float64(7) {
+			t.Errorf("available = %v, want 7", body["available"])
 		}
 	})
 

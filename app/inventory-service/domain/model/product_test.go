@@ -44,9 +44,6 @@ func TestNewProduct(t *testing.T) {
 		if product.Quantity() != quantity {
 			t.Errorf("Quantity() = %d, want %d", product.Quantity(), quantity)
 		}
-		if len(product.StockReservations()) != 0 {
-			t.Errorf("StockReservations() = %v, want empty", product.StockReservations())
-		}
 	})
 
 	t.Run("rejects a blank name", func(t *testing.T) {
@@ -84,129 +81,53 @@ func TestNewExistingProduct(t *testing.T) {
 	})
 }
 
-func TestProduct_Reserved(t *testing.T) {
-	t.Run("is zero with no reservations", func(t *testing.T) {
+func TestProduct_Fulfill(t *testing.T) {
+	t.Run("removes the reservation's quantity from on-hand stock", func(t *testing.T) {
 		product := newTestProduct(t, 10)
+		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderCourier)
 
-		if product.Reserved() != 0 {
-			t.Errorf("Reserved() = %d, want 0", product.Reserved())
-		}
-	})
-
-	t.Run("sums the quantity across all reservations", func(t *testing.T) {
-		product := newTestProduct(t, 10)
-		r1, _ := NewStockReservation(1, product.ID(), 100, 3, ReservationHolderBuyer)
-		r2, _ := NewStockReservation(2, product.ID(), 101, 2, ReservationHolderCourier)
-		productWithReservations := product.WithStockReservations([]*StockReservation{r1, r2})
-
-		if productWithReservations.Reserved() != 5 {
-			t.Errorf("Reserved() = %d, want 5", productWithReservations.Reserved())
-		}
-	})
-}
-
-func TestProduct_Available(t *testing.T) {
-	t.Run("subtracts reserved from on-hand quantity", func(t *testing.T) {
-		product := newTestProduct(t, 10)
-		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
-		productWithReservations := product.WithStockReservations([]*StockReservation{reservation})
-
-		if productWithReservations.Available() != 6 {
-			t.Errorf("Available() = %d, want 6", productWithReservations.Available())
-		}
-	})
-
-	t.Run("is zero, not negative, when reserved exceeds on-hand quantity", func(t *testing.T) {
-		product := newTestProduct(t, 5)
-		reservation, _ := NewStockReservation(1, product.ID(), 100, 8, ReservationHolderBuyer)
-		productWithReservations := product.WithStockReservations([]*StockReservation{reservation})
-
-		if productWithReservations.Available() != 0 {
-			t.Errorf("Available() = %d, want 0", productWithReservations.Available())
-		}
-	})
-}
-
-func TestProduct_WithStockReservations(t *testing.T) {
-	product := newTestProduct(t, 10)
-	reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
-
-	productWithReservations := product.WithStockReservations([]*StockReservation{reservation})
-
-	if len(productWithReservations.StockReservations()) != 1 {
-		t.Errorf("StockReservations() length = %d, want 1", len(productWithReservations.StockReservations()))
-	}
-	if productWithReservations.ID() != product.ID() || productWithReservations.Name() != product.Name() || productWithReservations.Quantity() != product.Quantity() {
-		t.Errorf("WithStockReservations changed unrelated fields: got %+v", productWithReservations)
-	}
-}
-
-func TestProduct_CreateReservation(t *testing.T) {
-	t.Run("creates a reservation when enough stock is available", func(t *testing.T) {
-		orderID := uint64(100)
-		quantity := uint(4)
-		product := newTestProduct(t, 10)
-
-		reservation, err := product.CreateReservation(orderID, quantity, ReservationHolderBuyer)
+		fulfilled, err := product.Fulfill(reservation)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if reservation.ProductID() != product.ID() {
-			t.Errorf("ProductID() = %d, want %d", reservation.ProductID(), product.ID())
+
+		if fulfilled.Quantity() != 6 {
+			t.Errorf("Quantity() = %d, want 6", fulfilled.Quantity())
 		}
-		if reservation.OrderID() != orderID {
-			t.Errorf("OrderID() = %d, want %d", reservation.OrderID(), orderID)
-		}
-		if reservation.Quantity() != quantity {
-			t.Errorf("Quantity() = %d, want %d", reservation.Quantity(), quantity)
-		}
-		if reservation.Holder() != ReservationHolderBuyer {
-			t.Errorf("Holder() = %v, want %v", reservation.Holder(), ReservationHolderBuyer)
+		if fulfilled.ID() != product.ID() || fulfilled.Name() != product.Name() {
+			t.Errorf("Fulfill changed unrelated fields: got %+v", fulfilled)
 		}
 	})
 
-	t.Run("succeeds when requesting exactly the available quantity", func(t *testing.T) {
+	t.Run("rejects a reservation of another product", func(t *testing.T) {
 		product := newTestProduct(t, 10)
-		existingReservations, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
-		productWithReservations := product.WithStockReservations([]*StockReservation{existingReservations})
+		reservation, _ := NewStockReservation(1, product.ID()+1, 100, 4, ReservationHolderCourier)
 
-		if _, err := productWithReservations.CreateReservation(101, 6, ReservationHolderBuyer); err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		_, err := product.Fulfill(reservation)
+		if !errors.Is(err, ErrForeignReservation) {
+			t.Errorf("err = %v, want %v", err, ErrForeignReservation)
 		}
 	})
 
-	t.Run("fails when requesting one more than available", func(t *testing.T) {
+	t.Run("rejects a reservation not handed over to a courier yet", func(t *testing.T) {
 		product := newTestProduct(t, 10)
-		existingReservations, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
-		productWithReservations := product.WithStockReservations([]*StockReservation{existingReservations})
+		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
 
-		_, err := productWithReservations.CreateReservation(101, 7, ReservationHolderBuyer)
+		_, err := product.Fulfill(reservation)
+		if !errors.Is(err, ErrReservationNotHeldByCourier) {
+			t.Errorf("err = %v, want %v", err, ErrReservationNotHeldByCourier)
+		}
+	})
+
+	t.Run("rejects a reservation of more than is on hand", func(t *testing.T) {
+		product := newTestProduct(t, 3)
+		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderCourier)
+
+		_, err := product.Fulfill(reservation)
 		if !errors.Is(err, ErrInsufficientStock) {
 			t.Errorf("err = %v, want %v", err, ErrInsufficientStock)
 		}
 	})
-
-	t.Run("fails when the product has no available stock", func(t *testing.T) {
-		product := newTestProduct(t, 0)
-
-		_, err := product.CreateReservation(100, 1, ReservationHolderBuyer)
-		if !errors.Is(err, ErrInsufficientStock) {
-			t.Errorf("err = %v, want %v", err, ErrInsufficientStock)
-		}
-	})
-}
-
-func TestProduct_Fulfill(t *testing.T) {
-	product := newTestProduct(t, 10)
-
-	fulfilled := product.Fulfill(4)
-
-	if fulfilled.Quantity() != 6 {
-		t.Errorf("Quantity() = %d, want 6", fulfilled.Quantity())
-	}
-	if fulfilled.ID() != product.ID() || fulfilled.Name() != product.Name() {
-		t.Errorf("Fulfill changed unrelated fields: got %+v", fulfilled)
-	}
 }
 
 func TestProduct_Restock(t *testing.T) {

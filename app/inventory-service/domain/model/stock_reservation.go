@@ -1,6 +1,9 @@
 package model
 
-import "inventoryservice/domain"
+import (
+	"fmt"
+	"inventoryservice/domain"
+)
 
 // ReservationHolder identifies who the reserved stock is currently being held for.
 type ReservationHolder string
@@ -63,7 +66,13 @@ func (sr *StockReservation) Holder() ReservationHolder {
 	return sr.holder
 }
 
-// UpdateHolder returns a copy of the reservation held by the given holder.
-func (sr *StockReservation) UpdateHolder(holder ReservationHolder) (*StockReservation, error) {
-	return NewStockReservation(sr.id, sr.productId, sr.orderId, sr.quantity, holder)
+// HoldByCourier returns a copy of the reservation handed over from the buyer to the courier: the
+// order is paid and its stock now awaits courier pickup. Only a reservation still held for the
+// buyer can be handed over.
+func (sr *StockReservation) HoldByCourier() (*StockReservation, error) {
+	if sr.holder != ReservationHolderBuyer {
+		return nil, fmt.Errorf("%w: reservation %d is held by %s, not %s", ErrInvalidHolderTransition, sr.id, sr.holder, ReservationHolderBuyer)
+	}
+
+	return NewStockReservation(sr.id, sr.productId, sr.orderId, sr.quantity, ReservationHolderCourier)
 }

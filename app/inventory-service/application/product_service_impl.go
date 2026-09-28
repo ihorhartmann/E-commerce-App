@@ -28,27 +28,32 @@ func NewProductService(
 	return &ProductServiceImpl{productRepository: products, processedMessageStore: processedMessageStore, txExecutor: txExecutor}
 }
 
-func (ps *ProductServiceImpl) Create(ctx context.Context, product *model.Product) (*model.Product, error) {
-	return ps.productRepository.Create(ctx, product)
+// Create returns the created product's stock - a product that was just created has no reservations yet.
+func (ps *ProductServiceImpl) Create(ctx context.Context, product *model.Product) (*model.ProductStock, error) {
+	created, err := ps.productRepository.Create(ctx, product)
+	if err != nil {
+		return nil, err
+	}
+
+	return model.NewProductStock(created, nil)
 }
 
-func (ps *ProductServiceImpl) Update(ctx context.Context, product *model.Product) (*model.Product, error) {
+func (ps *ProductServiceImpl) Update(ctx context.Context, product *model.Product) (*model.ProductStock, error) {
 	updated, err := ps.productRepository.Update(ctx, product)
 	if err != nil {
 		return nil, err
 	}
 
-	// Re-read via the joined query so Reserved()/Available() on the returned product reflect
-	// current reservations instead of always reading as unreserved.
-	return ps.productRepository.GetByIDWithReservations(ctx, updated.ID())
+	// Re-read with the product's reservations, which the update itself doesn't carry.
+	return ps.productRepository.GetStockByID(ctx, updated.ID())
 }
 
-func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Product, error) {
+func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.ProductStock, error) {
 	if id == 0 {
 		return nil, domain.ErrInvalidInput
 	}
 
-	return ps.productRepository.GetByIDWithReservations(ctx, id)
+	return ps.productRepository.GetStockByID(ctx, id)
 }
 
 func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {

@@ -70,21 +70,6 @@ func (mr *MockReservationRepositoryMockRecorder) DeleteByIDs(ctx, reservationIDs
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteByIDs", reflect.TypeOf((*MockReservationRepository)(nil).DeleteByIDs), ctx, reservationIDs)
 }
 
-// FindByProductIDs mocks base method.
-func (m *MockReservationRepository) FindByProductIDs(ctx context.Context, productIDs []uint64) ([]*model.StockReservation, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindByProductIDs", ctx, productIDs)
-	ret0, _ := ret[0].([]*model.StockReservation)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FindByProductIDs indicates an expected call of FindByProductIDs.
-func (mr *MockReservationRepositoryMockRecorder) FindByProductIDs(ctx, productIDs any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByProductIDs", reflect.TypeOf((*MockReservationRepository)(nil).FindByProductIDs), ctx, productIDs)
-}
-
 // GetByID mocks base method.
 func (m *MockReservationRepository) GetByID(ctx context.Context, reservationID uint64) (*model.StockReservation, error) {
 	m.ctrl.T.Helper()

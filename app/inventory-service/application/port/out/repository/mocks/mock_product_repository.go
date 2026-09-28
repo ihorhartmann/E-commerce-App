@@ -85,34 +85,34 @@ func (mr *MockProductRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockProductRepository)(nil).GetByID), ctx, id)
 }
 
-// GetByIDWithReservations mocks base method.
-func (m *MockProductRepository) GetByIDWithReservations(ctx context.Context, id uint64) (*model.Product, error) {
+// GetStockByID mocks base method.
+func (m *MockProductRepository) GetStockByID(ctx context.Context, id uint64) (*model.ProductStock, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByIDWithReservations", ctx, id)
-	ret0, _ := ret[0].(*model.Product)
+	ret := m.ctrl.Call(m, "GetStockByID", ctx, id)
+	ret0, _ := ret[0].(*model.ProductStock)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetByIDWithReservations indicates an expected call of GetByIDWithReservations.
-func (mr *MockProductRepositoryMockRecorder) GetByIDWithReservations(ctx, id any) *gomock.Call {
+// GetStockByID indicates an expected call of GetStockByID.
+func (mr *MockProductRepositoryMockRecorder) GetStockByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithReservations", reflect.TypeOf((*MockProductRepository)(nil).GetByIDWithReservations), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStockByID", reflect.TypeOf((*MockProductRepository)(nil).GetStockByID), ctx, id)
 }
 
-// GetByIDs mocks base method.
-func (m *MockProductRepository) GetByIDs(ctx context.Context, ids []uint64) ([]*model.Product, error) {
+// GetStocksByIDs mocks base method.
+func (m *MockProductRepository) GetStocksByIDs(ctx context.Context, ids []uint64) ([]*model.ProductStock, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByIDs", ctx, ids)
-	ret0, _ := ret[0].([]*model.Product)
+	ret := m.ctrl.Call(m, "GetStocksByIDs", ctx, ids)
+	ret0, _ := ret[0].([]*model.ProductStock)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetByIDs indicates an expected call of GetByIDs.
-func (mr *MockProductRepositoryMockRecorder) GetByIDs(ctx, ids any) *gomock.Call {
+// GetStocksByIDs indicates an expected call of GetStocksByIDs.
+func (mr *MockProductRepositoryMockRecorder) GetStocksByIDs(ctx, ids any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDs", reflect.TypeOf((*MockProductRepository)(nil).GetByIDs), ctx, ids)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStocksByIDs", reflect.TypeOf((*MockProductRepository)(nil).GetStocksByIDs), ctx, ids)
 }
 
 // Update mocks base method.

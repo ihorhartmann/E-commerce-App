@@ -1,18 +1,18 @@
 package model
 
 import (
+	"fmt"
 	"inventoryservice/domain"
 	"inventoryservice/domain/values"
 	"strings"
 )
 
 type Product struct {
-	id                uint64
-	name              string
-	description       string
-	price             values.Money
-	quantity          uint
-	stockReservations []*StockReservation
+	id          uint64
+	name        string
+	description string
+	price       values.Money
+	quantity    uint
 }
 
 func NewProduct(id uint64, name, description string, price values.Money, quantity uint) (*Product, error) {
@@ -65,75 +65,34 @@ func (p *Product) Quantity() uint {
 	return p.quantity
 }
 
-func (p *Product) StockReservations() []*StockReservation {
-	return p.stockReservations
-}
-
-// Reserved returns the total quantity currently held by this product's stock reservations.
-func (p *Product) Reserved() uint {
-	var reserved uint
-	for _, reservation := range p.stockReservations {
-		reserved += reservation.Quantity()
+// Fulfill returns a copy of the product with reservation's quantity removed from on-hand stock: the
+// reserved goods physically left the warehouse with the courier.
+func (p *Product) Fulfill(reservation *StockReservation) (*Product, error) {
+	if reservation.ProductID() != p.id {
+		return nil, fmt.Errorf("%w: reservation %d reserves product %d, not %d", ErrForeignReservation, reservation.ID(), reservation.ProductID(), p.id)
+	}
+	if reservation.Holder() != ReservationHolderCourier {
+		return nil, fmt.Errorf("%w: reservation %d is held by %s", ErrReservationNotHeldByCourier, reservation.ID(), reservation.Holder())
+	}
+	if reservation.Quantity() > p.quantity {
+		return nil, fmt.Errorf("%w: reservation %d needs %d but only %d on hand", ErrInsufficientStock, reservation.ID(), reservation.Quantity(), p.quantity)
 	}
 
-	return reserved
-}
-
-func (p *Product) Available() uint {
-	reserved := p.Reserved()
-	if reserved > p.quantity {
-		return 0
-	}
-
-	return p.quantity - reserved
-}
-
-// WithStockReservations returns a copy of the product hydrated with its current stock
-// reservations, so Available()/CreateReservation() can be computed against them.
-func (p *Product) WithStockReservations(reservations []*StockReservation) *Product {
-	return &Product{
-		id:                p.id,
-		name:              p.name,
-		description:       p.description,
-		price:             p.price,
-		quantity:          p.quantity,
-		stockReservations: reservations,
-	}
-}
-
-// CreateReservation validates there is enough available stock and returns a new
-// StockReservation for the given order, or ErrInsufficientStock otherwise. The product must
-// be hydrated via WithStockReservations first for Available() to reflect existing reservations.
-func (p *Product) CreateReservation(orderID uint64, quantity uint, holder ReservationHolder) (*StockReservation, error) {
-	if p.Available() < quantity {
-		return nil, ErrInsufficientStock
-	}
-
-	return NewStockReservation(0, p.id, orderID, quantity, holder)
-}
-
-// Fulfill returns a copy of the product with quantity removed from on-hand stock (the
-// reservation physically left the warehouse).
-func (p *Product) Fulfill(quantity uint) *Product {
-	return &Product{
-		id:                p.id,
-		name:              p.name,
-		description:       p.description,
-		price:             p.price,
-		quantity:          p.quantity - quantity,
-		stockReservations: p.stockReservations,
-	}
+	return p.withQuantity(p.quantity - reservation.Quantity()), nil
 }
 
 // Restock returns a copy of the product with quantity added back to on-hand stock (the
 // courier returned goods that never made it to the buyer).
 func (p *Product) Restock(quantity uint) *Product {
+	return p.withQuantity(p.quantity + quantity)
+}
+
+func (p *Product) withQuantity(quantity uint) *Product {
 	return &Product{
-		id:                p.id,
-		name:              p.name,
-		description:       p.description,
-		price:             p.price,
-		quantity:          p.quantity + quantity,
-		stockReservations: p.stockReservations,
+		id:          p.id,
+		name:        p.name,
+		description: p.description,
+		price:       p.price,
+		quantity:    quantity,
 	}
 }
