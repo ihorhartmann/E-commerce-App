@@ -44,10 +44,10 @@ func (m *MockProductService) EXPECT() *MockProductServiceMockRecorder {
 }
 
 // Create mocks base method.
-func (m *MockProductService) Create(ctx context.Context, product *model.Product) (*model.ProductStock, error) {
+func (m *MockProductService) Create(ctx context.Context, product *model.Product) (*model.Product, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Create", ctx, product)
-	ret0, _ := ret[0].(*model.ProductStock)
+	ret0, _ := ret[0].(*model.Product)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -73,10 +73,10 @@ func (mr *MockProductServiceMockRecorder) Delete(ctx, id any) *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockProductService) Get(ctx context.Context, id uint64) (*model.ProductStock, error) {
+func (m *MockProductService) Get(ctx context.Context, id uint64) (*model.Product, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", ctx, id)
-	ret0, _ := ret[0].(*model.ProductStock)
+	ret0, _ := ret[0].(*model.Product)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -102,16 +102,16 @@ func (mr *MockProductServiceMockRecorder) Restock(ctx, msg, items any) *gomock.C
 }
 
 // Update mocks base method.
-func (m *MockProductService) Update(ctx context.Context, product *model.Product) (*model.ProductStock, error) {
+func (m *MockProductService) Update(ctx context.Context, update dto.UpdateProductDTO) (*model.Product, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Update", ctx, product)
-	ret0, _ := ret[0].(*model.ProductStock)
+	ret := m.ctrl.Call(m, "Update", ctx, update)
+	ret0, _ := ret[0].(*model.Product)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Update indicates an expected call of Update.
-func (mr *MockProductServiceMockRecorder) Update(ctx, product any) *gomock.Call {
+func (mr *MockProductServiceMockRecorder) Update(ctx, update any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockProductService)(nil).Update), ctx, product)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockProductService)(nil).Update), ctx, update)
 }

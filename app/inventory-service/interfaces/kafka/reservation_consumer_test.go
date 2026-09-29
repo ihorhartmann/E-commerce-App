@@ -92,6 +92,7 @@ func TestReservationKafkaConsumer_handleMessage(t *testing.T) {
 		domainErrs := []error{
 			model.ErrInsufficientStock,
 			model.ErrForeignReservation,
+			model.ErrReservedQuantityMismatch,
 			model.ErrInvalidHolderTransition,
 			model.ErrReservationNotHeldByCourier,
 		}

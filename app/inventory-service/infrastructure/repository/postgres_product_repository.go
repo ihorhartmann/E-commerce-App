@@ -37,15 +37,31 @@ func (r *postgresProductRepository) Update(ctx context.Context, product *model.P
 	db := transaction.FromWithDefault(ctx, r.db)
 
 	row := entity.ToProductEntity(product)
-	result := db.WithContext(ctx).Model(&entity.Product{}).Where("id = ?", row.ID).Select("*").Updates(row)
+	result := db.WithContext(ctx).
+		Model(&entity.Product{}).
+		Where("id = ? AND version = ?", row.ID, row.Version).
+		Updates(map[string]any{
+			"name":           row.Name,
+			"description":    row.Description,
+			"price_amount":   row.PriceAmount,
+			"price_currency": row.PriceCurrency,
+			"quantity":       row.Quantity,
+			"reserved":       row.Reserved,
+			"version":        gorm.Expr("version + 1"),
+		})
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, repository.ErrProductNotFound
+		// Nothing matched: either the product is gone, or someone changed it after it was loaded.
+		if _, err := r.GetByID(ctx, row.ID); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: product %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, row.Version)
 	}
 
-	return product, nil
+	row.Version++
+	return entity.FromProductEntity(row)
 }
 
 func (r *postgresProductRepository) GetByID(ctx context.Context, id uint64) (*model.Product, error) {
@@ -62,94 +78,35 @@ func (r *postgresProductRepository) GetByID(ctx context.Context, id uint64) (*mo
 	return entity.FromProductEntity(&row)
 }
 
-func (r *postgresProductRepository) GetStockByID(ctx context.Context, id uint64) (*model.ProductStock, error) {
-	stocks, err := r.getStocks(ctx, []uint64{id})
-	if err != nil {
-		return nil, err
-	}
-
-	return stocks[0], nil
-}
-
-func (r *postgresProductRepository) GetStocksByIDs(ctx context.Context, ids []uint64) ([]*model.ProductStock, error) {
-	return r.getStocks(ctx, ids)
-}
-
-// productWithReservationRow is one row of the products LEFT JOIN stock_reservations query: the
-// product's columns plus one of its reservations, or nil reservation columns if it has none.
-type productWithReservationRow struct {
-	entity.Product
-	ReservationID       *uint64 `gorm:"column:reservation_id"`
-	ReservationOrderID  *uint64 `gorm:"column:reservation_order_id"`
-	ReservationQuantity *uint   `gorm:"column:reservation_quantity"`
-	ReservationHolder   *string `gorm:"column:reservation_holder"`
-}
-
-// getStocks loads the products with the given ids together with their stock reservations
-// in a single query, so both come from the same snapshot. It returns one stock per distinct id, in
-// the order the ids first appear, or ErrProductNotFound if any of them doesn't exist.
-func (r *postgresProductRepository) getStocks(ctx context.Context, ids []uint64) ([]*model.ProductStock, error) {
+func (r *postgresProductRepository) GetByIDs(ctx context.Context, ids []uint64) ([]*model.Product, error) {
 	db := transaction.FromWithDefault(ctx, r.db)
 	distinctIDs := distinct(ids)
 
-	var rows []productWithReservationRow
-	err := db.WithContext(ctx).
-		Table("products").
-		Select(
-			"products.*, "+
-				"stock_reservations.id AS reservation_id, "+
-				"stock_reservations.order_id AS reservation_order_id, "+
-				"stock_reservations.quantity AS reservation_quantity, "+
-				"stock_reservations.holder AS reservation_holder",
-		).
-		Joins("LEFT JOIN stock_reservations ON stock_reservations.product_id = products.id").
-		Where("products.id IN ?", distinctIDs).
-		Find(&rows).Error
-	if err != nil {
+	var rows []*entity.Product
+	if err := db.WithContext(ctx).Find(&rows, "id IN ?", distinctIDs).Error; err != nil {
 		return nil, err
 	}
 
-	productRows := make(map[uint64]*entity.Product, len(distinctIDs))
-	reservationsByProductID := make(map[uint64][]*model.StockReservation, len(distinctIDs))
+	found := make(map[uint64]*entity.Product, len(rows))
 	for _, row := range rows {
-		productRows[row.Product.ID] = &row.Product
-		if row.ReservationID == nil {
-			continue
-		}
-
-		reservation, err := model.NewStockReservation(
-			*row.ReservationID,
-			row.Product.ID,
-			*row.ReservationOrderID,
-			*row.ReservationQuantity,
-			model.ReservationHolder(*row.ReservationHolder),
-		)
-		if err != nil {
-			return nil, err
-		}
-		reservationsByProductID[row.Product.ID] = append(reservationsByProductID[row.Product.ID], reservation)
+		found[row.ID] = row
 	}
 
-	stocks := make([]*model.ProductStock, 0, len(distinctIDs))
+	products := make([]*model.Product, 0, len(distinctIDs))
 	for _, id := range distinctIDs {
-		productRow, ok := productRows[id]
+		row, ok := found[id]
 		if !ok {
 			return nil, fmt.Errorf("%w: product %d", repository.ErrProductNotFound, id)
 		}
 
-		product, err := entity.FromProductEntity(productRow)
+		product, err := entity.FromProductEntity(row)
 		if err != nil {
 			return nil, err
 		}
-
-		stock, err := model.NewProductStock(product, reservationsByProductID[id])
-		if err != nil {
-			return nil, err
-		}
-		stocks = append(stocks, stock)
+		products = append(products, product)
 	}
 
-	return stocks, nil
+	return products, nil
 }
 
 // distinct returns ids without repetitions, keeping the order in which each id first appears.
@@ -167,15 +124,19 @@ func distinct(ids []uint64) []uint64 {
 	return result
 }
 
-func (r *postgresProductRepository) Delete(ctx context.Context, id uint64) error {
+func (r *postgresProductRepository) Delete(ctx context.Context, product *model.Product) error {
 	db := transaction.FromWithDefault(ctx, r.db)
 
-	result := db.WithContext(ctx).Delete(&entity.Product{}, "id = ?", id)
+	result := db.WithContext(ctx).Delete(&entity.Product{}, "id = ? AND version = ?", product.ID(), product.Version())
 	if result.Error != nil {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return repository.ErrProductNotFound
+		// Nothing matched: either the product is gone, or someone changed it after it was loaded.
+		if _, err := r.GetByID(ctx, product.ID()); err != nil {
+			return err
+		}
+		return fmt.Errorf("%w: product %d changed since version %d", repository.ErrConcurrentUpdate, product.ID(), product.Version())
 	}
 
 	return nil

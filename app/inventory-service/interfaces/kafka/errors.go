@@ -39,6 +39,7 @@ var nonRetryableErrors = map[error]struct{}{
 	domain.ErrInvalidInput:               {},
 	model.ErrInsufficientStock:           {},
 	model.ErrForeignReservation:          {},
+	model.ErrReservedQuantityMismatch:    {},
 	model.ErrInvalidHolderTransition:     {},
 	model.ErrReservationNotHeldByCourier: {},
 }

@@ -13,6 +13,8 @@ type Product struct {
 	PriceAmount   float64 `gorm:"not null"`
 	PriceCurrency string  `gorm:"not null"`
 	Quantity      uint    `gorm:"not null"`
+	Reserved      uint    `gorm:"not null;default:0"`
+	Version       uint64  `gorm:"not null;default:0"`
 }
 
 func (Product) TableName() string {
@@ -27,6 +29,8 @@ func ToProductEntity(product *model.Product) *Product {
 		PriceAmount:   product.Price().Amount(),
 		PriceCurrency: string(product.Price().Currency()),
 		Quantity:      product.Quantity(),
+		Reserved:      product.Reserved(),
+		Version:       product.Version(),
 	}
 }
 
@@ -36,5 +40,5 @@ func FromProductEntity(product *Product) (*model.Product, error) {
 		return nil, err
 	}
 
-	return model.NewExistingProduct(product.ID, product.Name, product.Description, price, product.Quantity)
+	return model.NewExistingProduct(product.ID, product.Name, product.Description, price, product.Quantity, product.Reserved, product.Version)
 }

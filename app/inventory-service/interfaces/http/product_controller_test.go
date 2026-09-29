@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/mock/gomock"
 
+	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in/mocks"
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/domain"
@@ -29,17 +30,13 @@ func testMoney(t *testing.T) values.Money {
 	return money
 }
 
-func testProductStock(t *testing.T, id uint64, quantity uint, reservations ...*model.StockReservation) *model.ProductStock {
+func testProduct(t *testing.T, id uint64, quantity, reserved uint) *model.Product {
 	t.Helper()
-	product, err := model.NewExistingProduct(id, "Widget", "a widget", testMoney(t), quantity)
+	product, err := model.NewExistingProduct(id, "Widget", "a widget", testMoney(t), quantity, reserved, 1)
 	if err != nil {
 		t.Fatalf("unexpected error building test product: %v", err)
 	}
-	stock, err := model.NewProductStock(product, reservations)
-	if err != nil {
-		t.Fatalf("unexpected error building test product stock: %v", err)
-	}
-	return stock
+	return product
 }
 
 func newProductTestApp(productService *mocks.MockProductService) *fiber.App {
@@ -67,7 +64,7 @@ func TestProductController_CreateProduct(t *testing.T) {
 	t.Run("returns 201 with the created product", func(t *testing.T) {
 		quantity := uint(10)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		createdProduct := testProductStock(t, 1, quantity)
+		createdProduct := testProduct(t, 1, quantity, 0)
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Return(createdProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
@@ -165,8 +162,9 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		id := uint64(1)
 		quantity := uint(20)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		updatedProduct := testProductStock(t, id, quantity)
-		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(updatedProduct, nil).Times(1)
+		updatedProduct := testProduct(t, id, quantity, 0)
+		wantUpdate := dto.UpdateProductDTO{ID: id, Name: "Widget", Description: "a widget", Price: testMoney(t), Quantity: quantity}
+		productService.EXPECT().Update(gomock.Any(), wantUpdate).Return(updatedProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
 		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
@@ -211,6 +209,51 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		}
 	})
 
+	t.Run("returns 409 when the new quantity is below what is reserved", func(t *testing.T) {
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, model.ErrQuantityBelowReserved).Times(1)
+		app := newProductTestApp(productService)
+
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 1}`
+		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 409 {
+			t.Errorf("status = %d, want 409", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["error"] != model.ErrQuantityBelowReserved.Error() {
+			t.Errorf("error = %v, want %q", body["error"], model.ErrQuantityBelowReserved.Error())
+		}
+	})
+
+	t.Run("returns 503 when the product was changed concurrently", func(t *testing.T) {
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, repository.ErrConcurrentUpdate).Times(1)
+		app := newProductTestApp(productService)
+
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
+		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 503 {
+			t.Errorf("status = %d, want 503", resp.StatusCode)
+		}
+		// like every 5xx, it only tells the client something went wrong, not what
+		body := decodeBody(t, resp.Body)
+		if body["error"] != middleware.InternalServerErrorMessage {
+			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		}
+	})
+
 	t.Run("returns 404 when the product is not found", func(t *testing.T) {
 		productService := mocks.NewMockProductService(gomock.NewController(t))
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, repository.ErrProductNotFound).Times(1)
@@ -238,12 +281,8 @@ func TestProductController_GetProduct(t *testing.T) {
 	t.Run("returns 200 with the product and its reserved and available quantity", func(t *testing.T) {
 		id := uint64(1)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		reservation, err := model.NewStockReservation(1, id, 100, 3, model.ReservationHolderBuyer)
-		if err != nil {
-			t.Fatalf("unexpected error building test reservation: %v", err)
-		}
-		stock := testProductStock(t, id, 10, reservation)
-		productService.EXPECT().Get(gomock.Any(), id).Return(stock, nil).Times(1)
+		product := testProduct(t, id, 10, 3)
+		productService.EXPECT().Get(gomock.Any(), id).Return(product, nil).Times(1)
 		app := newProductTestApp(productService)
 
 		req := httptest.NewRequest("GET", "/products/1", nil)
@@ -328,6 +367,27 @@ func TestProductController_DeleteProduct(t *testing.T) {
 		body := decodeBody(t, resp.Body)
 		if body["error"] != repository.ErrProductNotFound.Error() {
 			t.Errorf("error = %v, want %q", body["error"], repository.ErrProductNotFound.Error())
+		}
+	})
+
+	t.Run("returns 409 when some of the product's stock is reserved", func(t *testing.T) {
+		id := uint64(1)
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().Delete(gomock.Any(), id).Return(model.ErrProductReserved).Times(1)
+		app := newProductTestApp(productService)
+
+		req := httptest.NewRequest("DELETE", "/products/1", nil)
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 409 {
+			t.Errorf("status = %d, want 409", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["error"] != model.ErrProductReserved.Error() {
+			t.Errorf("error = %v, want %q", body["error"], model.ErrProductReserved.Error())
 		}
 	})
 }
