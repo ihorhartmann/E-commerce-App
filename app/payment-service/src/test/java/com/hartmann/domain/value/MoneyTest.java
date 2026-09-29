@@ -2,12 +2,14 @@ package com.hartmann.domain.value;
 
 import com.hartmann.domain.exception.DomainException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 
 import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class MoneyTest {
 
     @Test
@@ -29,9 +31,28 @@ class MoneyTest {
     }
 
     @Test
+    void constructor_scalesAnAmountWithFewerDecimalPlacesToTwo() {
+        var money = new Money(new BigDecimal("10.5"), Currency.USD);
+
+        assertThat(money.amount()).isEqualTo(new BigDecimal("10.50"));
+    }
+
+    @Test
+    void constructor_rejectsAnAmountWithMoreThanTwoDecimalPlaces() {
+        assertThatThrownBy(() -> new Money(new BigDecimal("10.001"), Currency.USD))
+                .isInstanceOf(DomainException.class);
+    }
+
+    @Test
     void constructor_rejectsANegativeAmount() {
         assertThatThrownBy(() -> new Money(new BigDecimal("-1"), Currency.USD))
                 .isInstanceOf(DomainException.class);
+    }
+
+    @Test
+    void equals_isTrueForTheSameCurrencyAndANumericallyEqualAmount() {
+        assertThat(new Money(new BigDecimal("10.00"), Currency.USD))
+                .isEqualTo(new Money(new BigDecimal("10"), Currency.USD));
     }
 
     @Test

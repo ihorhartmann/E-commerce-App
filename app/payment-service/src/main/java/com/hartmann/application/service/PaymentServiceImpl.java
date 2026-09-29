@@ -50,18 +50,20 @@ public class PaymentServiceImpl implements PaymentService {
 
         var result = submitToGateway(orderId, amount, initiatedPayment);
 
-        var pendingPayment = paymentRepository.markPending(initiatedPayment.id(), result.externalId());
+        var pendingPayment = initiatedPayment.markPending(result.externalId());
+        pendingPayment = paymentRepository.markPending(pendingPayment.id(), pendingPayment.externalId());
         return new PaymentIntentResult(pendingPayment, result.clientSecret());
     }
 
-    private SubmitPaymentResult submitToGateway(long orderId, Money amount, Payment initiated) {
+    private SubmitPaymentResult submitToGateway(long orderId, Money amount, Payment initiatedPayment) {
         try {
             return paymentGateway.submitPayment(orderId, amount);
         } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
             // order-service already learns about this synchronously (the exception propagates
             // straight back through the HTTP call) and cancels the reservation itself, so no Kafka
             // event is published here.
-            paymentRepository.updateStatus(initiated.id(), PaymentStatus.FAILED);
+            var failedPayment = initiatedPayment.fail();
+            paymentRepository.updateStatus(failedPayment.id(), failedPayment.status());
             throw e;
         }
     }
@@ -70,9 +72,15 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public Payment updateStatusByExternalId(String externalId, PaymentStatus status) {
         var payment = paymentRepository.getByExternalId(externalId);
-        var updatedPayment = paymentRepository.updateStatus(payment.id(), status);
+        var transitionedPayment = payment.applyGatewayStatus(status);
+        if (transitionedPayment.status() == payment.status()) {
+            // a redelivered event reporting the status the payment already has
+            return payment;
+        }
 
-        if (status == PaymentStatus.CONFIRMED) {
+        var updatedPayment = paymentRepository.updateStatus(transitionedPayment.id(), transitionedPayment.status());
+
+        if (updatedPayment.status() == PaymentStatus.CONFIRMED) {
             var correlationId = KafkaUtils.formatKafkaId(updatedPayment.orderId());
             paymentKafkaProducer.publishPaymentCompleted(correlationId, updatedPayment.orderId());
         }
@@ -90,11 +98,11 @@ public class PaymentServiceImpl implements PaymentService {
         for (var payment : expired) {
             LOG.info("expired payment id={} orderId={}", payment.id(), payment.orderId());
 
-            // A null externalId means this payment never left INITIATED - the gateway call itself
+            // A payment that was never submitted never left INITIATED - the gateway call itself
             // never succeeded, so order-service already resolved that order synchronously when
             // submitPayment's HTTP call failed. Only PENDING/ATTEMPT_DECLINED-origin expiries are
             // news to order-service, which is still waiting on an outcome for those.
-            if (payment.externalId() != null) {
+            if (payment.wasSubmitted()) {
                 var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
                 paymentKafkaProducer.publishPaymentExpired(correlationId, payment.orderId());
             }

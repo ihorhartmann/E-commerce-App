@@ -1,12 +1,11 @@
 package com.hartmann.adapter.out.repository;
 
 import com.hartmann.adapter.out.repository.entity.PaymentEntity;
-import com.hartmann.adapter.out.repository.entity.RefundEntity;
 import com.hartmann.application.port.out.repository.PaymentRepository;
+import com.hartmann.application.port.out.repository.exception.ConcurrentUpdateException;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
-import com.hartmann.domain.model.Refund;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
@@ -17,9 +16,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import static org.jooq.impl.DSL.*;
 import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
@@ -27,7 +24,6 @@ import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
 @Repository
 public class PostgresPaymentRepository implements PaymentRepository {
     private static final Table<Record> PAYMENTS = table(name("payment", "payments"));
-    private static final Table<Record> REFUNDS = table(name("payment", "refunds"));
 
     private static final Field<Long> ID = field(name("payments", "id"), Long.class);
     private static final Field<Long> ORDER_ID = field(name("payments", "order_id"), Long.class);
@@ -35,22 +31,14 @@ public class PostgresPaymentRepository implements PaymentRepository {
     private static final Field<BigDecimal> AMOUNT = field(name("payments", "amount"), BigDecimal.class);
     private static final Field<String> CURRENCY = field(name("payments", "currency"), String.class);
     private static final Field<String> STATUS = field(name("payments", "status"), String.class);
+    private static final Field<BigDecimal> REFUNDED_AMOUNT = field(name("payments", "refunded_amount"), BigDecimal.class);
+    private static final Field<Long> VERSION = field(name("payments", "version"), Long.class);
     private static final Field<OffsetDateTime> CREATED_AT = field(name("payments", "created_at"), TIMESTAMPWITHTIMEZONE);
     private static final Field<OffsetDateTime> UPDATED_AT = field(name("payments", "updated_at"), TIMESTAMPWITHTIMEZONE);
     private static final Field<OffsetDateTime> EXPIRES_AT = field(name("payments", "expires_at"), TIMESTAMPWITHTIMEZONE);
 
-    private static final Field<Long> REFUND_ID = field(name("refunds", "id"), Long.class);
-    private static final Field<Long> REFUND_PAYMENT_ID = field(name("refunds", "payment_id"), Long.class);
-    private static final Field<UUID> REFUND_IDEMPOTENCY_KEY = field(name("refunds", "idempotency_key"), UUID.class);
-    private static final Field<String> REFUND_EXTERNAL_ID = field(name("refunds", "external_id"), String.class);
-    private static final Field<BigDecimal> REFUND_AMOUNT = field(name("refunds", "amount"), BigDecimal.class);
-    private static final Field<String> REFUND_CURRENCY = field(name("refunds", "currency"), String.class);
-    private static final Field<String> REFUND_STATUS = field(name("refunds", "status"), String.class);
-    private static final Field<OffsetDateTime> REFUND_CREATED_AT = field(name("refunds", "created_at"), TIMESTAMPWITHTIMEZONE);
-    private static final Field<OffsetDateTime> REFUND_UPDATED_AT = field(name("refunds", "updated_at"), TIMESTAMPWITHTIMEZONE);
-
-    private static final List<Field<?>> PAYMENT_FIELDS =
-            List.of(ID, ORDER_ID, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, CREATED_AT, UPDATED_AT, EXPIRES_AT);
+    private static final List<Field<?>> PAYMENT_FIELDS = List.of(
+            ID, ORDER_ID, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, REFUNDED_AMOUNT, VERSION, CREATED_AT, UPDATED_AT, EXPIRES_AT);
 
     private static final List<String> NON_TERMINAL_STATUSES =
             PaymentStatus.NON_TERMINAL_STATUSES.stream().map(PaymentStatus::name).toList();
@@ -70,6 +58,8 @@ public class PostgresPaymentRepository implements PaymentRepository {
                 .set(AMOUNT, entity.amount())
                 .set(CURRENCY, entity.currency())
                 .set(STATUS, entity.status())
+                .set(REFUNDED_AMOUNT, entity.refundedAmount())
+                .set(VERSION, entity.version())
                 .set(CREATED_AT, toOffsetDateTime(entity.createdAt()))
                 .set(UPDATED_AT, toOffsetDateTime(entity.updatedAt()))
                 .set(EXPIRES_AT, toOffsetDateTime(entity.expiresAt()))
@@ -102,6 +92,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
         var updated = dsl.update(PAYMENTS)
                 .set(EXTERNAL_ID, externalId)
                 .set(STATUS, PaymentStatus.PENDING.name())
+                .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(paymentId))
                 .execute();
@@ -115,6 +106,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
     public Payment updateStatus(long paymentId, PaymentStatus status) {
         var updated = dsl.update(PAYMENTS)
                 .set(STATUS, status.name())
+                .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(paymentId))
                 .execute();
@@ -134,47 +126,23 @@ public class PostgresPaymentRepository implements PaymentRepository {
     }
 
     @Override
-    public Payment getByIdWithRefunds(long paymentId) {
-        var rows = dsl.select(
-                        ID, ORDER_ID, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, CREATED_AT, UPDATED_AT, EXPIRES_AT,
-                        REFUND_ID, REFUND_PAYMENT_ID, REFUND_IDEMPOTENCY_KEY, REFUND_EXTERNAL_ID, REFUND_AMOUNT, REFUND_CURRENCY,
-                        REFUND_STATUS, REFUND_CREATED_AT, REFUND_UPDATED_AT)
-                .from(PAYMENTS)
-                .leftJoin(REFUNDS).on(REFUND_PAYMENT_ID.eq(ID))
-                .where(ID.eq(paymentId))
-                .fetch();
-
-        if (rows.isEmpty()) {
-            throw new ObjectNotFoundException("Payment with id " + paymentId + " not found");
+    public Payment updateRefundedAmount(Payment payment) {
+        var record = dsl.update(PAYMENTS)
+                .set(REFUNDED_AMOUNT, payment.refundedAmount().amount())
+                .set(VERSION, VERSION.plus(1))
+                .set(UPDATED_AT, toOffsetDateTime(payment.updatedAt()))
+                .where(ID.eq(payment.id()))
+                .and(VERSION.eq(payment.version()))
+                .returning(PAYMENT_FIELDS)
+                .fetchOne();
+        if (record != null) {
+            return toPayment(record);
         }
 
-        var refunds = new ArrayList<Refund>();
-        for (var row : rows) {
-            var refundId = row.get(REFUND_ID);
-            if (refundId == null) {
-                continue;
-            }
-
-            refunds.add(RefundEntity.toRefund(new RefundEntity(
-                    refundId,
-                    row.get(REFUND_PAYMENT_ID),
-                    row.get(REFUND_IDEMPOTENCY_KEY),
-                    row.get(REFUND_EXTERNAL_ID),
-                    row.get(REFUND_AMOUNT),
-                    row.get(REFUND_CURRENCY),
-                    row.get(REFUND_STATUS),
-                    toInstant(row.get(REFUND_CREATED_AT)),
-                    toInstant(row.get(REFUND_UPDATED_AT))
-            )));
-        }
-
-        var first = rows.getFirst();
-        var paymentEntity = new PaymentEntity(
-                first.get(ID), first.get(ORDER_ID), first.get(EXTERNAL_ID), first.get(AMOUNT),
-                first.get(CURRENCY), first.get(STATUS), toInstant(first.get(CREATED_AT)), toInstant(first.get(UPDATED_AT)),
-                toInstant(first.get(EXPIRES_AT))
-        );
-        return PaymentEntity.toPayment(paymentEntity, refunds);
+        // Nothing matched: either the payment is gone, or someone changed it after it was loaded.
+        getById(payment.id());
+        throw new ConcurrentUpdateException(
+                "Payment " + payment.id() + " was changed concurrently since version " + payment.version());
     }
 
     @Override
@@ -182,6 +150,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
         var now = toOffsetDateTime(Instant.now());
         return dsl.update(PAYMENTS)
                 .set(STATUS, PaymentStatus.EXPIRED.name())
+                .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, now)
                 .where(STATUS.in(NON_TERMINAL_STATUSES))
                 .and(EXPIRES_AT.lt(now))
@@ -192,8 +161,8 @@ public class PostgresPaymentRepository implements PaymentRepository {
     private Payment toPayment(Record record) {
         var entity = new PaymentEntity(
                 record.get(ID), record.get(ORDER_ID), record.get(EXTERNAL_ID), record.get(AMOUNT),
-                record.get(CURRENCY), record.get(STATUS), toInstant(record.get(CREATED_AT)), toInstant(record.get(UPDATED_AT)),
-                toInstant(record.get(EXPIRES_AT))
+                record.get(CURRENCY), record.get(STATUS), record.get(REFUNDED_AMOUNT), record.get(VERSION),
+                toInstant(record.get(CREATED_AT)), toInstant(record.get(UPDATED_AT)), toInstant(record.get(EXPIRES_AT))
         );
         return PaymentEntity.toPayment(entity);
     }

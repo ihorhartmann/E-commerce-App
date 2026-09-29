@@ -69,9 +69,10 @@ class RefundServiceImplTest {
         return new Money(new BigDecimal(amount), Currency.USD);
     }
 
-    private Payment testPayment(long id, long orderId, PaymentStatus status, List<Refund> refunds) {
+    private Payment testPayment(long id, long orderId, String refundedAmount) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, "pi_test", money("100.00"), status, refunds, now, now, now.plusSeconds(900));
+        return Payment.createExisting(id, orderId, "pi_test", money("100.00"), PaymentStatus.CONFIRMED,
+                money(refundedAmount), 0L, now, now, now.plusSeconds(900));
     }
 
     private Refund testRefund(long id, long paymentId, UUID idempotencyKey, RefundStatus status, String amount) {
@@ -88,7 +89,7 @@ class RefundServiceImplTest {
     void getByOrderId_returnsRefundsForThePaymentTiedToTheOrder() {
         var paymentId = 1L;
         var orderId = 100L;
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, "0.00");
         var refunds = List.of(testRefund(1L, paymentId, UUID.randomUUID(), RefundStatus.PENDING, "20.00"));
         when(paymentRepository.getByOrderId(orderId)).thenReturn(payment);
         when(refundRepository.findByPaymentId(paymentId)).thenReturn(refunds);
@@ -99,21 +100,21 @@ class RefundServiceImplTest {
     }
 
     @Test
-    void submitRefund_createsAnInitiatedRefundThenMarksItSubmittedWhenStripeLeavesItPending() {
+    void submitRefund_createsAnInitiatedRefundReservingItsAmountThenMarksItSubmittedWhenStripeLeavesItPending() {
         var paymentId = 1L;
-        var orderId = 100L;
         var initiatedId = 1L;
         var amount = "40.00";
         var idempotencyKey = UUID.randomUUID();
         var paymentExternalId = "pi_test";
         var externalId = "re_new";
 
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, 100L, "10.00");
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
         var pendingRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund(paymentExternalId, initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.PENDING));
         when(refundRepository.markPending(initiatedId, externalId, RefundStatus.PENDING)).thenReturn(pendingRefund);
@@ -122,12 +123,15 @@ class RefundServiceImplTest {
 
         assertThat(result).isEqualTo(pendingRefund);
 
-        var captor = ArgumentCaptor.forClass(Refund.class);
+        var refundCaptor = ArgumentCaptor.forClass(Refund.class);
         verify(refundRepository, times(1)).findByIdempotencyKey(idempotencyKey);
-        verify(refundRepository, times(1)).create(captor.capture());
-        assertThat(captor.getValue().paymentId()).isEqualTo(paymentId);
-        assertThat(captor.getValue().idempotencyKey()).isEqualTo(idempotencyKey);
-        assertThat(captor.getValue().status()).isEqualTo(RefundStatus.INITIATED);
+        verify(refundRepository, times(1)).create(refundCaptor.capture());
+        assertThat(refundCaptor.getValue().paymentId()).isEqualTo(paymentId);
+        assertThat(refundCaptor.getValue().idempotencyKey()).isEqualTo(idempotencyKey);
+        assertThat(refundCaptor.getValue().status()).isEqualTo(RefundStatus.INITIATED);
+        var paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository, times(1)).updateRefundedAmount(paymentCaptor.capture());
+        assertThat(paymentCaptor.getValue().refundedAmount()).isEqualTo(money("50.00"));
         verify(paymentGateway, times(1)).submitRefund(paymentExternalId, initiatedRefund);
         verify(refundRepository, times(1)).markPending(initiatedId, externalId, RefundStatus.PENDING);
         verify(refundRepository, times(0)).updateStatus(anyLong(), any());
@@ -143,12 +147,13 @@ class RefundServiceImplTest {
         var idempotencyKey = UUID.randomUUID();
         var externalId = "re_new";
 
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, "0.00");
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
         var succeededRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.SUCCEEDED, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund("pi_test", initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.SUCCEEDED));
         when(refundRepository.markPending(initiatedId, externalId, RefundStatus.SUCCEEDED)).thenReturn(succeededRefund);
@@ -157,12 +162,13 @@ class RefundServiceImplTest {
 
         assertThat(result).isEqualTo(succeededRefund);
         verify(refundRepository, times(1)).markPending(initiatedId, externalId, RefundStatus.SUCCEEDED);
+        verify(paymentRepository, times(1)).updateRefundedAmount(any());
         verify(paymentKafkaProducer, times(1)).publishRefundCompleted(KafkaUtils.formatKafkaId(orderId), orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void submitRefund_publishesRefundFailedWhenStripeFailsTheRefundSynchronously() {
+    void submitRefund_releasesTheRefundedAmountAndPublishesRefundFailedWhenStripeFailsTheRefundSynchronously() {
         var paymentId = 1L;
         var orderId = 100L;
         var initiatedId = 1L;
@@ -170,12 +176,15 @@ class RefundServiceImplTest {
         var idempotencyKey = UUID.randomUUID();
         var externalId = "re_new";
 
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, "0.00");
+        var paymentWithRefund = testPayment(paymentId, orderId, amount);
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
         var failedRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.FAILED, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        // loaded at the start, when creating the refund, and again when releasing it
+        when(paymentRepository.getById(paymentId)).thenReturn(payment, payment, paymentWithRefund);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund("pi_test", initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.FAILED));
         when(refundRepository.markPending(initiatedId, externalId, RefundStatus.FAILED)).thenReturn(failedRefund);
@@ -183,6 +192,10 @@ class RefundServiceImplTest {
         var result = refundService.submitRefund(idempotencyKey, null, paymentId, money(amount));
 
         assertThat(result).isEqualTo(failedRefund);
+        var paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository, times(2)).updateRefundedAmount(paymentCaptor.capture());
+        assertThat(paymentCaptor.getAllValues().get(0).refundedAmount()).isEqualTo(money(amount));
+        assertThat(paymentCaptor.getAllValues().get(1).refundedAmount()).isEqualTo(money("0.00"));
         verify(refundRepository, times(1)).markPending(initiatedId, externalId, RefundStatus.FAILED);
         verify(paymentKafkaProducer, times(1)).publishRefundFailed(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
@@ -198,12 +211,13 @@ class RefundServiceImplTest {
         var correlationId = "corr-1";
         var externalId = "re_new";
 
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, "0.00");
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
         var succeededRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.SUCCEEDED, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund("pi_test", initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.SUCCEEDED));
         when(refundRepository.markPending(initiatedId, externalId, RefundStatus.SUCCEEDED)).thenReturn(succeededRefund);
@@ -216,9 +230,8 @@ class RefundServiceImplTest {
     }
 
     @Test
-    void submitRefund_resubmitsTheInitiatedRefundItsKeyAlreadyCreatedInsteadOfCreatingAnother() {
+    void submitRefund_resubmitsTheInitiatedRefundItsKeyAlreadyCreatedWithoutReservingItsAmountAgain() {
         var paymentId = 1L;
-        var orderId = 100L;
         var initiatedId = 1L;
         var amount = "40.00";
         var idempotencyKey = UUID.randomUUID();
@@ -227,9 +240,9 @@ class RefundServiceImplTest {
 
         // e.g. a previous attempt committed the INITIATED row, then found the gateway unavailable.
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of(initiatedRefund));
+        var payment = testPayment(paymentId, 100L, amount);
         var pendingRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(initiatedRefund));
         when(paymentGateway.submitRefund(paymentExternalId, initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.PENDING));
@@ -239,13 +252,14 @@ class RefundServiceImplTest {
 
         assertThat(result).isEqualTo(pendingRefund);
         verify(refundRepository, times(0)).create(any());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verify(paymentGateway, times(1)).submitRefund(paymentExternalId, initiatedRefund);
         verify(refundRepository, times(1)).markPending(initiatedId, externalId, RefundStatus.PENDING);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void submitRefund_resumesTheRefundAConcurrentRequestWithTheSameKeyCreatedFirst() {
+    void submitRefund_resumesTheRefundAConcurrentRequestWithTheSameKeyCreatedFirstWithoutReservingItsAmount() {
         var paymentId = 1L;
         var initiatedId = 1L;
         var amount = "40.00";
@@ -255,9 +269,9 @@ class RefundServiceImplTest {
 
         // The concurrent request's row didn't exist yet at the first find, but did by the insert.
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
-        var payment = testPayment(paymentId, 100L, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, 100L, "0.00");
         var pendingRefund = testRefund(initiatedId, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty(), Optional.of(initiatedRefund));
         when(refundRepository.create(any())).thenThrow(new DuplicateIdempotencyKeyException("duplicate"));
@@ -270,6 +284,7 @@ class RefundServiceImplTest {
         assertThat(result).isEqualTo(pendingRefund);
         verify(refundRepository, times(2)).findByIdempotencyKey(idempotencyKey);
         verify(refundRepository, times(1)).create(any());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verify(paymentGateway, times(1)).submitRefund(paymentExternalId, initiatedRefund);
         verify(refundRepository, times(1)).markPending(initiatedId, externalId, RefundStatus.PENDING);
         verifyNoInteractions(paymentKafkaProducer);
@@ -282,8 +297,8 @@ class RefundServiceImplTest {
         var idempotencyKey = UUID.randomUUID();
 
         var pendingRefund = testRefund(1L, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
-        var payment = testPayment(paymentId, 100L, PaymentStatus.CONFIRMED, List.of(pendingRefund));
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        var payment = testPayment(paymentId, 100L, amount);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(pendingRefund));
 
         var result = refundService.submitRefund(idempotencyKey, null, paymentId, money(amount));
@@ -292,6 +307,7 @@ class RefundServiceImplTest {
         verify(refundRepository, times(0)).create(any());
         verify(refundRepository, times(0)).markPending(anyLong(), any(), any());
         verify(refundRepository, times(0)).updateStatus(anyLong(), any());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verifyNoInteractions(paymentGateway);
         verifyNoInteractions(paymentKafkaProducer);
     }
@@ -302,8 +318,8 @@ class RefundServiceImplTest {
         var idempotencyKey = UUID.randomUUID();
 
         var existingRefund = testInitiatedRefund(1L, paymentId, idempotencyKey, "40.00");
-        var payment = testPayment(paymentId, 100L, PaymentStatus.CONFIRMED, List.of(existingRefund));
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        var payment = testPayment(paymentId, 100L, "40.00");
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(existingRefund));
 
         assertThatThrownBy(() -> refundService.submitRefund(idempotencyKey, null, paymentId, money("30.00")))
@@ -311,52 +327,61 @@ class RefundServiceImplTest {
 
         verify(refundRepository, times(0)).create(any());
         verify(refundRepository, times(0)).updateStatus(anyLong(), any());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verifyNoInteractions(paymentGateway);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void submitRefund_leavesTheRefundInitiatedAndRethrowsWhenTheGatewayIsUnavailable() {
+    void submitRefund_leavesTheRefundInitiatedAndItsAmountReservedAndRethrowsWhenTheGatewayIsUnavailable() {
         var paymentId = 1L;
         var amount = "40.00";
         var idempotencyKey = UUID.randomUUID();
 
-        var payment = testPayment(paymentId, 100L, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, 100L, "0.00");
         var initiatedRefund = testInitiatedRefund(1L, paymentId, idempotencyKey, amount);
         var expectedException = new PaymentGatewayUnavailableException("Stripe unavailable", new RuntimeException());
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund("pi_test", initiatedRefund)).thenThrow(expectedException);
 
         assertThatThrownBy(() -> refundService.submitRefund(idempotencyKey, null, paymentId, money(amount)))
                 .isSameAs(expectedException);
 
+        verify(paymentRepository, times(1)).updateRefundedAmount(any());
         verify(refundRepository, times(0)).updateStatus(anyLong(), any());
         verify(refundRepository, times(0)).markPending(anyLong(), any(), any());
         verifyNoInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void submitRefund_marksTheRefundFailedPublishesRefundFailedAndRethrowsOnAPermanentGatewayError() {
+    void submitRefund_marksTheRefundFailedReleasesItsAmountPublishesRefundFailedAndRethrowsOnAPermanentGatewayError() {
         var paymentId = 1L;
         var orderId = 100L;
         var initiatedId = 1L;
         var amount = "40.00";
         var idempotencyKey = UUID.randomUUID();
 
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, "0.00");
+        var paymentWithRefund = testPayment(paymentId, orderId, amount);
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
         var expectedException = new PaymentGatewayException("invalid request", new RuntimeException());
-        when(paymentRepository.getByIdWithRefunds(paymentId)).thenReturn(payment);
+        // loaded at the start, when creating the refund, and again when releasing it
+        when(paymentRepository.getById(paymentId)).thenReturn(payment, payment, paymentWithRefund);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(paymentGateway.submitRefund("pi_test", initiatedRefund)).thenThrow(expectedException);
 
         assertThatThrownBy(() -> refundService.submitRefund(idempotencyKey, null, paymentId, money(amount)))
                 .isSameAs(expectedException);
 
         verify(refundRepository, times(1)).updateStatus(initiatedId, RefundStatus.FAILED);
+        var paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository, times(2)).updateRefundedAmount(paymentCaptor.capture());
+        assertThat(paymentCaptor.getAllValues().get(1).refundedAmount()).isEqualTo(money("0.00"));
         verify(refundRepository, times(0)).markPending(anyLong(), any(), any());
         verify(paymentKafkaProducer, times(1)).publishRefundFailed(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
@@ -372,19 +397,20 @@ class RefundServiceImplTest {
 
         var refund = testRefund(1L, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
         var succeededRefund = testRefund(1L, paymentId, idempotencyKey, status, amount);
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, amount);
         when(refundRepository.getByExternalId("re_test")).thenReturn(refund);
         when(refundRepository.updateStatus(1L, status)).thenReturn(succeededRefund);
         when(paymentRepository.getById(paymentId)).thenReturn(payment);
 
         refundService.updateStatusByExternalId("re_test", status);
 
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verify(paymentKafkaProducer, times(1)).publishRefundCompleted(KafkaUtils.formatKafkaId(orderId), orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void updateStatusByExternalId_publishesRefundFailedWhenStatusBecomesFailed() {
+    void updateStatusByExternalId_releasesTheRefundedAmountAndPublishesRefundFailedWhenStatusBecomesFailed() {
         var paymentId = 1L;
         var orderId = 100L;
         var amount = "40.00";
@@ -393,49 +419,37 @@ class RefundServiceImplTest {
 
         var refund = testRefund(1L, paymentId, idempotencyKey, RefundStatus.PENDING, amount);
         var failedRefund = testRefund(1L, paymentId, idempotencyKey, status, amount);
-        var payment = testPayment(paymentId, orderId, PaymentStatus.CONFIRMED, List.of());
+        var payment = testPayment(paymentId, orderId, amount);
         when(refundRepository.getByExternalId("re_test")).thenReturn(refund);
         when(refundRepository.updateStatus(1L, status)).thenReturn(failedRefund);
         when(paymentRepository.getById(paymentId)).thenReturn(payment);
+        when(paymentRepository.updateRefundedAmount(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         refundService.updateStatusByExternalId("re_test", status);
 
+        var paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepository, times(1)).updateRefundedAmount(paymentCaptor.capture());
+        assertThat(paymentCaptor.getValue().refundedAmount()).isEqualTo(money("0.00"));
         verify(paymentKafkaProducer, times(1)).publishRefundFailed(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
 
     @Test
-    void updateStatusByExternalId_publishesNothingWhenStatusIsPending() {
-        var id = 1L;
-        var externalId = "re_test";
-        var status = RefundStatus.PENDING;
-
-        var refund = testRefund(id, 1L, UUID.randomUUID(), status, "40.00");
-        when(refundRepository.getByExternalId(externalId)).thenReturn(refund);
-        when(refundRepository.updateStatus(id, status)).thenReturn(refund);
-
-        refundService.updateStatusByExternalId(externalId, status);
-
-        verifyNoInteractions(paymentKafkaProducer);
-        verify(paymentRepository, times(0)).getById(anyLong());
-    }
-
-    @Test
-    void updateStatusByExternalId_publishesNothingWhenTheRefundWasAlreadySucceeded() {
-        var id = 1L;
+    void updateStatusByExternalId_writesAndPublishesNothingWhenTheRefundAlreadyHasTheStatus() {
         var externalId = "re_test";
         var status = RefundStatus.SUCCEEDED;
-        var amount = "40.00";
 
         // e.g. submitRefund already published synchronously, and this call is a later
         // refund.updated webhook reporting the same already-terminal status.
-        var refund = testRefund(id, 1L, UUID.randomUUID(), status, amount);
+        var refund = testRefund(1L, 1L, UUID.randomUUID(), status, "40.00");
         when(refundRepository.getByExternalId(externalId)).thenReturn(refund);
-        when(refundRepository.updateStatus(id, status)).thenReturn(refund);
 
-        refundService.updateStatusByExternalId(externalId, status);
+        var result = refundService.updateStatusByExternalId(externalId, status);
 
-        verifyNoInteractions(paymentKafkaProducer);
+        assertThat(result).isSameAs(refund);
+        verify(refundRepository, times(0)).updateStatus(anyLong(), any());
         verify(paymentRepository, times(0)).getById(anyLong());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
+        verifyNoInteractions(paymentKafkaProducer);
     }
 }

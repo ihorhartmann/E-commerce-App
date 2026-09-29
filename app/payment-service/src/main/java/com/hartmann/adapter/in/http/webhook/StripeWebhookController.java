@@ -4,6 +4,7 @@ import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.domain.exception.DomainException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.model.Refund;
@@ -88,6 +89,11 @@ public class StripeWebhookController {
             );
         } catch (ObjectNotFoundException e) {
             LOG.warn("Received webhook for unknown PaymentIntent {}: {}", paymentIntent.getId(), e.getMessage());
+        } catch (DomainException e) {
+            // Acknowledged anyway: Stripe would only redeliver the same event, which the payment
+            // would reject again (e.g. a confirmation arriving after the payment already expired).
+            LOG.warn("Ignoring webhook {} the payment rejects for PaymentIntent {}: {}",
+                    event.getId(), paymentIntent.getId(), e.getMessage());
         }
     }
 
@@ -116,6 +122,11 @@ public class StripeWebhookController {
             );
         } catch (ObjectNotFoundException e) {
             LOG.warn("Received webhook for unknown Refund {}: {}", stripeRefund.getId(), e.getMessage());
+        } catch (DomainException e) {
+            // Acknowledged anyway: Stripe would only redeliver the same event, which the refund
+            // would reject again (e.g. a change to a refund that already reached a terminal status).
+            LOG.warn("Ignoring webhook {} the refund rejects for Refund {}: {}",
+                    event.getId(), stripeRefund.getId(), e.getMessage());
         }
     }
 }

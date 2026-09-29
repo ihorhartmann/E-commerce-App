@@ -22,7 +22,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,7 +50,7 @@ class PaymentKafkaConsumerTest {
     private Payment testPayment(long id, long orderId) {
         var now = Instant.now();
         return Payment.createExisting(id, orderId, "pi_test", new Money(new BigDecimal("100.00"), Currency.USD),
-                PaymentStatus.CONFIRMED, List.of(), now, now, now.plusSeconds(900));
+                PaymentStatus.CONFIRMED, Money.zero(Currency.USD), 0L, now, now, now.plusSeconds(900));
     }
 
     @Test

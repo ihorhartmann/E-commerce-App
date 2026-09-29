@@ -18,7 +18,7 @@ public interface PaymentRepository {
 
     Payment getByExternalId(String externalId);
 
-    Payment getByIdWithRefunds(long paymentId);
+    Payment updateRefundedAmount(Payment payment);
 
     /**
      * Moves every non-terminal payment (INITIATED/PENDING/ATTEMPT_DECLINED) whose expiresAt has

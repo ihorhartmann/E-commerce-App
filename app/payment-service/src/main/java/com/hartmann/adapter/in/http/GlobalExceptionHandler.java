@@ -2,6 +2,7 @@ package com.hartmann.adapter.in.http;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.exception.ApplicationException;
+import com.hartmann.application.port.out.repository.exception.ConcurrentUpdateException;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.exception.DomainException;
 import org.slf4j.Logger;
@@ -34,6 +35,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(PaymentGatewayUnavailableException.class)
     public ProblemDetail handlePaymentGatewayUnavailable(PaymentGatewayUnavailableException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    // 503, not the 409 other ApplicationExceptions get: a concurrent update is transient, and the
+    // IdempotencyFilter caches (and replays) every 4xx, so a 409 would make a retry fail forever.
+    @ExceptionHandler(ConcurrentUpdateException.class)
+    public ProblemDetail handleConcurrentUpdate(ConcurrentUpdateException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
     }
 
