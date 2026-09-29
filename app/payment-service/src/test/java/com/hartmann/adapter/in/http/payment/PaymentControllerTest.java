@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -59,7 +58,7 @@ class PaymentControllerTest {
 
     private Payment testPayment(long id, long orderId, PaymentStatus status) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, List.of(), now, now, now.plusSeconds(900));
+        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, Money.zero(Currency.USD), 0L, now, now, now.plusSeconds(900));
     }
 
     private String submitPaymentRequestJson(long orderId) {

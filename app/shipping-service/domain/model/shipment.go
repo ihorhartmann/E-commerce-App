@@ -34,7 +34,7 @@ func NewExistingShipment(
 	createdAt time.Time,
 	updatedAt time.Time,
 ) (*Shipment, error) {
-	if id == 0 || !status.isValid() || !holder.isValid() {
+	if id == 0 || !status.isValid() || !holder.isValid() || !holderMatchesStatus(status, holder) {
 		return nil, domain.ErrInvalidInput
 	}
 	if err := validateShipment(orderId, trackingNumber); err != nil {
@@ -83,6 +83,22 @@ func generateTrackingNumber(orderId uint64) (string, error) {
 	}
 
 	return fmt.Sprintf("%d%s", orderId, strings.ToUpper(hex.EncodeToString(suffix))), nil
+}
+
+// holderMatchesStatus reports whether a shipment in status can be held by holder: the goods leave
+// the inventory only at pickup (StartDelivery) and can come back to it only after a cancellation.
+func holderMatchesStatus(status ShipmentStatus, holder ShipmentHolder) bool {
+	switch status {
+	case Created:
+		return holder == HolderInventory
+	case InDelivery, Delivered, Lost:
+		return holder == HolderCourier
+	case Cancelled:
+		// cancelled before pickup or already returned (inventory), or still on its way back (courier)
+		return true
+	default:
+		return false
+	}
 }
 
 func validateShipment(orderId uint64, trackingNumber string) error {

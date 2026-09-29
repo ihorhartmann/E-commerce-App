@@ -57,17 +57,17 @@ func (mr *MockProductRepositoryMockRecorder) Create(ctx, product any) *gomock.Ca
 }
 
 // Delete mocks base method.
-func (m *MockProductRepository) Delete(ctx context.Context, id uint64) error {
+func (m *MockProductRepository) Delete(ctx context.Context, product *model.Product) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, id)
+	ret := m.ctrl.Call(m, "Delete", ctx, product)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockProductRepositoryMockRecorder) Delete(ctx, id any) *gomock.Call {
+func (mr *MockProductRepositoryMockRecorder) Delete(ctx, product any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockProductRepository)(nil).Delete), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockProductRepository)(nil).Delete), ctx, product)
 }
 
 // GetByID mocks base method.
@@ -83,21 +83,6 @@ func (m *MockProductRepository) GetByID(ctx context.Context, id uint64) (*model.
 func (mr *MockProductRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockProductRepository)(nil).GetByID), ctx, id)
-}
-
-// GetByIDWithReservations mocks base method.
-func (m *MockProductRepository) GetByIDWithReservations(ctx context.Context, id uint64) (*model.Product, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByIDWithReservations", ctx, id)
-	ret0, _ := ret[0].(*model.Product)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetByIDWithReservations indicates an expected call of GetByIDWithReservations.
-func (mr *MockProductRepositoryMockRecorder) GetByIDWithReservations(ctx, id any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithReservations", reflect.TypeOf((*MockProductRepository)(nil).GetByIDWithReservations), ctx, id)
 }
 
 // GetByIDs mocks base method.

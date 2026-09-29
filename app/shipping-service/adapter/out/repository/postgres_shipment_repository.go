@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"shippingservice/adapter/out/repository/entity"
 	"shippingservice/adapter/out/repository/transaction"
@@ -10,6 +11,7 @@ import (
 	"shippingservice/domain/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type postgresShipmentRepository struct {
@@ -21,12 +23,21 @@ func NewPostgresShipmentRepository(db *gorm.DB) repository.ShipmentRepository {
 	return &postgresShipmentRepository{db: db}
 }
 
+// Create returns ErrShipmentAlreadyExists if the order already has a shipment - a permanent error,
+// so the consumer doesn't retry it. ON CONFLICT DO NOTHING (instead of catching Postgres' unique
+// violation) keeps the transaction usable and can't be confused with a tracking_number collision.
 func (r *postgresShipmentRepository) Create(ctx context.Context, shipment *model.Shipment) (*model.Shipment, error) {
 	db := transaction.FromWithDefault(ctx, r.db)
 
 	row := entity.ToShipmentEntity(shipment)
-	if err := db.WithContext(ctx).Create(row).Error; err != nil {
-		return nil, err
+	result := db.WithContext(ctx).
+		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}}, DoNothing: true}).
+		Create(row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("%w: order %d", repository.ErrShipmentAlreadyExists, shipment.OrderId())
 	}
 
 	return entity.FromShipmentEntity(row)

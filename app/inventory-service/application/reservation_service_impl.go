@@ -2,7 +2,9 @@ package application
 
 import (
 	"context"
-	"fmt"
+	"maps"
+	"slices"
+
 	"inventoryservice/application/port/in"
 	"inventoryservice/application/port/out/idempotency"
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
@@ -35,86 +37,60 @@ func NewReservationService(
 	}
 }
 
+// ReserveItems reserves every line in one transaction: the products' reserved quantities and the new
+// reservations are stored together, or not at all.
 func (rs *ReservationServiceImpl) ReserveItems(
 	ctx context.Context,
 	orderID uint64,
 	reservationDTOs []dto.ReservationDTO,
 ) ([]*model.StockReservation, error) {
-	productIDs := make([]uint64, 0, len(reservationDTOs))
-	for _, line := range reservationDTOs {
-		productIDs = append(productIDs, line.ProductID)
-	}
-
-	productsByID, err := rs.getProducts(ctx, productIDs)
+	var reservations []*model.StockReservation
+	err := rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
+		var txErr error
+		reservations, txErr = rs.reserveItems(ctx, orderID, reservationDTOs)
+		return txErr
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	reservationsByProductID, err := rs.findReservations(ctx, productIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	reservationsToInsert, err := prepareReservations(orderID, reservationDTOs, productsByID, reservationsByProductID)
-	if err != nil {
-		return nil, err
-	}
-
-	return rs.reservationRepository.CreateBatch(ctx, reservationsToInsert)
+	return reservations, nil
 }
 
-func (rs *ReservationServiceImpl) getProducts(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
-	products, err := rs.productRepository.GetByIDs(ctx, productIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	productsByID := make(map[uint64]*model.Product, len(products))
-	for _, product := range products {
-		productsByID[product.ID()] = product
-	}
-
-	return productsByID, nil
-}
-
-func (rs *ReservationServiceImpl) findReservations(ctx context.Context, productIDs []uint64) (map[uint64][]*model.StockReservation, error) {
-	existingReservations, err := rs.reservationRepository.FindByProductIDs(ctx, productIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	reservationsByProductID := make(map[uint64][]*model.StockReservation, len(existingReservations))
-	for _, reservation := range existingReservations {
-		reservationsByProductID[reservation.ProductID()] = append(reservationsByProductID[reservation.ProductID()], reservation)
-	}
-
-	return reservationsByProductID, nil
-}
-
-func prepareReservations(
+func (rs *ReservationServiceImpl) reserveItems(
+	ctx context.Context,
 	orderID uint64,
 	reservationDTOs []dto.ReservationDTO,
-	productsByID map[uint64]*model.Product,
-	reservationsByProductID map[uint64][]*model.StockReservation,
 ) ([]*model.StockReservation, error) {
-	reservationsToInsert := make([]*model.StockReservation, 0, len(reservationDTOs))
+	productIDs := make([]uint64, 0, len(reservationDTOs))
 	for _, reservationDTO := range reservationDTOs {
-		product := productsByID[reservationDTO.ProductID]
-
-		reservation, err := product.WithStockReservations(reservationsByProductID[reservationDTO.ProductID]).
-			CreateReservation(orderID, reservationDTO.Quantity, model.ReservationHolderBuyer)
-		if err != nil {
-			return nil, fmt.Errorf("%w: product %d", err, reservationDTO.ProductID)
-		}
-
-		reservationsToInsert = append(reservationsToInsert, reservation)
-		reservationsByProductID[reservationDTO.ProductID] = append(reservationsByProductID[reservationDTO.ProductID], reservation)
+		productIDs = append(productIDs, reservationDTO.ProductID)
 	}
 
-	return reservationsToInsert, nil
+	productsByID, err := rs.getProductsByID(ctx, productIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	reservations := make([]*model.StockReservation, 0, len(reservationDTOs))
+	for _, reservationDTO := range reservationDTOs {
+		product, reservation, err := productsByID[reservationDTO.ProductID].Reserve(orderID, reservationDTO.Quantity)
+		if err != nil {
+			return nil, err
+		}
+
+		productsByID[reservationDTO.ProductID] = product
+		reservations = append(reservations, reservation)
+	}
+
+	if err = rs.updateProducts(ctx, productsByID); err != nil {
+		return nil, err
+	}
+
+	return rs.reservationRepository.CreateBatch(ctx, reservations)
 }
 
-// Cancel deletes every stock reservation held for the given order, in one batch.
+// Cancel releases and deletes every stock reservation held for the given order.
 func (rs *ReservationServiceImpl) Cancel(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) error {
 	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
 		alreadyProcessed, err := rs.processedMessageStore.MarkProcessed(ctx, msg)
@@ -127,12 +103,24 @@ func (rs *ReservationServiceImpl) Cancel(ctx context.Context, msg idempotencydto
 			return err
 		}
 
-		ids := make([]uint64, 0, len(reservations))
-		for _, reservation := range reservations {
-			ids = append(ids, reservation.ID())
+		productsByID, err := rs.getProductsByID(ctx, reservedProductIDs(reservations))
+		if err != nil {
+			return err
 		}
 
-		return rs.reservationRepository.DeleteByIDs(ctx, ids)
+		for _, reservation := range reservations {
+			released, err := productsByID[reservation.ProductID()].ReleaseReservation(reservation)
+			if err != nil {
+				return err
+			}
+			productsByID[reservation.ProductID()] = released
+		}
+
+		if err = rs.updateProducts(ctx, productsByID); err != nil {
+			return err
+		}
+
+		return rs.reservationRepository.DeleteByIDs(ctx, reservationIDs(reservations))
 	})
 }
 
@@ -149,7 +137,7 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, msg idempot
 		}
 
 		for _, reservation := range reservations {
-			held, err := reservation.UpdateHolder(model.ReservationHolderCourier)
+			held, err := reservation.HoldByCourier()
 			if err != nil {
 				return err
 			}
@@ -163,6 +151,8 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, msg idempot
 	})
 }
 
+// Fulfill removes every reservation of the given order from its product's on-hand and reserved
+// stock, and deletes the reservations: the goods left the warehouse with the courier.
 func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) error {
 	return rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
 		alreadyProcessed, err := rs.processedMessageStore.MarkProcessed(ctx, msg)
@@ -175,20 +165,65 @@ func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, msg idempotencydt
 			return err
 		}
 
-		ids := make([]uint64, 0, len(reservations))
+		productsByID, err := rs.getProductsByID(ctx, reservedProductIDs(reservations))
+		if err != nil {
+			return err
+		}
+
 		for _, reservation := range reservations {
-			product, err := rs.productRepository.GetByID(ctx, reservation.ProductID())
+			fulfilled, err := productsByID[reservation.ProductID()].Fulfill(reservation)
 			if err != nil {
 				return err
 			}
-
-			if _, err = rs.productRepository.Update(ctx, product.Fulfill(reservation.Quantity())); err != nil {
-				return err
-			}
-
-			ids = append(ids, reservation.ID())
+			productsByID[reservation.ProductID()] = fulfilled
 		}
 
-		return rs.reservationRepository.DeleteByIDs(ctx, ids)
+		if err = rs.updateProducts(ctx, productsByID); err != nil {
+			return err
+		}
+
+		return rs.reservationRepository.DeleteByIDs(ctx, reservationIDs(reservations))
 	})
+}
+
+func (rs *ReservationServiceImpl) getProductsByID(ctx context.Context, productIDs []uint64) (map[uint64]*model.Product, error) {
+	products, err := rs.productRepository.GetByIDs(ctx, productIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	productsByID := make(map[uint64]*model.Product, len(products))
+	for _, product := range products {
+		productsByID[product.ID()] = product
+	}
+
+	return productsByID, nil
+}
+
+func (rs *ReservationServiceImpl) updateProducts(ctx context.Context, productsByID map[uint64]*model.Product) error {
+	for _, id := range slices.Sorted(maps.Keys(productsByID)) {
+		if _, err := rs.productRepository.Update(ctx, productsByID[id]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func reservedProductIDs(reservations []*model.StockReservation) []uint64 {
+	ids := make([]uint64, 0, len(reservations))
+	for _, reservation := range reservations {
+		ids = append(ids, reservation.ProductID())
+	}
+
+	return ids
+}
+
+func reservationIDs(reservations []*model.StockReservation) []uint64 {
+	ids := make([]uint64, 0, len(reservations))
+	for _, reservation := range reservations {
+		ids = append(ids, reservation.ID())
+	}
+
+	return ids
 }

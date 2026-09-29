@@ -27,8 +27,8 @@ func (noopTxExecutor) Transaction(ctx context.Context, action func(context.Conte
 }
 
 func TestProductServiceImpl_Create(t *testing.T) {
-	newProduct := testNewProduct(t, 10)     // not yet persisted, id 0
-	createdProduct := testProduct(t, 1, 10) // what the repository returns once it assigns an id
+	newProduct := testNewProduct(t, 10)        // not yet persisted, id 0
+	createdProduct := testProduct(t, 1, 10, 0) // what the repository returns once it assigns an id
 	productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 	productRepo.EXPECT().Create(gomock.Any(), newProduct).Return(createdProduct, nil).Times(1)
 
@@ -45,62 +45,45 @@ func TestProductServiceImpl_Create(t *testing.T) {
 }
 
 func TestProductServiceImpl_Update(t *testing.T) {
-	t.Run("returns the updated product with its current reservations", func(t *testing.T) {
-		input := testProduct(t, 1, 10)
-		updatedProduct := testProduct(t, 1, 20) // what the repository actually persisted and returned
-		reservation := testReservation(t, 1, updatedProduct.ID(), 100, 3, model.ReservationHolderBuyer)
-		want := updatedProduct.WithStockReservations([]*model.StockReservation{reservation})
+	t.Run("applies the new details to the stored product, keeping what it has reserved", func(t *testing.T) {
+		id := uint64(1)
+		name := "Gadget"
+		quantity := uint(20)
+		stored := testProduct(t, id, 10, 4)
+		persisted := testProduct(t, id, quantity, 4) // what the repository returns after storing it
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
-		productRepo.EXPECT().
-			GetByIDWithReservations(gomock.Any(), updatedProduct.ID()).
-			Return(want, nil).
-			Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(stored, nil).Times(1)
+
+		var gotStored *model.Product
+		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, p *model.Product) (*model.Product, error) {
+				gotStored = p
+				return persisted, nil
+			},
+		)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		got, err := service.Update(context.Background(), input)
+		got, err := service.Update(context.Background(), dto.UpdateProductDTO{ID: id, Name: name, Description: "a gadget", Price: testMoney(t), Quantity: quantity})
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("Update() = %+v, want %+v", got, want)
+		if got != persisted {
+			t.Errorf("Update() = %+v, want %+v", got, persisted)
 		}
-	})
-
-	t.Run("propagates an error fetching reservations and does not return a product", func(t *testing.T) {
-		input := testProduct(t, 1, 10)
-		updatedProduct := testProduct(t, 1, 20)
-		wantErr := errors.New("db down")
-		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().Update(gomock.Any(), input).Return(updatedProduct, nil).Times(1)
-		productRepo.EXPECT().
-			GetByIDWithReservations(gomock.Any(), updatedProduct.ID()).
-			Return(nil, wantErr).
-			Times(1)
-
-		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
-
-		got, err := service.Update(context.Background(), input)
-
-		if !errors.Is(err, wantErr) {
-			t.Errorf("err = %v, want %v", err, wantErr)
-		}
-		if got != nil {
-			t.Errorf("got = %+v, want nil", got)
+		if gotStored.Name() != name || gotStored.Quantity() != quantity || gotStored.Reserved() != stored.Reserved() {
+			t.Errorf("stored %+v, want name %q, quantity %d and reserved %d", gotStored, name, quantity, stored.Reserved())
 		}
 	})
 }
 
 func TestProductServiceImpl_Get(t *testing.T) {
-	t.Run("returns the product with its current reservations", func(t *testing.T) {
+	t.Run("returns the product", func(t *testing.T) {
 		id := uint64(1)
-		product := testProduct(t, id, 10)
-		reservation := testReservation(t, 1, id, 100, 3, model.ReservationHolderBuyer)
-		want := product.WithStockReservations([]*model.StockReservation{reservation})
+		want := testProduct(t, id, 10, 3)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().GetByIDWithReservations(gomock.Any(), id).Return(want, nil).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(want, nil).Times(1)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
@@ -109,14 +92,14 @@ func TestProductServiceImpl_Get(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !reflect.DeepEqual(got, want) {
+		if got != want {
 			t.Errorf("Get() = %+v, want %+v", got, want)
 		}
 	})
 
 	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().GetByIDWithReservations(gomock.Any(), gomock.Any()).Times(0)
+		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
@@ -127,11 +110,11 @@ func TestProductServiceImpl_Get(t *testing.T) {
 		}
 	})
 
-	t.Run("propagates an error fetching reservations", func(t *testing.T) {
+	t.Run("propagates an error fetching the product", func(t *testing.T) {
 		id := uint64(1)
 		wantErr := errors.New("db down")
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().GetByIDWithReservations(gomock.Any(), id).Return(nil, wantErr).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(nil, wantErr).Times(1)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
@@ -147,10 +130,12 @@ func TestProductServiceImpl_Get(t *testing.T) {
 }
 
 func TestProductServiceImpl_Delete(t *testing.T) {
-	t.Run("deletes the product by id", func(t *testing.T) {
+	t.Run("deletes the stored product", func(t *testing.T) {
 		id := uint64(1)
+		product := testProduct(t, id, 10, 0)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
-		productRepo.EXPECT().Delete(gomock.Any(), id).Return(nil).Times(1)
+		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(product, nil).Times(1)
+		productRepo.EXPECT().Delete(gomock.Any(), product).Return(nil).Times(1)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
@@ -161,6 +146,7 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 
 	t.Run("rejects a zero id without calling the repository", func(t *testing.T) {
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		productRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
 		productRepo.EXPECT().Delete(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
@@ -179,8 +165,8 @@ func TestProductServiceImpl_Restock(t *testing.T) {
 	t.Run("adds the requested quantity back to each product", func(t *testing.T) {
 		p1ID := uint64(1)
 		p2ID := uint64(2)
-		p1 := testProduct(t, p1ID, 5)
-		p2 := testProduct(t, p2ID, 8)
+		p1 := testProduct(t, p1ID, 5, 0)
+		p2 := testProduct(t, p2ID, 8, 0)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
 		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)

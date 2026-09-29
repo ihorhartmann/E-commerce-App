@@ -21,7 +21,7 @@ func HandleProductError(err error) error {
 	switch {
 	case errors.Is(err, ErrInvalidProductID):
 		return WithStatus(http.StatusBadRequest, err)
-	case errors.Is(err, model.ErrInsufficientStock):
+	case errors.Is(err, model.ErrInsufficientStock), errors.Is(err, model.ErrQuantityBelowReserved), errors.Is(err, model.ErrProductReserved):
 		return WithStatus(http.StatusConflict, err)
 	case errors.Is(err, repository.ErrProductNotFound):
 		return WithStatus(http.StatusNotFound, err)

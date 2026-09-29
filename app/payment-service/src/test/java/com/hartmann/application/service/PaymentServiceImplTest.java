@@ -28,6 +28,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -59,17 +60,17 @@ class PaymentServiceImplTest {
 
     private Payment testPayment(long id, long orderId, PaymentStatus status) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, List.of(), now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
+        return Payment.createExisting(id, orderId, "pi_test", testAmount(), status, Money.zero(Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
     }
 
     private Payment testInitiatedPayment(long id, long orderId) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, null, testAmount(), PaymentStatus.INITIATED, List.of(), now, null, now.plusSeconds(EXPIRES_IN_SECONDS));
+        return Payment.createExisting(id, orderId, null, testAmount(), PaymentStatus.INITIATED, Money.zero(Currency.USD), 0L, now, null, now.plusSeconds(EXPIRES_IN_SECONDS));
     }
 
     private Payment testExpiredPaymentNeverSubmitted(long id, long orderId) {
         var now = Instant.now();
-        return Payment.createExisting(id, orderId, null, testAmount(), PaymentStatus.EXPIRED, List.of(), now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
+        return Payment.createExisting(id, orderId, null, testAmount(), PaymentStatus.EXPIRED, Money.zero(Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
     }
 
     @Test
@@ -170,6 +171,21 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(declinedPayment);
+        verifyNoInteractions(paymentKafkaProducer);
+    }
+
+    @Test
+    void updateStatusByExternalId_writesAndPublishesNothingWhenThePaymentAlreadyHasTheStatus() {
+        var externalId = "pi_test";
+        var status = PaymentStatus.CONFIRMED;
+        // e.g. Stripe redelivering payment_intent.succeeded for an already confirmed payment
+        var payment = testPayment(1L, 100L, status);
+        when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
+
+        var result = paymentService.updateStatusByExternalId(externalId, status);
+
+        assertThat(result).isSameAs(payment);
+        verify(paymentRepository, times(0)).updateStatus(anyLong(), any());
         verifyNoInteractions(paymentKafkaProducer);
     }
 

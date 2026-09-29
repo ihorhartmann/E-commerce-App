@@ -32,15 +32,19 @@ func (ps *ProductServiceImpl) Create(ctx context.Context, product *model.Product
 	return ps.productRepository.Create(ctx, product)
 }
 
-func (ps *ProductServiceImpl) Update(ctx context.Context, product *model.Product) (*model.Product, error) {
-	updated, err := ps.productRepository.Update(ctx, product)
+// Update applies the new details to the stored product, keeping what it has reserved.
+func (ps *ProductServiceImpl) Update(ctx context.Context, update dto.UpdateProductDTO) (*model.Product, error) {
+	product, err := ps.productRepository.GetByID(ctx, update.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Re-read via the joined query so Reserved()/Available() on the returned product reflect
-	// current reservations instead of always reading as unreserved.
-	return ps.productRepository.GetByIDWithReservations(ctx, updated.ID())
+	updated, err := product.Update(update.Name, update.Description, update.Price, update.Quantity)
+	if err != nil {
+		return nil, err
+	}
+
+	return ps.productRepository.Update(ctx, updated)
 }
 
 func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Product, error) {
@@ -48,15 +52,25 @@ func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Produc
 		return nil, domain.ErrInvalidInput
 	}
 
-	return ps.productRepository.GetByIDWithReservations(ctx, id)
+	return ps.productRepository.GetByID(ctx, id)
 }
 
+// Delete deletes the product unless some of its stock is reserved.
 func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
 	if id == 0 {
 		return domain.ErrInvalidInput
 	}
 
-	return ps.productRepository.Delete(ctx, id)
+	product, err := ps.productRepository.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if err = product.ValidateDeletion(); err != nil {
+		return err
+	}
+
+	return ps.productRepository.Delete(ctx, product)
 }
 
 func (ps *ProductServiceImpl) Restock(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, items []dto.ReservationDTO) error {

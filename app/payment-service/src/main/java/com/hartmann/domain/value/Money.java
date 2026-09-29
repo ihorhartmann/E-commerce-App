@@ -3,9 +3,22 @@ package com.hartmann.domain.value;
 import com.hartmann.domain.exception.DomainException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
+/**
+ * A money amount, always stored with exactly SCALE decimal places, so two amounts are equal exactly
+ * when they are numerically equal (20 becomes 20.00). An amount with more decimal places is rejected
+ * rather than rounded.
+ */
 public record Money(BigDecimal amount, Currency currency) {
+    private static final int SCALE = 2;
+
     public Money {
+        try {
+            amount = amount.setScale(SCALE, RoundingMode.UNNECESSARY);
+        } catch (ArithmeticException e) {
+            throw new DomainException("Amount " + amount + " must not have more than " + SCALE + " decimal places");
+        }
         if (amount.compareTo(BigDecimal.ZERO) < 0) {
             throw new DomainException("Amount must not be negative");
         }

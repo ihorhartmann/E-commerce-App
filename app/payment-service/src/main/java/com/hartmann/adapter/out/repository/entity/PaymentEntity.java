@@ -7,7 +7,6 @@ import com.hartmann.domain.value.Money;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 
 // PaymentEntity is the payments table row shape.
 public record PaymentEntity(
@@ -17,6 +16,8 @@ public record PaymentEntity(
         BigDecimal amount,
         String currency,
         String status,
+        BigDecimal refundedAmount,
+        long version,
         Instant createdAt,
         Instant updatedAt,
         Instant expiresAt
@@ -29,6 +30,8 @@ public record PaymentEntity(
                 payment.amount().amount(),
                 payment.amount().currency().name(),
                 payment.status().name(),
+                payment.refundedAmount().amount(),
+                payment.version(),
                 payment.createdAt(),
                 payment.updatedAt(),
                 payment.expiresAt()
@@ -36,17 +39,15 @@ public record PaymentEntity(
     }
 
     public static Payment toPayment(PaymentEntity entity) {
-        return toPayment(entity, List.of());
-    }
-
-    public static Payment toPayment(PaymentEntity entity, List<com.hartmann.domain.model.Refund> refunds) {
+        var currency = Currency.valueOf(entity.currency());
         return Payment.createExisting(
                 entity.id(),
                 entity.orderId(),
                 entity.externalId(),
-                new Money(entity.amount(), Currency.valueOf(entity.currency())),
+                new Money(entity.amount(), currency),
                 PaymentStatus.valueOf(entity.status()),
-                refunds,
+                new Money(entity.refundedAmount(), currency),
+                entity.version(),
                 entity.createdAt(),
                 entity.updatedAt(),
                 entity.expiresAt()

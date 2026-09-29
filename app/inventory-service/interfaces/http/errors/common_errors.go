@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"inventoryservice/application/port/out/repository"
 	"inventoryservice/domain"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,6 +25,10 @@ func handleCommonError(err error) (error, bool) {
 		return WithStatus(http.StatusBadRequest, err), true
 	case errors.Is(err, ErrInvalidRequestBody):
 		return WithStatus(http.StatusBadRequest, err), true
+	// 503, not 409: a concurrent update is transient, while the idempotency middleware caches and
+	// replays every 4xx, which would make a retry with the same key fail forever.
+	case errors.Is(err, repository.ErrConcurrentUpdate):
+		return WithStatus(http.StatusServiceUnavailable, err), true
 	default:
 		return err, false
 	}

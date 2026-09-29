@@ -126,6 +126,36 @@ func TestNewExistingShipment(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects a holder that doesn't match the status", func(t *testing.T) {
+		testCases := []struct {
+			status ShipmentStatus
+			holder ShipmentHolder
+		}{
+			{Created, HolderCourier},
+			{InDelivery, HolderInventory},
+			{Delivered, HolderInventory},
+			{Lost, HolderInventory},
+		}
+		for _, tt := range testCases {
+			_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), tt.status, tt.holder, now, now)
+			if !errors.Is(err, domain.ErrInvalidInput) {
+				t.Errorf("status %s, holder %s: err = %v, want %v", tt.status, tt.holder, err, domain.ErrInvalidInput)
+			}
+		}
+	})
+
+	t.Run("accepts a cancelled shipment held by either the inventory or the courier", func(t *testing.T) {
+		for _, holder := range []ShipmentHolder{HolderInventory, HolderCourier} {
+			shipment, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), Cancelled, holder, now, now)
+			if err != nil {
+				t.Fatalf("holder %s: unexpected error: %v", holder, err)
+			}
+			if shipment.Holder() != holder {
+				t.Errorf("Holder() = %v, want %v", shipment.Holder(), holder)
+			}
+		}
+	})
+
 	t.Run("rejects a zero orderId", func(t *testing.T) {
 		_, err := NewExistingShipment(1, 0, "TRACK-1", testAddress(t), Created, HolderInventory, now, now)
 		if !errors.Is(err, domain.ErrInvalidInput) {

@@ -91,9 +91,64 @@ public class Refund {
      * false means the request's idempotency key was reused for a different refund.
      */
     public boolean matchesPaymentIdAndAmount(long paymentId, Money amount) {
-        return this.paymentId == paymentId
-                && this.amount.currency() == amount.currency()
-                && this.amount.amount().compareTo(amount.amount()) == 0;
+        return this.paymentId == paymentId && this.amount.equals(amount);
+    }
+
+    /** Whether the refund was already sent to the gateway - only an INITIATED refund still has to be. */
+    public boolean isSubmitted() {
+        return status != RefundStatus.INITIATED;
+    }
+
+    /**
+     * The gateway accepted the refund under externalId, reporting gatewayStatus for it - PENDING, or
+     * already SUCCEEDED/FAILED when the gateway resolved it synchronously.
+     */
+    public Refund submit(String externalId, RefundStatus gatewayStatus) {
+        requireStatus("submit", RefundStatus.INITIATED);
+        if (externalId == null || externalId.isBlank()) {
+            throw new DomainException("Refund " + id + " cannot be submitted without an externalId");
+        }
+        if (gatewayStatus == RefundStatus.INITIATED) {
+            throw new DomainException("Refund " + id + " cannot be submitted as " + gatewayStatus);
+        }
+
+        return withState(externalId, gatewayStatus);
+    }
+
+    /** The gateway rejected the refund outright, so it will never be paid out. */
+    public Refund fail() {
+        requireStatus("fail", RefundStatus.INITIATED);
+        return withState(externalId, RefundStatus.FAILED);
+    }
+
+    /**
+     * Applies a status the gateway reported for this already submitted refund. Reporting the status
+     * the refund already has is a no-op returning this same refund, since the gateway may deliver the
+     * same event more than once. A terminal status (SUCCEEDED/FAILED) is final: any change to it is
+     * rejected, as is a report about a refund that hasn't been submitted yet.
+     */
+    public Refund applyGatewayStatus(RefundStatus gatewayStatus) {
+        if (gatewayStatus == status) {
+            return this;
+        }
+
+        requireStatus("apply gateway status " + gatewayStatus + " to", RefundStatus.PENDING);
+        if (gatewayStatus == RefundStatus.INITIATED) {
+            throw new DomainException("Refund " + id + " cannot go back to " + gatewayStatus);
+        }
+
+        return withState(externalId, gatewayStatus);
+    }
+
+    private void requireStatus(String action, RefundStatus expected) {
+        if (status != expected) {
+            throw new DomainException(
+                    "Cannot " + action + " refund " + id + ": expected status " + expected + " but was " + status);
+        }
+    }
+
+    private Refund withState(String externalId, RefundStatus status) {
+        return new Refund(id, paymentId, idempotencyKey, externalId, amount, status, createdAt, Instant.now());
     }
 
     @Override

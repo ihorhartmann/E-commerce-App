@@ -1,7 +1,7 @@
 package product
 
 import (
-	"inventoryservice/domain/model"
+	"inventoryservice/application/dto"
 )
 
 type UpdateProductRequest struct {
@@ -11,11 +11,18 @@ type UpdateProductRequest struct {
 	Quantity    uint     `json:"quantity"`
 }
 
-func FromUpdateProductRequest(id uint64, request UpdateProductRequest) (*model.Product, error) {
+// FromUpdateProductRequest takes the id separately: it comes from the URL path, not the request body.
+func FromUpdateProductRequest(id uint64, request UpdateProductRequest) (dto.UpdateProductDTO, error) {
 	price, err := fromMoneyDTO(request.Price)
 	if err != nil {
-		return nil, err
+		return dto.UpdateProductDTO{}, err
 	}
 
-	return model.NewExistingProduct(id, request.Name, request.Description, price, request.Quantity)
+	return dto.UpdateProductDTO{
+		ID:          id,
+		Name:        request.Name,
+		Description: request.Description,
+		Price:       price,
+		Quantity:    request.Quantity,
+	}, nil
 }

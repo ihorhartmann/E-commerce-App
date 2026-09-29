@@ -56,12 +56,12 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 		return errors.HandleProductError(errors.ErrInvalidRequestBody)
 	}
 
-	product, err := dto.FromUpdateProductRequest(id, request)
+	update, err := dto.FromUpdateProductRequest(id, request)
 	if err != nil {
 		return errors.HandleProductError(err)
 	}
 
-	updatedProduct, err := pc.productService.Update(c.Context(), product)
+	updatedProduct, err := pc.productService.Update(c.Context(), update)
 	if err != nil {
 		return errors.HandleProductError(err)
 	}

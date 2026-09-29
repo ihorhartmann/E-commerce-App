@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS payment.payments (
     amount NUMERIC(19, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     status VARCHAR(20) NOT NULL,
+    refunded_amount NUMERIC(19, 2) NOT NULL DEFAULT 0,
+    version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ NOT NULL,
