@@ -20,8 +20,9 @@ type Shipment struct {
 	holder         ShipmentHolder
 	createdAt      time.Time
 	// updatedAt is the zero value (updatedAt.IsZero()) until the shipment's status actually
-	// changes for the first time - see copy().
+	// changes for the first time - see changeState().
 	updatedAt time.Time
+	version   uint64
 }
 
 func NewExistingShipment(
@@ -33,6 +34,7 @@ func NewExistingShipment(
 	holder ShipmentHolder,
 	createdAt time.Time,
 	updatedAt time.Time,
+	version uint64,
 ) (*Shipment, error) {
 	if id == 0 || !status.isValid() || !holder.isValid() || !holderMatchesStatus(status, holder) {
 		return nil, domain.ErrInvalidInput
@@ -50,6 +52,7 @@ func NewExistingShipment(
 		holder:         holder,
 		createdAt:      createdAt,
 		updatedAt:      updatedAt,
+		version:        version,
 	}, nil
 }
 
@@ -109,49 +112,54 @@ func validateShipment(orderId uint64, trackingNumber string) error {
 	return nil
 }
 
-func (s *Shipment) StartDelivery() (*Shipment, error) {
+func (s *Shipment) StartDelivery() error {
 	if err := s.requireStatus("start delivery", Created); err != nil {
-		return nil, err
+		return err
 	}
 
-	return s.copy(InDelivery, HolderCourier), nil
+	s.changeState(InDelivery, HolderCourier)
+	return nil
 }
 
-func (s *Shipment) Deliver() (*Shipment, error) {
+func (s *Shipment) Deliver() error {
 	if err := s.requireStatus("deliver", InDelivery); err != nil {
-		return nil, err
+		return err
 	}
 
-	return s.copy(Delivered, s.holder), nil
+	s.changeState(Delivered, s.holder)
+	return nil
 }
 
-func (s *Shipment) Lose() (*Shipment, error) {
+func (s *Shipment) Lose() error {
 	if err := s.requireStatus("lose", InDelivery); err != nil {
-		return nil, err
+		return err
 	}
 
-	return s.copy(Lost, s.holder), nil
+	s.changeState(Lost, s.holder)
+	return nil
 }
 
-func (s *Shipment) Cancel() (*Shipment, error) {
+func (s *Shipment) Cancel() error {
 	if err := s.requireStatus("cancel", Created, InDelivery); err != nil {
-		return nil, err
+		return err
 	}
 
-	return s.copy(Cancelled, s.holder), nil
+	s.changeState(Cancelled, s.holder)
+	return nil
 }
 
 // ConfirmReturnedToInventory records that the courier physically brought the goods back. It only
 // changes holder, not status - Cancelled stays the terminal status either way.
-func (s *Shipment) ConfirmReturnedToInventory() (*Shipment, error) {
+func (s *Shipment) ConfirmReturnedToInventory() error {
 	if err := s.requireStatus("confirm returned to inventory", Cancelled); err != nil {
-		return nil, err
+		return err
 	}
 	if err := s.requireHolder("confirm returned to inventory", HolderCourier); err != nil {
-		return nil, err
+		return err
 	}
 
-	return s.copy(s.status, HolderInventory), nil
+	s.changeState(s.status, HolderInventory)
+	return nil
 }
 
 func (s *Shipment) requireStatus(action string, expected ...ShipmentStatus) error {
@@ -170,17 +178,10 @@ func (s *Shipment) requireHolder(action string, expected ShipmentHolder) error {
 	return fmt.Errorf("%w: cannot %s shipment %d: expected holder %s but was %s", ErrInvalidStatusTransition, action, s.id, expected, s.holder)
 }
 
-func (s *Shipment) copy(status ShipmentStatus, holder ShipmentHolder) *Shipment {
-	return &Shipment{
-		id:             s.id,
-		orderId:        s.orderId,
-		trackingNumber: s.trackingNumber,
-		address:        s.address,
-		status:         status,
-		holder:         holder,
-		createdAt:      s.createdAt,
-		updatedAt:      time.Now(),
-	}
+func (s *Shipment) changeState(status ShipmentStatus, holder ShipmentHolder) {
+	s.status = status
+	s.holder = holder
+	s.updatedAt = time.Now()
 }
 
 func (s *Shipment) Id() uint64 {
@@ -215,4 +216,8 @@ func (s *Shipment) CreatedAt() time.Time {
 // actually changes for the first time.
 func (s *Shipment) UpdatedAt() time.Time {
 	return s.updatedAt
+}
+
+func (s *Shipment) Version() uint64 {
+	return s.version
 }

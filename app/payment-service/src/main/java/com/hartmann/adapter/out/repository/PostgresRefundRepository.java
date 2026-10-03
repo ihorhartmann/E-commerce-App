@@ -1,7 +1,9 @@
 package com.hartmann.adapter.out.repository;
 
 import com.hartmann.adapter.out.repository.entity.RefundEntity;
+import com.hartmann.application.exception.ApplicationException;
 import com.hartmann.application.port.out.repository.RefundRepository;
+import com.hartmann.application.port.out.repository.exception.ConcurrentUpdateException;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
 import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
 import com.hartmann.domain.model.Refund;
@@ -36,11 +38,12 @@ public class PostgresRefundRepository implements RefundRepository {
     private static final Field<BigDecimal> AMOUNT = field(name("refunds", "amount"), BigDecimal.class);
     private static final Field<String> CURRENCY = field(name("refunds", "currency"), String.class);
     private static final Field<String> STATUS = field(name("refunds", "status"), String.class);
+    private static final Field<Long> VERSION = field(name("refunds", "version"), Long.class);
     private static final Field<OffsetDateTime> CREATED_AT = field(name("refunds", "created_at"), TIMESTAMPWITHTIMEZONE);
     private static final Field<OffsetDateTime> UPDATED_AT = field(name("refunds", "updated_at"), TIMESTAMPWITHTIMEZONE);
 
     private static final List<Field<?>> REFUND_FIELDS = List.of(
-            ID, PAYMENT_ID, IDEMPOTENCY_KEY, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, CREATED_AT, UPDATED_AT);
+            ID, PAYMENT_ID, IDEMPOTENCY_KEY, EXTERNAL_ID, AMOUNT, CURRENCY, STATUS, VERSION, CREATED_AT, UPDATED_AT);
 
     private final DSLContext dsl;
 
@@ -56,22 +59,23 @@ public class PostgresRefundRepository implements RefundRepository {
     @Override
     public Refund create(Refund refund) {
         var entity = RefundEntity.from(refund);
-        var id = dsl.insertInto(REFUNDS)
+        return dsl.insertInto(REFUNDS)
                 .set(PAYMENT_ID, entity.paymentId())
                 .set(IDEMPOTENCY_KEY, entity.idempotencyKey())
                 .set(EXTERNAL_ID, entity.externalId())
                 .set(AMOUNT, entity.amount())
                 .set(CURRENCY, entity.currency())
                 .set(STATUS, entity.status())
+                .set(VERSION, entity.version())
                 .set(CREATED_AT, toOffsetDateTime(entity.createdAt()))
                 .set(UPDATED_AT, toOffsetDateTime(entity.updatedAt()))
                 .onConflict(IDEMPOTENCY_KEY)
                 .doNothing()
-                .returning(ID)
-                .fetchOptional(ID)
+                .returning(REFUND_FIELDS)
+                .fetchOptional()
+                .map(this::toRefund)
                 .orElseThrow(() -> new DuplicateIdempotencyKeyException(
                         "Refund with idempotency key " + entity.idempotencyKey() + " already exists"));
-        return getById(id);
     }
 
     @Override
@@ -80,17 +84,18 @@ public class PostgresRefundRepository implements RefundRepository {
     }
 
     @Override
-    public Refund markPending(long refundId, String externalId, RefundStatus status) {
-        var updated = dsl.update(REFUNDS)
+    public Refund markPending(long refundId, long version, String externalId, RefundStatus status) {
+        return dsl.update(REFUNDS)
                 .set(EXTERNAL_ID, externalId)
                 .set(STATUS, status.name())
+                .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(refundId))
-                .execute();
-        if (updated == 0) {
-            throw new ObjectNotFoundException("Refund with id " + refundId + " not found");
-        }
-        return getById(refundId);
+                .and(VERSION.eq(version))
+                .returning(REFUND_FIELDS)
+                .fetchOptional()
+                .map(this::toRefund)
+                .orElseThrow(() -> notUpdated(refundId, version));
     }
 
     @Override
@@ -99,16 +104,17 @@ public class PostgresRefundRepository implements RefundRepository {
     }
 
     @Override
-    public Refund updateStatus(long refundId, RefundStatus status) {
-        var updated = dsl.update(REFUNDS)
+    public Refund updateStatus(long refundId, long version, RefundStatus status) {
+        return dsl.update(REFUNDS)
                 .set(STATUS, status.name())
+                .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(refundId))
-                .execute();
-        if (updated == 0) {
-            throw new ObjectNotFoundException("Refund with id " + refundId + " not found");
-        }
-        return getById(refundId);
+                .and(VERSION.eq(version))
+                .returning(REFUND_FIELDS)
+                .fetchOptional()
+                .map(this::toRefund)
+                .orElseThrow(() -> notUpdated(refundId, version));
     }
 
     @Override
@@ -120,18 +126,19 @@ public class PostgresRefundRepository implements RefundRepository {
         return toRefund(record);
     }
 
-    private Refund getById(long id) {
-        var record = dsl.select(REFUND_FIELDS).from(REFUNDS).where(ID.eq(id)).fetchOne();
-        if (record == null) {
-            throw new ObjectNotFoundException("Refund with id " + id + " not found");
+    // Nothing matched: either the refund is gone, or someone changed it after it was loaded.
+    private ApplicationException notUpdated(long refundId, long version) {
+        if (!dsl.fetchExists(REFUNDS, ID.eq(refundId))) {
+            return new ObjectNotFoundException("Refund with id " + refundId + " not found");
         }
-        return toRefund(record);
+        return new ConcurrentUpdateException(
+                "Refund " + refundId + " was changed concurrently since version " + version);
     }
 
     private Refund toRefund(Record record) {
         var entity = new RefundEntity(
                 record.get(ID), record.get(PAYMENT_ID), record.get(IDEMPOTENCY_KEY), record.get(EXTERNAL_ID),
-                record.get(AMOUNT), record.get(CURRENCY), record.get(STATUS),
+                record.get(AMOUNT), record.get(CURRENCY), record.get(STATUS), record.get(VERSION),
                 toInstant(record.get(CREATED_AT)), toInstant(record.get(UPDATED_AT))
         );
         return RefundEntity.toRefund(entity);

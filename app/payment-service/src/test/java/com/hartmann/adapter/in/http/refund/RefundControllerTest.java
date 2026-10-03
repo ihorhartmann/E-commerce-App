@@ -68,7 +68,7 @@ class RefundControllerTest {
 
     private Refund testRefund(long id, long paymentId, RefundStatus status) {
         var now = Instant.now();
-        return Refund.createExisting(id, paymentId, UUID.randomUUID(), "re_test", testAmount(), status, now, now);
+        return Refund.createExisting(id, paymentId, UUID.randomUUID(), "re_test", testAmount(), status, 0L, now, now);
     }
 
     private String submitRefundRequestJson(long paymentId) {

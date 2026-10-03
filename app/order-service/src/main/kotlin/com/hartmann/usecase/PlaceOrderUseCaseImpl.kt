@@ -19,26 +19,29 @@ class PlaceOrderUseCaseImpl(
 ) : PlaceOrderUseCase {
 
     override fun execute(order: Order): CheckoutResult {
-        val createdOrder = orderRepository.save(order)
+        val order = orderRepository.save(order)
 
         try {
-            inventoryClient.reserve(createdOrder.id, createdOrder.items)
+            inventoryClient.reserve(order.id, order.items)
         } catch (e: InsufficientStockException) {
-            orderRepository.save(createdOrder.outOfStock())
+            order.outOfStock()
+            orderRepository.save(order)
             throw e
         } catch (e: Exception) {
-            orderRepository.save(createdOrder.failReservation())
+            order.failReservation()
+            orderRepository.save(order)
             throw e
         }
 
         val paymentIntent = try {
-            paymentClient.submitPayment(createdOrder.id, createdOrder.totalPrice())
+            paymentClient.submitPayment(order.id, order.totalPrice())
         } catch (e: Exception) {
-            orderRepository.save(createdOrder.failPayment())
-            kafkaProducer.publishCancelReservation(createdOrder.id.toString(), createdOrder.id)
+            order.failPayment()
+            orderRepository.save(order)
+            kafkaProducer.publishCancelReservation(order.id.toString(), order.id)
             throw e
         }
 
-        return CheckoutResult(createdOrder, paymentIntent.clientSecret)
+        return CheckoutResult(order, paymentIntent.clientSecret)
     }
 }

@@ -49,8 +49,9 @@ func TestProductServiceImpl_Update(t *testing.T) {
 		id := uint64(1)
 		name := "Gadget"
 		quantity := uint(20)
-		stored := testProduct(t, id, 10, 4)
-		persisted := testProduct(t, id, quantity, 4) // what the repository returns after storing it
+		reserved := uint(4)
+		stored := testProduct(t, id, 10, reserved)
+		persisted := testProduct(t, id, quantity, reserved) // what the repository returns after storing it
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByID(gomock.Any(), id).Return(stored, nil).Times(1)
 
@@ -72,8 +73,8 @@ func TestProductServiceImpl_Update(t *testing.T) {
 		if got != persisted {
 			t.Errorf("Update() = %+v, want %+v", got, persisted)
 		}
-		if gotStored.Name() != name || gotStored.Quantity() != quantity || gotStored.Reserved() != stored.Reserved() {
-			t.Errorf("stored %+v, want name %q, quantity %d and reserved %d", gotStored, name, quantity, stored.Reserved())
+		if gotStored.Name() != name || gotStored.Quantity() != quantity || gotStored.Reserved() != reserved {
+			t.Errorf("stored %+v, want name %q, quantity %d and reserved %d", gotStored, name, quantity, reserved)
 		}
 	})
 }

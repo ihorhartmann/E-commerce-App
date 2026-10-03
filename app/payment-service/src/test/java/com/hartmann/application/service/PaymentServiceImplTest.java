@@ -94,7 +94,7 @@ class PaymentServiceImplTest {
         when(paymentRepository.create(any())).thenReturn(initiatedPayment);
         when(paymentGateway.submitPayment(orderId, testAmount()))
                 .thenReturn(new SubmitPaymentResult(externalId, "secret_123"));
-        when(paymentRepository.markPending(initiatedId, externalId)).thenReturn(submittedPayment);
+        when(paymentRepository.markPending(initiatedId, initiatedPayment.version(), externalId)).thenReturn(submittedPayment);
 
         var result = paymentService.submitPayment(orderId, testAmount());
 
@@ -104,7 +104,7 @@ class PaymentServiceImplTest {
         verify(paymentRepository, times(1)).create(captor.capture());
         assertThat(captor.getValue().orderId()).isEqualTo(orderId);
         assertThat(captor.getValue().status()).isEqualTo(PaymentStatus.INITIATED);
-        verify(paymentRepository, times(1)).markPending(initiatedId, externalId);
+        verify(paymentRepository, times(1)).markPending(initiatedId, initiatedPayment.version(), externalId);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
@@ -120,7 +120,7 @@ class PaymentServiceImplTest {
         assertThatThrownBy(() -> paymentService.submitPayment(orderId, testAmount()))
                 .isSameAs(expectedException);
 
-        verify(paymentRepository, times(1)).updateStatus(initiatedId, PaymentStatus.FAILED);
+        verify(paymentRepository, times(1)).updateStatus(initiatedId, initiatedPayment.version(), PaymentStatus.FAILED);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
@@ -136,7 +136,7 @@ class PaymentServiceImplTest {
         assertThatThrownBy(() -> paymentService.submitPayment(orderId, testAmount()))
                 .isSameAs(expectedException);
 
-        verify(paymentRepository, times(1)).updateStatus(initiatedId, PaymentStatus.FAILED);
+        verify(paymentRepository, times(1)).updateStatus(initiatedId, initiatedPayment.version(), PaymentStatus.FAILED);
         verifyNoInteractions(paymentKafkaProducer);
     }
 
@@ -149,7 +149,7 @@ class PaymentServiceImplTest {
         var payment = testPayment(id, orderId, PaymentStatus.PENDING);
         var confirmedPayment = testPayment(id, orderId, status);
         when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
-        when(paymentRepository.updateStatus(id, status)).thenReturn(confirmedPayment);
+        when(paymentRepository.updateStatus(id, payment.version(), status)).thenReturn(confirmedPayment);
 
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
@@ -166,7 +166,7 @@ class PaymentServiceImplTest {
         var payment = testPayment(id, 100L, PaymentStatus.PENDING);
         var declinedPayment = testPayment(id, 100L, status);
         when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
-        when(paymentRepository.updateStatus(id, status)).thenReturn(declinedPayment);
+        when(paymentRepository.updateStatus(id, payment.version(), status)).thenReturn(declinedPayment);
 
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
@@ -185,7 +185,7 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isSameAs(payment);
-        verify(paymentRepository, times(0)).updateStatus(anyLong(), any());
+        verify(paymentRepository, times(0)).updateStatus(anyLong(), anyLong(), any());
         verifyNoInteractions(paymentKafkaProducer);
     }
 

@@ -36,6 +36,10 @@ func HandleError(c *gin.Context, err error) {
 		_ = c.Error(WithStatus(http.StatusConflict, err))
 	case errors.Is(err, repository.ErrShipmentNotFound):
 		_ = c.Error(WithStatus(http.StatusNotFound, err))
+	case errors.Is(err, repository.ErrConcurrentUpdate):
+		// 503, not 409: the conflict is transient - repeating the request reloads the shipment and
+		// usually succeeds - unlike a 409 for an invalid transition, which no retry can fix.
+		_ = c.Error(WithStatus(http.StatusServiceUnavailable, err))
 	default:
 		_ = c.Error(err)
 	}

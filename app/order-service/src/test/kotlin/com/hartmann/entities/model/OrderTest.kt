@@ -41,15 +41,15 @@ private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 
         )
     }
 
-private fun processingOrder(id: Long = 0) = placedOrder(id = id).confirmPayment()
+private fun processingOrder(id: Long = 0) = placedOrder(id = id).apply { confirmPayment() }
 
-private fun orderWithShipment(trackingNumber: String = "TRACK-1") = processingOrder().createShipment(trackingNumber)
+private fun orderWithShipment(trackingNumber: String = "TRACK-1") = processingOrder().apply { createShipment(trackingNumber) }
 
-private fun orderInDelivery() = orderWithShipment().startDelivery()
+private fun orderInDelivery() = orderWithShipment().apply { startDelivery() }
 
-private fun cancelRequestedAfterPickup() = orderInDelivery().cancelShipment()
+private fun cancelRequestedAfterPickup() = orderInDelivery().apply { cancelShipment() }
 
-private fun cancelRequestedBeforePickup() = orderWithShipment().cancelShipment()
+private fun cancelRequestedBeforePickup() = orderWithShipment().apply { cancelShipment() }
 
 // A CANCEL_REQUESTED order loaded without a refund request - no transition produces one anymore,
 // but the model still has to guard against such a persisted state.
@@ -102,17 +102,20 @@ class OrderTest {
     @Test
     fun `createExisting - builds an order with the given state`() {
         val id = 42L
+        val version = 7L
         val order = Order.createExisting(
             id = id,
             userId = 1,
             items = listOf(testItem()),
             address = testAddress(),
             status = OrderStatus.PROCESSING,
+            version = version,
             createdAt = Instant.now(),
         )
 
         assertEquals(id, order.id)
         assertEquals(OrderStatus.PROCESSING, order.status)
+        assertEquals(version, order.version)
     }
 
     @Test
@@ -147,7 +150,7 @@ class OrderTest {
 
     @Test
     fun `failReservation - cancels a placed order without a refund`() {
-        val order = placedOrder().failReservation()
+        val order = placedOrder().apply { failReservation() }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
         assertEquals(CancellationReason.RESERVATION_FAILED, order.cancellationReason)
@@ -156,12 +159,12 @@ class OrderTest {
 
     @Test
     fun `failReservation - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().failReservation() }
+        assertThrows<DomainException> { processingOrder().apply { failReservation() } }
     }
 
     @Test
     fun `outOfStock - cancels a placed order`() {
-        val order = placedOrder().outOfStock()
+        val order = placedOrder().apply { outOfStock() }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
         assertEquals(CancellationReason.OUT_OF_STOCK, order.cancellationReason)
@@ -169,12 +172,12 @@ class OrderTest {
 
     @Test
     fun `outOfStock - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().outOfStock() }
+        assertThrows<DomainException> { processingOrder().apply { outOfStock() } }
     }
 
     @Test
     fun `failPayment - cancels a placed order`() {
-        val order = placedOrder().failPayment()
+        val order = placedOrder().apply { failPayment() }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
         assertEquals(CancellationReason.PAYMENT_FAILED, order.cancellationReason)
@@ -182,12 +185,12 @@ class OrderTest {
 
     @Test
     fun `failPayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().failPayment() }
+        assertThrows<DomainException> { processingOrder().apply { failPayment() } }
     }
 
     @Test
     fun `expirePayment - cancels a placed order`() {
-        val order = placedOrder().expirePayment()
+        val order = placedOrder().apply { expirePayment() }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
         assertEquals(CancellationReason.PAYMENT_EXPIRED, order.cancellationReason)
@@ -195,14 +198,14 @@ class OrderTest {
 
     @Test
     fun `expirePayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().expirePayment() }
+        assertThrows<DomainException> { processingOrder().apply { expirePayment() } }
     }
 
     // --- confirmPayment ---
 
     @Test
     fun `confirmPayment - moves a placed order to processing`() {
-        val order = placedOrder().confirmPayment()
+        val order = placedOrder().apply { confirmPayment() }
 
         assertEquals(OrderStatus.PROCESSING, order.status)
         assertNotNull(order.paymentConfirmedAt)
@@ -210,7 +213,7 @@ class OrderTest {
 
     @Test
     fun `confirmPayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().confirmPayment() }
+        assertThrows<DomainException> { processingOrder().apply { confirmPayment() } }
     }
 
     // --- createShipment / startDelivery / deliver ---
@@ -226,7 +229,7 @@ class OrderTest {
 
     @Test
     fun `createShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().createShipment("TRACK-1") }
+        assertThrows<DomainException> { placedOrder().apply { createShipment("TRACK-1") } }
     }
 
     @Test
@@ -239,17 +242,17 @@ class OrderTest {
 
     @Test
     fun `startDelivery - throws when order has no shipment`() {
-        assertThrows<IllegalArgumentException> { processingOrder().startDelivery() }
+        assertThrows<IllegalArgumentException> { processingOrder().apply { startDelivery() } }
     }
 
     @Test
     fun `startDelivery - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().startDelivery() }
+        assertThrows<DomainException> { placedOrder().apply { startDelivery() } }
     }
 
     @Test
     fun `deliver - fulfills the order and marks the shipment delivered`() {
-        val order = orderInDelivery().deliver()
+        val order = orderInDelivery().apply { deliver() }
 
         assertEquals(OrderStatus.FULFILLED, order.status)
         assertNotNull(order.shipment?.deliveredAt)
@@ -257,14 +260,14 @@ class OrderTest {
 
     @Test
     fun `deliver - throws when the shipment was never picked up`() {
-        assertThrows<IllegalStateException> { orderWithShipment().deliver() }
+        assertThrows<IllegalStateException> { orderWithShipment().apply { deliver() } }
     }
 
     // --- loseShipment / cancelShipment (PROCESSING -> CANCEL_REQUESTED) ---
 
     @Test
     fun `loseShipment - does not await a return even though the goods were already picked up`() {
-        val order = orderInDelivery().loseShipment()
+        val order = orderInDelivery().apply { loseShipment() }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertEquals(CancellationReason.SHIPMENT_LOST, order.cancellationReason)
@@ -273,7 +276,7 @@ class OrderTest {
 
     @Test
     fun `loseShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().loseShipment() }
+        assertThrows<DomainException> { placedOrder().apply { loseShipment() } }
     }
 
     @Test
@@ -294,7 +297,7 @@ class OrderTest {
 
     @Test
     fun `cancelShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().cancelShipment() }
+        assertThrows<DomainException> { placedOrder().apply { cancelShipment() } }
     }
 
     @Test
@@ -307,7 +310,7 @@ class OrderTest {
 
     @Test
     fun `loseShipment - requests a refund`() {
-        val order = orderInDelivery().loseShipment()
+        val order = orderInDelivery().apply { loseShipment() }
 
         assertNotNull(order.refund)
         assertFalse(order.refund!!.isConfirmed)
@@ -336,27 +339,27 @@ class OrderTest {
 
     @Test
     fun `requiresReservationRelease - is false when stock was never reserved`() {
-        assertFalse(placedOrder().failReservation().requiresReservationRelease())
-        assertFalse(placedOrder().outOfStock().requiresReservationRelease())
+        assertFalse(placedOrder().apply { failReservation() }.requiresReservationRelease())
+        assertFalse(placedOrder().apply { outOfStock() }.requiresReservationRelease())
     }
 
     @Test
     fun `requiresReservationRelease - is true when cancelled before the courier picked up the goods`() {
-        assertTrue(placedOrder().failPayment().requiresReservationRelease())
+        assertTrue(placedOrder().apply { failPayment() }.requiresReservationRelease())
         assertTrue(cancelRequestedBeforePickup().requiresReservationRelease())
     }
 
     @Test
     fun `requiresReservationRelease - is false when cancelled after the courier picked up the goods`() {
         assertFalse(cancelRequestedAfterPickup().requiresReservationRelease())
-        assertFalse(orderInDelivery().loseShipment().requiresReservationRelease())
+        assertFalse(orderInDelivery().apply { loseShipment() }.requiresReservationRelease())
     }
 
     // --- markRefundFailed ---
 
     @Test
     fun `markRefundFailed - flags the refund without changing order status`() {
-        val order = cancelRequestedAfterPickup().markRefundFailed()
+        val order = cancelRequestedAfterPickup().apply { markRefundFailed() }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertNotNull(order.refund?.failedAt)
@@ -364,83 +367,86 @@ class OrderTest {
 
     @Test
     fun `markRefundFailed - throws when there is no refund request`() {
-        assertThrows<IllegalArgumentException> { cancelRequestedWithoutRefund().markRefundFailed() }
+        assertThrows<IllegalArgumentException> { cancelRequestedWithoutRefund().apply { markRefundFailed() } }
     }
 
     // --- confirmRefund / returnToStock, both orderings must finalize the same way ---
 
     @Test
     fun `returnToStock - finalizes to cancelled when the refund was already confirmed`() {
-        val afterRefund = cancelRequestedAfterPickup()
-            .confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        val order = cancelRequestedAfterPickup()
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
 
-        assertEquals(OrderStatus.CANCEL_REQUESTED, afterRefund.status)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
 
-        val afterReturn = afterRefund.returnToStock()
+        order.returnToStock()
 
-        assertEquals(OrderStatus.CANCELLED, afterReturn.status)
-        assertNotNull(afterReturn.shipment?.returnedAt)
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertNotNull(order.shipment?.returnedAt)
     }
 
     @Test
     fun `confirmRefund - finalizes to cancelled when the goods already returned`() {
-        val afterReturn = cancelRequestedAfterPickup()
-            .returnToStock()
+        val order = cancelRequestedAfterPickup()
+        order.returnToStock()
 
-        assertEquals(OrderStatus.CANCEL_REQUESTED, afterReturn.status)
-        assertFalse(afterReturn.awaitingReturn)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertFalse(order.awaitingReturn)
 
-        val afterRefund = afterReturn.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
 
-        assertEquals(OrderStatus.CANCELLED, afterRefund.status)
+        assertEquals(OrderStatus.CANCELLED, order.status)
     }
 
     @Test
     fun `confirmRefund - finalizes to cancelled immediately when there is no return to wait for`() {
         val order = cancelRequestedBeforePickup()
-            .confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
 
         assertEquals(OrderStatus.CANCELLED, order.status)
     }
 
     @Test
     fun `confirmRefund - accepts the requested amount at a different scale`() {
-        val order = cancelRequestedBeforePickup().confirmRefund(Money(BigDecimal("10"), Currency.USD))
+        val order = cancelRequestedBeforePickup().apply { confirmRefund(Money(BigDecimal("10"), Currency.USD)) }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
     }
 
     @Test
-    fun `confirmRefund - throws when the refunded amount differs from the requested one`() {
-        assertThrows<DomainException> {
-            cancelRequestedBeforePickup().confirmRefund(Money(BigDecimal("9.99"), Currency.USD))
-        }
+    fun `confirmRefund - throws when the refunded amount differs from the requested one, leaving the order unchanged`() {
+        val order = cancelRequestedBeforePickup()
+
+        assertThrows<DomainException> { order.confirmRefund(Money(BigDecimal("9.99"), Currency.USD)) }
+
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertFalse(order.refund!!.isConfirmed)
     }
 
     @Test
     fun `confirmRefund - throws when there is no refund request`() {
         assertThrows<IllegalArgumentException> {
-            cancelRequestedWithoutRefund().confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+            cancelRequestedWithoutRefund().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.USD)) }
         }
     }
 
     @Test
     fun `confirmRefund - throws when order is not cancel-requested`() {
         assertThrows<DomainException> {
-            placedOrder().confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+            placedOrder().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.USD)) }
         }
     }
 
     @Test
     fun `returnToStock - throws when order has no shipment`() {
-        val order = processingOrder().cancelShipment()
+        val order = processingOrder().apply { cancelShipment() }
 
         assertThrows<IllegalArgumentException> { order.returnToStock() }
     }
 
     @Test
     fun `returnToStock - throws when order is not cancel-requested`() {
-        assertThrows<DomainException> { placedOrder().returnToStock() }
+        assertThrows<DomainException> { placedOrder().apply { returnToStock() } }
     }
 
     // --- wasPickedUp ---

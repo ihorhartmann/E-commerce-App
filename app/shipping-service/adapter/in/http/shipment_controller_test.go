@@ -3,6 +3,7 @@ package http_test
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func testAddress(t *testing.T) value.Address {
 func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder) *model.Shipment {
 	t.Helper()
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(id, 100, "TRACK-1", testAddress(t), status, holder, now, now)
+	shipment, err := model.NewExistingShipment(id, 100, "TRACK-1", testAddress(t), status, holder, now, now, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
@@ -229,6 +230,25 @@ func TestShipmentController_Pickup(t *testing.T) {
 		body := decodeShipmentBody(t, resp)
 		if body["error"] != model.ErrInvalidStatusTransition.Error() {
 			t.Errorf("error = %v, want %q", body["error"], model.ErrInvalidStatusTransition.Error())
+		}
+	})
+
+	t.Run("returns 503 when the shipment was changed concurrently", func(t *testing.T) {
+		id := uint64(1)
+		shipmentService := mocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().StartDelivery(gomock.Any(), id).Return(nil, repository.ErrConcurrentUpdate).Times(1)
+		app := newShipmentTestApp(shipmentService)
+
+		req := httptest.NewRequest("POST", "/api/v1/shipments/1/pickup", nil)
+		resp := httptest.NewRecorder()
+		app.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", resp.Code, http.StatusServiceUnavailable)
+		}
+		body := decodeShipmentBody(t, resp)
+		if body["error"] != middleware.InternalServerErrorMessage {
+			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
 		}
 	})
 

@@ -24,7 +24,7 @@ func testShipment(t *testing.T, orderID uint64, trackingNumber string, status mo
 		t.Fatalf("failed to build test address: %v", err)
 	}
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(1, orderID, trackingNumber, address, status, model.HolderCourier, now, now)
+	shipment, err := model.NewExistingShipment(1, orderID, trackingNumber, address, status, model.HolderCourier, now, now, 0)
 	if err != nil {
 		t.Fatalf("failed to build test shipment: %v", err)
 	}

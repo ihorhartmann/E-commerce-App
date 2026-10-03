@@ -13,6 +13,7 @@ import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
+import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
@@ -168,6 +169,23 @@ class OrderControllerTest {
         mockMvc.post("/api/v1/orders") {
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-payment-service-unavailable")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isServiceUnavailable() }
+            jsonPath("$.error") { value(message) }
+        }
+
+        verify(placeOrderUseCase, times(1)).execute(any())
+    }
+
+    @Test
+    fun `placeOrder - returns 503 when the order was changed concurrently`() {
+        val message = "order changed concurrently"
+        whenever(placeOrderUseCase.execute(any())).thenThrow(ConcurrentUpdateException(message, RuntimeException()))
+
+        mockMvc.post("/api/v1/orders") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-concurrent-update")
             content = validPlaceOrderRequestJson
         }.andExpect {
             status { isServiceUnavailable() }

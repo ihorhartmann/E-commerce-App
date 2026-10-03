@@ -57,16 +57,16 @@ func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotenc
 			return nil, err
 		}
 
-		created, err := s.shipmentRepository.Create(ctx, shipment)
+		shipment, err = s.shipmentRepository.Create(ctx, shipment)
 		if err != nil {
 			return nil, err
 		}
 
-		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, created); err != nil {
+		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, shipment); err != nil {
 			return nil, err
 		}
 
-		return created, nil
+		return shipment, nil
 	})
 }
 
@@ -98,22 +98,21 @@ func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id
 			return nil, err
 		}
 
-		transitioned, err := shipment.ConfirmReturnedToInventory()
+		if err = shipment.ConfirmReturnedToInventory(); err != nil {
+			return nil, err
+		}
+
+		shipment, err = s.shipmentRepository.Update(ctx, shipment)
 		if err != nil {
 			return nil, err
 		}
 
-		updated, err := s.shipmentRepository.Update(ctx, transitioned)
-		if err != nil {
+		correlationID := commonkafka.FormatKafkaId(shipment.OrderId())
+		if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, shipment); err != nil {
 			return nil, err
 		}
 
-		correlationID := commonkafka.FormatKafkaId(updated.OrderId())
-		if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, updated); err != nil {
-			return nil, err
-		}
-
-		return updated, nil
+		return shipment, nil
 	})
 }
 
@@ -122,7 +121,7 @@ func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id
 func (s *ShipmentServiceImpl) applyTransition(
 	ctx context.Context,
 	id uint64,
-	transition func(*model.Shipment) (*model.Shipment, error),
+	transition func(*model.Shipment) error,
 ) (*model.Shipment, error) {
 	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
 		shipment, err := s.shipmentRepository.GetByID(ctx, id)
@@ -130,21 +129,20 @@ func (s *ShipmentServiceImpl) applyTransition(
 			return nil, err
 		}
 
-		transitioned, err := transition(shipment)
+		if err = transition(shipment); err != nil {
+			return nil, err
+		}
+
+		shipment, err = s.shipmentRepository.Update(ctx, shipment)
 		if err != nil {
 			return nil, err
 		}
 
-		updated, err := s.shipmentRepository.Update(ctx, transitioned)
-		if err != nil {
+		correlationID := commonkafka.FormatKafkaId(shipment.OrderId())
+		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, shipment); err != nil {
 			return nil, err
 		}
 
-		correlationID := commonkafka.FormatKafkaId(updated.OrderId())
-		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, updated); err != nil {
-			return nil, err
-		}
-
-		return updated, nil
+		return shipment, nil
 	})
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/domain/model"
@@ -10,6 +11,7 @@ import (
 	"inventoryservice/infrastructure/repository/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type postgresReservationRepository struct {
@@ -30,7 +32,7 @@ func (r *postgresReservationRepository) CreateBatch(ctx context.Context, reserva
 		rows = append(rows, row)
 	}
 
-	if err := db.WithContext(ctx).Create(&rows).Error; err != nil {
+	if err := db.WithContext(ctx).Clauses(clause.Returning{}).Create(&rows).Error; err != nil {
 		return nil, err
 	}
 
@@ -50,15 +52,27 @@ func (r *postgresReservationRepository) Update(ctx context.Context, reservation 
 	db := transaction.FromWithDefault(ctx, r.db)
 
 	row := entity.ToStockReservationEntity(reservation)
-	result := db.WithContext(ctx).Model(&entity.StockReservation{}).Where("id = ?", row.ID).Select("*").Updates(row)
+	version := row.Version
+	result := db.WithContext(ctx).
+		Model(row).
+		Clauses(clause.Returning{}).
+		Where("id = ? AND version = ?", row.ID, version).
+		Updates(map[string]any{
+			"holder":  row.Holder,
+			"version": gorm.Expr("version + 1"),
+		})
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, repository.ErrReservationNotFound
+		// Nothing matched: either the reservation is gone, or someone changed it after it was loaded.
+		if _, err := r.GetByID(ctx, row.ID); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: reservation %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, version)
 	}
 
-	return reservation, nil
+	return entity.FromStockReservationEntity(row)
 }
 
 func (r *postgresReservationRepository) GetByID(ctx context.Context, reservationID uint64) (*model.StockReservation, error) {
@@ -89,18 +103,35 @@ func (r *postgresReservationRepository) GetByOrderID(ctx context.Context, orderI
 	return toReservations(rows)
 }
 
-func (r *postgresReservationRepository) DeleteByIDs(ctx context.Context, reservationIDs []uint64) error {
+func (r *postgresReservationRepository) DeleteAll(ctx context.Context, reservations []*model.StockReservation) error {
 	db := transaction.FromWithDefault(ctx, r.db)
 
-	result := db.WithContext(ctx).Delete(&entity.StockReservation{}, "id IN ?", reservationIDs)
+	ids := make([]uint64, 0, len(reservations))
+	idVersions := make([][]any, 0, len(reservations))
+	for _, reservation := range reservations {
+		ids = append(ids, reservation.ID())
+		idVersions = append(idVersions, []any{reservation.ID(), reservation.Version()})
+	}
+
+	result := db.WithContext(ctx).Delete(&entity.StockReservation{}, "(id, version) IN ?", idVersions)
 	if result.Error != nil {
 		return result.Error
 	}
-	if int(result.RowsAffected) != len(reservationIDs) {
-		return repository.ErrReservationNotFound
+	if int(result.RowsAffected) == len(reservations) {
+		return nil
 	}
 
-	return nil
+	// Not all matched: either some reservation is gone, or someone changed it after it was loaded. The
+	// ones that did match are already deleted in this transaction (rolled back with the error), so
+	// they count as existing too.
+	var remaining int64
+	if err := db.WithContext(ctx).Model(&entity.StockReservation{}).Where("id IN ?", ids).Count(&remaining).Error; err != nil {
+		return err
+	}
+	if int(remaining+result.RowsAffected) != len(reservations) {
+		return fmt.Errorf("%w: some of reservations %v", repository.ErrReservationNotFound, ids)
+	}
+	return fmt.Errorf("%w: some of reservations %v changed since they were loaded", repository.ErrConcurrentUpdate, ids)
 }
 
 func toReservations(rows []*entity.StockReservation) ([]*model.StockReservation, error) {

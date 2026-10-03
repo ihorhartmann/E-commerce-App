@@ -38,11 +38,11 @@ private fun testItem() = OrderItem.createExisting(
 private fun placedOrder() =
     Order.createExisting(id = 1, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
 
-private fun processingOrder() = placedOrder().confirmPayment()
+private fun processingOrder() = placedOrder().apply { confirmPayment() }
 
-private fun orderWithShipment() = processingOrder().createShipment("TRACK-1")
+private fun orderWithShipment() = processingOrder().apply { createShipment("TRACK-1") }
 
-private fun orderInDelivery() = orderWithShipment().startDelivery()
+private fun orderInDelivery() = orderWithShipment().apply { startDelivery() }
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class FulfillOrderSagaImplTest {
@@ -258,7 +258,7 @@ class FulfillOrderSagaImplTest {
         val correlationId = "corr-1"
         val messageType = "ShipmentReturnedToInventory"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val order = orderInDelivery().cancelShipment()
+        val order = orderInDelivery().apply { cancelShipment() }
         stubGetOrder(order)
         stubSave()
 
@@ -272,7 +272,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onRefundCompleted - confirms the refund with the reported amount and currency`() {
         val amount = BigDecimal("20.00")
-        val order = orderInDelivery().cancelShipment()
+        val order = orderInDelivery().apply { cancelShipment() }
         stubGetOrder(order)
         stubSave()
 
@@ -286,7 +286,7 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onRefundFailed - flags the refund as failed`() {
-        val order = orderInDelivery().cancelShipment()
+        val order = orderInDelivery().apply { cancelShipment() }
         stubGetOrder(order)
         stubSave()
 

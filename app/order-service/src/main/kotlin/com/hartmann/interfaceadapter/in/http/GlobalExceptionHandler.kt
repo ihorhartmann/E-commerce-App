@@ -5,6 +5,7 @@ import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableExce
 import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayException
 import com.hartmann.usecase.port.out.internal.exception.PaymentGatewayUnavailableException
 import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
+import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.entities.exception.DomainException
 import org.slf4j.Logger
@@ -24,6 +25,12 @@ class GlobalExceptionHandler {
     @ExceptionHandler(OrderNotFoundException::class)
     fun notFound(exception: OrderNotFoundException) =
         error(HttpStatus.NOT_FOUND, exception.message ?: "Order not found")
+
+    // 503, not 409: the conflict is transient - repeating the request reloads the order and usually
+    // succeeds - and the idempotency filter would replay a cached 4xx instead of running it again.
+    @ExceptionHandler(ConcurrentUpdateException::class)
+    fun concurrentUpdate(exception: ConcurrentUpdateException) =
+        error(HttpStatus.SERVICE_UNAVAILABLE, exception.message ?: "Order was changed concurrently")
 
     @ExceptionHandler(InsufficientStockException::class)
     fun insufficientStock(exception: InsufficientStockException) =

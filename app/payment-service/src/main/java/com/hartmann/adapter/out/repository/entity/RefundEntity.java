@@ -18,6 +18,7 @@ public record RefundEntity(
         BigDecimal amount,
         String currency,
         String status,
+        long version,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -30,6 +31,7 @@ public record RefundEntity(
                 refund.amount().amount(),
                 refund.amount().currency().name(),
                 refund.status().name(),
+                refund.version(),
                 refund.createdAt(),
                 refund.updatedAt()
         );
@@ -43,6 +45,7 @@ public record RefundEntity(
                 entity.externalId(),
                 new Money(entity.amount(), Currency.valueOf(entity.currency())),
                 RefundStatus.valueOf(entity.status()),
+                entity.version(),
                 entity.createdAt(),
                 entity.updatedAt()
         );

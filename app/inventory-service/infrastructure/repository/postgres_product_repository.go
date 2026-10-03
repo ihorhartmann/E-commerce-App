@@ -11,6 +11,7 @@ import (
 	"inventoryservice/infrastructure/repository/entity"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type postgresProductRepository struct {
@@ -26,7 +27,7 @@ func (r *postgresProductRepository) Create(ctx context.Context, product *model.P
 	db := transaction.FromWithDefault(ctx, r.db)
 
 	row := entity.ToProductEntity(product)
-	if err := db.WithContext(ctx).Create(row).Error; err != nil {
+	if err := db.WithContext(ctx).Clauses(clause.Returning{}).Create(row).Error; err != nil {
 		return nil, err
 	}
 
@@ -37,9 +38,12 @@ func (r *postgresProductRepository) Update(ctx context.Context, product *model.P
 	db := transaction.FromWithDefault(ctx, r.db)
 
 	row := entity.ToProductEntity(product)
+	version := row.Version
+	// RETURNING reads the stored row back into row, in the same statement
 	result := db.WithContext(ctx).
-		Model(&entity.Product{}).
-		Where("id = ? AND version = ?", row.ID, row.Version).
+		Model(row).
+		Clauses(clause.Returning{}).
+		Where("id = ? AND version = ?", row.ID, version).
 		Updates(map[string]any{
 			"name":           row.Name,
 			"description":    row.Description,
@@ -57,10 +61,9 @@ func (r *postgresProductRepository) Update(ctx context.Context, product *model.P
 		if _, err := r.GetByID(ctx, row.ID); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%w: product %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, row.Version)
+		return nil, fmt.Errorf("%w: product %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, version)
 	}
 
-	row.Version++
 	return entity.FromProductEntity(row)
 }
 

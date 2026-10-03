@@ -19,6 +19,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -63,6 +64,9 @@ class OrderEntity(
     var refundConfirmedAt: Instant? = null,
     var refundFailedAt: Instant? = null,
 
+    @Version
+    var version: Long = 0,
+
     var createdAt: Instant = Instant.now(),
     var updatedAt: Instant? = null,
 )
@@ -88,6 +92,7 @@ fun toOrderEntity(order: Order): OrderEntity {
         refundCurrency = order.refund?.amount?.currency,
         refundConfirmedAt = order.refund?.confirmedAt,
         refundFailedAt = order.refund?.failedAt,
+        version = order.version,
         createdAt = order.createdAt,
         updatedAt = order.updatedAt,
     )
@@ -124,6 +129,7 @@ fun fromOrderEntity(entity: OrderEntity): Order {
         cancellationReason = entity.cancellationReason,
         awaitingReturn = entity.awaitingReturn,
         refund = refund,
+        version = entity.version,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt,
     )
