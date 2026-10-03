@@ -56,18 +56,18 @@ func (mr *MockReservationRepositoryMockRecorder) CreateBatch(ctx, reservations a
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBatch", reflect.TypeOf((*MockReservationRepository)(nil).CreateBatch), ctx, reservations)
 }
 
-// DeleteByIDs mocks base method.
-func (m *MockReservationRepository) DeleteByIDs(ctx context.Context, reservationIDs []uint64) error {
+// DeleteAll mocks base method.
+func (m *MockReservationRepository) DeleteAll(ctx context.Context, reservations []*model.StockReservation) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteByIDs", ctx, reservationIDs)
+	ret := m.ctrl.Call(m, "DeleteAll", ctx, reservations)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// DeleteByIDs indicates an expected call of DeleteByIDs.
-func (mr *MockReservationRepositoryMockRecorder) DeleteByIDs(ctx, reservationIDs any) *gomock.Call {
+// DeleteAll indicates an expected call of DeleteAll.
+func (mr *MockReservationRepositoryMockRecorder) DeleteAll(ctx, reservations any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteByIDs", reflect.TypeOf((*MockReservationRepository)(nil).DeleteByIDs), ctx, reservationIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAll", reflect.TypeOf((*MockReservationRepository)(nil).DeleteAll), ctx, reservations)
 }
 
 // GetByID mocks base method.

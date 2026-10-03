@@ -74,12 +74,11 @@ func (rs *ReservationServiceImpl) reserveItems(
 
 	reservations := make([]*model.StockReservation, 0, len(reservationDTOs))
 	for _, reservationDTO := range reservationDTOs {
-		product, reservation, err := productsByID[reservationDTO.ProductID].Reserve(orderID, reservationDTO.Quantity)
+		reservation, err := productsByID[reservationDTO.ProductID].Reserve(orderID, reservationDTO.Quantity)
 		if err != nil {
 			return nil, err
 		}
 
-		productsByID[reservationDTO.ProductID] = product
 		reservations = append(reservations, reservation)
 	}
 
@@ -109,18 +108,16 @@ func (rs *ReservationServiceImpl) Cancel(ctx context.Context, msg idempotencydto
 		}
 
 		for _, reservation := range reservations {
-			released, err := productsByID[reservation.ProductID()].ReleaseReservation(reservation)
-			if err != nil {
+			if err = productsByID[reservation.ProductID()].ReleaseReservation(reservation); err != nil {
 				return err
 			}
-			productsByID[reservation.ProductID()] = released
 		}
 
 		if err = rs.updateProducts(ctx, productsByID); err != nil {
 			return err
 		}
 
-		return rs.reservationRepository.DeleteByIDs(ctx, reservationIDs(reservations))
+		return rs.reservationRepository.DeleteAll(ctx, reservations)
 	})
 }
 
@@ -137,12 +134,11 @@ func (rs *ReservationServiceImpl) HoldByCourier(ctx context.Context, msg idempot
 		}
 
 		for _, reservation := range reservations {
-			held, err := reservation.HoldByCourier()
-			if err != nil {
+			if err = reservation.HoldByCourier(); err != nil {
 				return err
 			}
 
-			if _, err = rs.reservationRepository.Update(ctx, held); err != nil {
+			if _, err = rs.reservationRepository.Update(ctx, reservation); err != nil {
 				return err
 			}
 		}
@@ -171,18 +167,16 @@ func (rs *ReservationServiceImpl) Fulfill(ctx context.Context, msg idempotencydt
 		}
 
 		for _, reservation := range reservations {
-			fulfilled, err := productsByID[reservation.ProductID()].Fulfill(reservation)
-			if err != nil {
+			if err = productsByID[reservation.ProductID()].Fulfill(reservation); err != nil {
 				return err
 			}
-			productsByID[reservation.ProductID()] = fulfilled
 		}
 
 		if err = rs.updateProducts(ctx, productsByID); err != nil {
 			return err
 		}
 
-		return rs.reservationRepository.DeleteByIDs(ctx, reservationIDs(reservations))
+		return rs.reservationRepository.DeleteAll(ctx, reservations)
 	})
 }
 
@@ -214,15 +208,6 @@ func reservedProductIDs(reservations []*model.StockReservation) []uint64 {
 	ids := make([]uint64, 0, len(reservations))
 	for _, reservation := range reservations {
 		ids = append(ids, reservation.ProductID())
-	}
-
-	return ids
-}
-
-func reservationIDs(reservations []*model.StockReservation) []uint64 {
-	ids := make([]uint64, 0, len(reservations))
-	for _, reservation := range reservations {
-		ids = append(ids, reservation.ID())
 	}
 
 	return ids

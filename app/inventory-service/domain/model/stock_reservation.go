@@ -30,6 +30,7 @@ type StockReservation struct {
 	orderId   uint64
 	quantity  uint
 	holder    ReservationHolder
+	version   uint64
 }
 
 func NewStockReservation(id, productId, orderId uint64, quantity uint, holder ReservationHolder) (*StockReservation, error) {
@@ -44,6 +45,20 @@ func NewStockReservation(id, productId, orderId uint64, quantity uint, holder Re
 		quantity:  quantity,
 		holder:    holder,
 	}, nil
+}
+
+func NewExistingStockReservation(id, productId, orderId uint64, quantity uint, holder ReservationHolder, version uint64) (*StockReservation, error) {
+	if id == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+
+	reservation, err := NewStockReservation(id, productId, orderId, quantity, holder)
+	if err != nil {
+		return nil, err
+	}
+	reservation.version = version
+
+	return reservation, nil
 }
 
 func (sr *StockReservation) ID() uint64 {
@@ -66,13 +81,17 @@ func (sr *StockReservation) Holder() ReservationHolder {
 	return sr.holder
 }
 
-// HoldByCourier returns a copy of the reservation handed over from the buyer to the courier: the
-// order is paid and its stock now awaits courier pickup. Only a reservation still held for the
-// buyer can be handed over.
-func (sr *StockReservation) HoldByCourier() (*StockReservation, error) {
+func (sr *StockReservation) Version() uint64 {
+	return sr.version
+}
+
+// HoldByCourier hands the reservation over from the buyer to the courier: the order is paid and its
+// stock now awaits courier pickup. Only a reservation still held for the buyer can be handed over.
+func (sr *StockReservation) HoldByCourier() error {
 	if sr.holder != ReservationHolderBuyer {
-		return nil, fmt.Errorf("%w: reservation %d is held by %s, not %s", ErrInvalidHolderTransition, sr.id, sr.holder, ReservationHolderBuyer)
+		return fmt.Errorf("%w: reservation %d is held by %s, not %s", ErrInvalidHolderTransition, sr.id, sr.holder, ReservationHolderBuyer)
 	}
 
-	return NewStockReservation(sr.id, sr.productId, sr.orderId, sr.quantity, ReservationHolderCourier)
+	sr.holder = ReservationHolderCourier
+	return nil
 }

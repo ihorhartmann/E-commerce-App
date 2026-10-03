@@ -52,6 +52,36 @@ implements it), and a constructor function/factory (e.g. Go's `NewXxx`) must ret
 struct pointer. It does not apply to dependencies or return values that are inherently concrete and have no meaningful
 interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
 
+# Domain entities and repositories
+
+* Entities (domain objects with an identity) are mutable: a transition changes the entity in place and returns
+  nothing, or only what it creates or reports (e.g. a new child object, or a boolean saying whether anything
+  changed) - never a modified copy of itself. Every transition checks everything before changing any field, so a
+  rejected transition leaves the entity exactly as it was. Value objects stay immutable.
+* Every entity stored through its own repository has a `version` column for optimistic locking, and every
+  update/delete of it applies only `WHERE id = ? AND version = ?` (with JPA, `@Version`). When nothing matches,
+  the repository tells a missing entity (not-found error) from a concurrently changed one
+  (`ConcurrentUpdateException`/`ErrConcurrentUpdate`), which is transient: retried by Kafka consumers and mapped
+  to `503` over HTTP. A child entity saved only as part of its aggregate (e.g. `OrderItem`) is covered by the
+  aggregate root's version.
+* Repository `create`/`update` methods return the entity as the database holds it after the write, read back in
+  the same statement (`RETURNING` in jOOQ and GORM; with JPA, what `save` returns) - never re-built from the
+  argument, and never through an extra `SELECT`. An optimistic-locking version is incremented only in the SQL
+  (`version = version + 1`), never in application code.
+* After `create`/`update`, the object passed in is spent: continue with the returned one, or with none.
+    * Pass a new entity to `create` inline (`repository.create(Payment.createNew(orderId, amount))`), so the
+      unsaved draft never gets a name. Where that isn't possible, reassign the same variable
+      (`shipment, err = repository.Create(ctx, shipment)`); where even that isn't possible (a Kotlin parameter),
+      name the draft `newX` and the saved entity `x`.
+    * If the result of `update` is needed, reassign the same variable or return it directly
+      (`return repository.Update(ctx, product)`); otherwise ignore it (`_` in Go). Never keep it in a second
+      variable next to the original. Inside a Java lambda (e.g. a `TransactionTemplate` callback), which can't
+      reassign a captured variable, make the write the last statement and return its result.
+    * Variables are named after the entity, not its state: `payment`, not `initiatedPayment`/`pendingPayment`.
+* Never save an object whose version is stale: the one passed to an earlier save (continue with the one it
+  returned instead), or one loaded before a step in which others could have changed it - another transaction, an
+  external call - which is reloaded instead. The optimistic version check rejects such a save.
+
 # Dependency versions
 
 Every dependency added to any service (Gradle, Maven, Go modules, etc.) must pin an explicit version - never rely on

@@ -39,12 +39,11 @@ func (ps *ProductServiceImpl) Update(ctx context.Context, update dto.UpdateProdu
 		return nil, err
 	}
 
-	updated, err := product.Update(update.Name, update.Description, update.Price, update.Quantity)
-	if err != nil {
+	if err = product.Update(update.Name, update.Description, update.Price, update.Quantity); err != nil {
 		return nil, err
 	}
 
-	return ps.productRepository.Update(ctx, updated)
+	return ps.productRepository.Update(ctx, product)
 }
 
 func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Product, error) {
@@ -86,7 +85,8 @@ func (ps *ProductServiceImpl) Restock(ctx context.Context, msg idempotencydto.Ka
 				return err
 			}
 
-			if _, err = ps.productRepository.Update(ctx, product.Restock(item.Quantity)); err != nil {
+			product.Restock(item.Quantity)
+			if _, err = ps.productRepository.Update(ctx, product); err != nil {
 				return err
 			}
 		}

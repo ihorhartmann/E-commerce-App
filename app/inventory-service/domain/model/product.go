@@ -18,7 +18,7 @@ type Product struct {
 }
 
 func NewProduct(id uint64, name, description string, price values.Money, quantity uint) (*Product, error) {
-	if err := validateProduct(name); err != nil {
+	if err := validateProduct(name, price); err != nil {
 		return nil, err
 	}
 
@@ -46,8 +46,8 @@ func NewExistingProduct(id uint64, name, description string, price values.Money,
 	return product, nil
 }
 
-func validateProduct(name string) error {
-	if strings.TrimSpace(name) == "" {
+func validateProduct(name string, price values.Money) error {
+	if strings.TrimSpace(name) == "" || price.Amount() <= 0 {
 		return domain.ErrInvalidInput
 	}
 
@@ -86,25 +86,20 @@ func (p *Product) Version() uint64 {
 	return p.version
 }
 
-// Update returns a copy of the product with the given details. The on-hand quantity can't go below
-// what is already reserved.
-func (p *Product) Update(name, description string, price values.Money, quantity uint) (*Product, error) {
-	if err := validateProduct(name); err != nil {
-		return nil, err
+// Update replaces the product's details. The on-hand quantity can't go below what is already reserved.
+func (p *Product) Update(name, description string, price values.Money, quantity uint) error {
+	if err := validateProduct(name, price); err != nil {
+		return err
 	}
 	if quantity < p.reserved {
-		return nil, fmt.Errorf("%w: product %d has %d reserved, can't set quantity to %d", ErrQuantityBelowReserved, p.id, p.reserved, quantity)
+		return fmt.Errorf("%w: product %d has %d reserved, can't set quantity to %d", ErrQuantityBelowReserved, p.id, p.reserved, quantity)
 	}
 
-	return &Product{
-		id:          p.id,
-		name:        name,
-		description: description,
-		price:       price,
-		quantity:    quantity,
-		reserved:    p.reserved,
-		version:     p.version,
-	}, nil
+	p.name = name
+	p.description = description
+	p.price = price
+	p.quantity = quantity
+	return nil
 }
 
 // ValidateDeletion reports whether the product can be deleted: not while any of its stock is
@@ -117,51 +112,55 @@ func (p *Product) ValidateDeletion() error {
 	return nil
 }
 
-// Reserve validates there is enough available stock and returns a new StockReservation for the given
-// order, held for the buyer (the order is placed but not paid yet), together with a copy of the
-// product counting it as reserved - so reserving the same product again for another line of the
-// same order is checked against the stock left after this one.
-func (p *Product) Reserve(orderID uint64, quantity uint) (*Product, *StockReservation, error) {
+// Reserve validates there is enough available stock, counts quantity as reserved and returns a new
+// StockReservation for the given order, held for the buyer (the order is placed but not paid yet).
+// Reserving the same product again for another line of the same order is then checked against the
+// stock left after this one.
+func (p *Product) Reserve(orderID uint64, quantity uint) (*StockReservation, error) {
 	if p.Available() < quantity {
-		return nil, nil, fmt.Errorf("%w: product %d has %d available, %d requested", ErrInsufficientStock, p.id, p.Available(), quantity)
+		return nil, fmt.Errorf("%w: product %d has %d available, %d requested", ErrInsufficientStock, p.id, p.Available(), quantity)
 	}
 
 	reservation, err := NewStockReservation(0, p.id, orderID, quantity, ReservationHolderBuyer)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	return p.withStock(p.quantity, p.reserved+quantity), reservation, nil
-}
-
-// ReleaseReservation returns a copy of the product no longer counting reservation as reserved: the
-// order was cancelled before its goods left the warehouse.
-func (p *Product) ReleaseReservation(reservation *StockReservation) (*Product, error) {
-	if err := p.requireOwnReservation(reservation); err != nil {
 		return nil, err
 	}
 
-	return p.withStock(p.quantity, p.reserved-reservation.Quantity()), nil
+	p.reserved += quantity
+	return reservation, nil
 }
 
-// Fulfill returns a copy of the product with reservation's quantity removed from both on-hand and
-// reserved stock: the reserved goods physically left the warehouse with the courier. It fails if the
-// reservation isn't held by a courier yet.
-func (p *Product) Fulfill(reservation *StockReservation) (*Product, error) {
+// ReleaseReservation stops counting reservation as reserved: the order was cancelled before its goods
+// left the warehouse.
+func (p *Product) ReleaseReservation(reservation *StockReservation) error {
 	if err := p.requireOwnReservation(reservation); err != nil {
-		return nil, err
+		return err
+	}
+
+	p.reserved -= reservation.Quantity()
+	return nil
+}
+
+// Fulfill removes reservation's quantity from both on-hand and reserved stock: the reserved goods
+// physically left the warehouse with the courier. It fails if the reservation isn't held by a courier
+// yet.
+func (p *Product) Fulfill(reservation *StockReservation) error {
+	if err := p.requireOwnReservation(reservation); err != nil {
+		return err
 	}
 	if reservation.Holder() != ReservationHolderCourier {
-		return nil, fmt.Errorf("%w: reservation %d is held by %s", ErrReservationNotHeldByCourier, reservation.ID(), reservation.Holder())
+		return fmt.Errorf("%w: reservation %d is held by %s", ErrReservationNotHeldByCourier, reservation.ID(), reservation.Holder())
 	}
 
-	return p.withStock(p.quantity-reservation.Quantity(), p.reserved-reservation.Quantity()), nil
+	p.quantity -= reservation.Quantity()
+	p.reserved -= reservation.Quantity()
+	return nil
 }
 
-// Restock returns a copy of the product with quantity added back to on-hand stock (the
-// courier returned goods that never made it to the buyer).
-func (p *Product) Restock(quantity uint) *Product {
-	return p.withStock(p.quantity+quantity, p.reserved)
+// Restock adds quantity back to on-hand stock (the courier returned goods that never made it to the
+// buyer).
+func (p *Product) Restock(quantity uint) {
+	p.quantity += quantity
 }
 
 // requireOwnReservation checks reservation reserves this product and is counted in its reserved
@@ -175,16 +174,4 @@ func (p *Product) requireOwnReservation(reservation *StockReservation) error {
 	}
 
 	return nil
-}
-
-func (p *Product) withStock(quantity, reserved uint) *Product {
-	return &Product{
-		id:          p.id,
-		name:        p.name,
-		description: p.description,
-		price:       p.price,
-		quantity:    quantity,
-		reserved:    reserved,
-		version:     p.version,
-	}
 }

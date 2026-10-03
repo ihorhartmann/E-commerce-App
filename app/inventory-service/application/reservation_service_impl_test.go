@@ -50,7 +50,7 @@ func testNewProduct(t *testing.T, quantity uint) *model.Product {
 
 func testReservation(t *testing.T, id, productID, orderID uint64, quantity uint, holder model.ReservationHolder) *model.StockReservation {
 	t.Helper()
-	reservation, err := model.NewStockReservation(id, productID, orderID, quantity, holder)
+	reservation, err := model.NewExistingStockReservation(id, productID, orderID, quantity, holder, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test reservation: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 				return p, nil
 			},
 		)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1, 2, 3}).Return(nil).Times(1)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), []*model.StockReservation{r1, r2, r3}).Return(nil).Times(1)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
@@ -222,7 +222,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
@@ -241,7 +241,7 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
@@ -367,7 +367,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 				return p, nil
 			},
 		)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), []uint64{1}).Return(nil).Times(1)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), []*model.StockReservation{r1}).Return(nil).Times(1)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 
@@ -386,7 +386,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
 		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), gomock.Any()).Times(0)
 		productRepo.EXPECT().GetByIDs(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
@@ -404,7 +404,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, wantErr).Times(1)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), gomock.Any()).Times(0)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		productRepo.EXPECT().GetByIDs(gomock.Any(), gomock.Any()).Times(0)
 
@@ -430,7 +430,7 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return(nil, wantErr).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
-		reservationRepo.EXPECT().DeleteByIDs(gomock.Any(), gomock.Any()).Times(0)
+		reservationRepo.EXPECT().DeleteAll(gomock.Any(), gomock.Any()).Times(0)
 
 		service := NewReservationService(reservationRepo, productRepo, processedMessageStore, noopTxExecutor{})
 

@@ -9,6 +9,7 @@ type StockReservation struct {
 	OrderID   uint64 `gorm:"index;not null"`
 	Quantity  uint   `gorm:"not null"`
 	Holder    string `gorm:"not null"`
+	Version   uint64 `gorm:"not null;default:0"`
 }
 
 func (StockReservation) TableName() string {
@@ -22,15 +23,17 @@ func ToStockReservationEntity(reservation *model.StockReservation) *StockReserva
 		OrderID:   reservation.OrderID(),
 		Quantity:  reservation.Quantity(),
 		Holder:    string(reservation.Holder()),
+		Version:   reservation.Version(),
 	}
 }
 
 func FromStockReservationEntity(reservation *StockReservation) (*model.StockReservation, error) {
-	return model.NewStockReservation(
+	return model.NewExistingStockReservation(
 		reservation.ID,
 		reservation.ProductID,
 		reservation.OrderID,
 		reservation.Quantity,
 		model.ReservationHolder(reservation.Holder),
+		reservation.Version,
 	)
 }

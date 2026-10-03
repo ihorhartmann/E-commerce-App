@@ -64,28 +64,53 @@ func TestNewStockReservation(t *testing.T) {
 	})
 }
 
-func TestStockReservation_HoldByCourier(t *testing.T) {
-	t.Run("returns a copy handed over from the buyer to the courier", func(t *testing.T) {
-		reservation, _ := NewStockReservation(1, 10, 100, 5, ReservationHolderBuyer)
-
-		held, err := reservation.HoldByCourier()
+func TestNewExistingStockReservation(t *testing.T) {
+	t.Run("creates a reservation with the given id and version", func(t *testing.T) {
+		id := uint64(1)
+		version := uint64(7)
+		reservation, err := NewExistingStockReservation(id, 10, 100, 5, ReservationHolderCourier, version)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if held.Holder() != ReservationHolderCourier {
-			t.Errorf("Holder() = %v, want %v", held.Holder(), ReservationHolderCourier)
+		if reservation.ID() != id || reservation.Version() != version {
+			t.Errorf("ID() = %d, Version() = %d, want %d and %d", reservation.ID(), reservation.Version(), id, version)
 		}
-		if held.ID() != reservation.ID() || held.ProductID() != reservation.ProductID() ||
-			held.OrderID() != reservation.OrderID() || held.Quantity() != reservation.Quantity() {
-			t.Errorf("HoldByCourier changed unrelated fields: got %+v", held)
+	})
+
+	t.Run("rejects a zero id", func(t *testing.T) {
+		_, err := NewExistingStockReservation(0, 10, 100, 5, ReservationHolderBuyer, 0)
+		if !errors.Is(err, domain.ErrInvalidInput) {
+			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		}
+	})
+
+	t.Run("rejects what a new reservation rejects", func(t *testing.T) {
+		_, err := NewExistingStockReservation(1, 10, 100, 0, ReservationHolderBuyer, 0)
+		if !errors.Is(err, domain.ErrInvalidInput) {
+			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		}
+	})
+}
+
+func TestStockReservation_HoldByCourier(t *testing.T) {
+	t.Run("hands the reservation over from the buyer to the courier", func(t *testing.T) {
+		reservation, _ := NewStockReservation(1, 10, 100, 5, ReservationHolderBuyer)
+
+		err := reservation.HoldByCourier()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if reservation.Holder() != ReservationHolderCourier {
+			t.Errorf("Holder() = %v, want %v", reservation.Holder(), ReservationHolderCourier)
 		}
 	})
 
 	t.Run("rejects a reservation already held by the courier", func(t *testing.T) {
 		reservation, _ := NewStockReservation(1, 10, 100, 5, ReservationHolderCourier)
 
-		_, err := reservation.HoldByCourier()
+		err := reservation.HoldByCourier()
 		if !errors.Is(err, ErrInvalidHolderTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidHolderTransition)
 		}
