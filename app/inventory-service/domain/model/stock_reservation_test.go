@@ -85,7 +85,7 @@ func TestNewExistingStockReservation(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects what a new reservation rejects", func(t *testing.T) {
+	t.Run("rejects a zero quantity, like a new reservation", func(t *testing.T) {
 		_, err := NewExistingStockReservation(1, 10, 100, 0, ReservationHolderBuyer, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)

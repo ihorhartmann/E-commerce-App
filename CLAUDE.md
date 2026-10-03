@@ -71,8 +71,9 @@ interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
 * After `create`/`update`, the object passed in is spent: continue with the returned one, or with none.
     * Pass a new entity to `create` inline (`repository.create(Payment.createNew(orderId, amount))`), so the
       unsaved draft never gets a name. Where that isn't possible, reassign the same variable
-      (`shipment, err = repository.Create(ctx, shipment)`); where even that isn't possible (a Kotlin parameter),
-      name the draft `newX` and the saved entity `x`.
+      (`shipment, err = repository.Create(ctx, shipment)`); where even that isn't possible (a Kotlin parameter,
+      which is always `val`), shadow the parameter with a local `val` of the same name
+      (`val order = orderRepository.save(order)`), so the draft is no longer reachable below that line.
     * If the result of `update` is needed, reassign the same variable or return it directly
       (`return repository.Update(ctx, product)`); otherwise ignore it (`_` in Go). Never keep it in a second
       variable next to the original. Inside a Java lambda (e.g. a `TransactionTemplate` callback), which can't

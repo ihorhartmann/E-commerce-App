@@ -18,6 +18,7 @@ CREATE TABLE orders.orders (
     refund_currency           VARCHAR(3),
     refund_confirmed_at       TIMESTAMPTZ,
     refund_failed_at          TIMESTAMPTZ,
+    version                   BIGINT NOT NULL DEFAULT 0,
     created_at                TIMESTAMPTZ NOT NULL,
     updated_at                TIMESTAMPTZ
 );
