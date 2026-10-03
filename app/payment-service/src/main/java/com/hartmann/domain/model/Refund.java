@@ -10,11 +10,13 @@ public class Refund {
     private final long id;
     private final long paymentId;
     private final UUID idempotencyKey;
-    private final String externalId;
+    private String externalId;
     private final Money amount;
-    private final RefundStatus status;
+    private RefundStatus status;
+
+    private final long version;
     private final Instant createdAt;
-    private final Instant updatedAt;
+    private Instant updatedAt;
 
     private Refund(
             long id,
@@ -23,6 +25,7 @@ public class Refund {
             String externalId,
             Money amount,
             RefundStatus status,
+            long version,
             Instant createdAt,
             Instant updatedAt
     ) {
@@ -50,6 +53,7 @@ public class Refund {
         this.externalId = externalId;
         this.amount = amount;
         this.status = status;
+        this.version = version;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -78,6 +82,10 @@ public class Refund {
         return status;
     }
 
+    public long version() {
+        return version;
+    }
+
     public Instant createdAt() {
         return createdAt;
     }
@@ -103,7 +111,7 @@ public class Refund {
      * The gateway accepted the refund under externalId, reporting gatewayStatus for it - PENDING, or
      * already SUCCEEDED/FAILED when the gateway resolved it synchronously.
      */
-    public Refund submit(String externalId, RefundStatus gatewayStatus) {
+    public void submit(String externalId, RefundStatus gatewayStatus) {
         requireStatus("submit", RefundStatus.INITIATED);
         if (externalId == null || externalId.isBlank()) {
             throw new DomainException("Refund " + id + " cannot be submitted without an externalId");
@@ -112,24 +120,26 @@ public class Refund {
             throw new DomainException("Refund " + id + " cannot be submitted as " + gatewayStatus);
         }
 
-        return withState(externalId, gatewayStatus);
+        changeState(externalId, gatewayStatus);
     }
 
     /** The gateway rejected the refund outright, so it will never be paid out. */
-    public Refund fail() {
+    public void fail() {
         requireStatus("fail", RefundStatus.INITIATED);
-        return withState(externalId, RefundStatus.FAILED);
+        changeState(externalId, RefundStatus.FAILED);
     }
 
     /**
      * Applies a status the gateway reported for this already submitted refund. Reporting the status
-     * the refund already has is a no-op returning this same refund, since the gateway may deliver the
-     * same event more than once. A terminal status (SUCCEEDED/FAILED) is final: any change to it is
-     * rejected, as is a report about a refund that hasn't been submitted yet.
+     * the refund already has is a no-op, since the gateway may deliver the same event more than once.
+     * A terminal status (SUCCEEDED/FAILED) is final: any change to it is rejected, as is a report
+     * about a refund that hasn't been submitted yet.
+     *
+     * @return whether the status changed, false for a repeated report
      */
-    public Refund applyGatewayStatus(RefundStatus gatewayStatus) {
+    public boolean applyGatewayStatus(RefundStatus gatewayStatus) {
         if (gatewayStatus == status) {
-            return this;
+            return false;
         }
 
         requireStatus("apply gateway status " + gatewayStatus + " to", RefundStatus.PENDING);
@@ -137,7 +147,8 @@ public class Refund {
             throw new DomainException("Refund " + id + " cannot go back to " + gatewayStatus);
         }
 
-        return withState(externalId, gatewayStatus);
+        changeState(externalId, gatewayStatus);
+        return true;
     }
 
     private void requireStatus(String action, RefundStatus expected) {
@@ -147,8 +158,10 @@ public class Refund {
         }
     }
 
-    private Refund withState(String externalId, RefundStatus status) {
-        return new Refund(id, paymentId, idempotencyKey, externalId, amount, status, createdAt, Instant.now());
+    private void changeState(String externalId, RefundStatus status) {
+        this.externalId = externalId;
+        this.status = status;
+        this.updatedAt = Instant.now();
     }
 
     @Override
@@ -170,12 +183,12 @@ public class Refund {
     @Override
     public String toString() {
         return "Refund{id=" + id + ", paymentId=" + paymentId + ", idempotencyKey=" + idempotencyKey
-                + ", externalId='" + externalId + "', amount=" + amount + ", status=" + status
+                + ", externalId='" + externalId + "', amount=" + amount + ", status=" + status + ", version=" + version
                 + ", createdAt=" + createdAt + ", updatedAt=" + updatedAt + "}";
     }
 
     public static Refund createNew(long paymentId, UUID idempotencyKey, String externalId, Money amount, RefundStatus status) {
-        return new Refund(0L, paymentId, idempotencyKey, externalId, amount, status, Instant.now(), null);
+        return new Refund(0L, paymentId, idempotencyKey, externalId, amount, status, 0L, Instant.now(), null);
     }
 
     public static Refund createExisting(
@@ -185,12 +198,13 @@ public class Refund {
             String externalId,
             Money amount,
             RefundStatus status,
+            long version,
             Instant createdAt,
             Instant updatedAt
     ) {
         if (id <= 0) {
             throw new DomainException("Refund id must be positive");
         }
-        return new Refund(id, paymentId, idempotencyKey, externalId, amount, status, createdAt, updatedAt);
+        return new Refund(id, paymentId, idempotencyKey, externalId, amount, status, version, createdAt, updatedAt);
     }
 }

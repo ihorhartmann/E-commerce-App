@@ -24,14 +24,14 @@ public class Payment {
 
     private final long id;
     private final long orderId;
-    private final String externalId;
+    private String externalId;
     private final Money amount;
-    private final PaymentStatus status;
-    private final Money refundedAmount;
+    private PaymentStatus status;
+    private Money refundedAmount;
 
     private final long version;
     private final Instant createdAt;
-    private final Instant updatedAt;
+    private Instant updatedAt;
     private final Instant expiresAt;
 
     private Payment(
@@ -124,7 +124,7 @@ public class Payment {
         return expiresAt;
     }
 
-    public RefundRequest requestRefund(Money amount, UUID idempotencyKey) {
+    public Refund requestRefund(Money amount, UUID idempotencyKey) {
         if (status != PaymentStatus.CONFIRMED) {
             throw new DomainException("Payment " + id + " is not confirmed and cannot be refunded");
         }
@@ -137,17 +137,17 @@ public class Payment {
                             + " for payment " + id);
         }
 
-        return new RefundRequest(
-                withRefundedAmount(refundedAmount.add(amount)),
-                Refund.createNew(id, idempotencyKey, null, amount, RefundStatus.INITIATED));
+        var refund = Refund.createNew(id, idempotencyKey, null, amount, RefundStatus.INITIATED);
+        changeRefundedAmount(refundedAmount.add(amount));
+        return refund;
     }
 
-    public Payment releaseRefund(Refund failedRefund) {
+    public void releaseRefund(Refund failedRefund) {
         if (failedRefund.paymentId() != id || failedRefund.status() != RefundStatus.FAILED) {
             throw new DomainException("Refund " + failedRefund.id() + " is not a failed refund of payment " + id);
         }
 
-        return withRefundedAmount(refundedAmount.subtract(failedRefund.amount()));
+        changeRefundedAmount(refundedAmount.subtract(failedRefund.amount()));
     }
 
     /**
@@ -160,44 +160,47 @@ public class Payment {
     /**
      * The gateway created the PaymentIntent identified by externalId; the customer can now pay it.
      */
-    public Payment markPending(String externalId) {
+    public void markPending(String externalId) {
         requireStatus("mark pending", PaymentStatus.INITIATED);
-        return withState(PaymentStatus.PENDING, externalId);
+        if (externalId == null || externalId.isBlank()) {
+            throw new DomainException("Payment " + id + " cannot be marked pending without an externalId");
+        }
+
+        changeState(PaymentStatus.PENDING, externalId);
     }
 
     /**
      * The gateway call creating the PaymentIntent failed, so this attempt can never be paid.
      */
-    public Payment fail() {
+    public void fail() {
         requireStatus("fail", PaymentStatus.INITIATED);
-        return withState(PaymentStatus.FAILED, externalId);
+        changeState(PaymentStatus.FAILED, externalId);
     }
 
     /**
      * Applies a status the gateway reported for this payment's PaymentIntent: CONFIRMED once it's
      * paid, ATTEMPT_DECLINED when a payment attempt was declined (the customer may still retry with
-     * another payment method). Reporting the status the payment already has is a no-op returning
-     * this same payment, since the gateway may deliver the same event more than once. Anything else
-     * is rejected - in particular a confirmation arriving after the payment already expired, and any
-     * status change of a payment that already reached a terminal status.
+     * another payment method). Reporting the status the payment already has is a no-op, since the
+     * gateway may deliver the same event more than once. Anything else is rejected - in particular a
+     * confirmation arriving after the payment already expired, and any status change of a payment
+     * that already reached a terminal status.
+     *
+     * @return whether the status changed, false for a repeated report
      */
-    public Payment applyGatewayStatus(PaymentStatus gatewayStatus) {
+    public boolean applyGatewayStatus(PaymentStatus gatewayStatus) {
         if (gatewayStatus == status) {
-            return this;
+            return false;
         }
 
-        return switch (gatewayStatus) {
-            case CONFIRMED -> {
-                requireStatus("confirm", PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED);
-                yield withState(PaymentStatus.CONFIRMED, externalId);
-            }
-            case ATTEMPT_DECLINED -> {
-                requireStatus("decline attempt", PaymentStatus.PENDING);
-                yield withState(PaymentStatus.ATTEMPT_DECLINED, externalId);
-            }
+        switch (gatewayStatus) {
+            case CONFIRMED -> requireStatus("confirm", PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED);
+            case ATTEMPT_DECLINED -> requireStatus("decline attempt", PaymentStatus.PENDING);
             default -> throw new DomainException(
                     "Gateway status " + gatewayStatus + " cannot be applied to payment " + id);
-        };
+        }
+
+        changeState(gatewayStatus, externalId);
+        return true;
     }
 
     private void requireStatus(String action, PaymentStatus... expected) {
@@ -207,12 +210,15 @@ public class Payment {
         }
     }
 
-    private Payment withState(PaymentStatus status, String externalId) {
-        return new Payment(id, orderId, externalId, amount, status, refundedAmount, version, createdAt, Instant.now(), expiresAt);
+    private void changeState(PaymentStatus status, String externalId) {
+        this.status = status;
+        this.externalId = externalId;
+        this.updatedAt = Instant.now();
     }
 
-    private Payment withRefundedAmount(Money refundedAmount) {
-        return new Payment(id, orderId, externalId, amount, status, refundedAmount, version, createdAt, Instant.now(), expiresAt);
+    private void changeRefundedAmount(Money refundedAmount) {
+        this.refundedAmount = refundedAmount;
+        this.updatedAt = Instant.now();
     }
 
     @Override

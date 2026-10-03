@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS payment.refunds (
     amount NUMERIC(19, 2) NOT NULL,
     currency VARCHAR(3) NOT NULL,
     status VARCHAR(20) NOT NULL,
+    version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
     CONSTRAINT uq_refunds_idempotency_key UNIQUE (idempotency_key),

@@ -72,12 +72,13 @@ public class RefundServiceImpl implements RefundService {
         try {
             result = paymentGateway.submitRefund(payment.externalId(), refund);
         } catch (PaymentGatewayException e) {
-            var failedRefund = refund.fail();
+            refund.fail();
             transactionTemplate.executeWithoutResult(_ -> {
-                refundRepository.updateStatus(failedRefund.id(), failedRefund.status());
+                refundRepository.updateStatus(refund.id(), refund.version(), refund.status());
                 // reloaded: creating the refund already bumped the version of the payment loaded above
-                var currentPayment = paymentRepository.getById(failedRefund.paymentId());
-                paymentRepository.updateRefundedAmount(currentPayment.releaseRefund(failedRefund));
+                var currentPayment = paymentRepository.getById(refund.paymentId());
+                currentPayment.releaseRefund(refund);
+                paymentRepository.updateRefundedAmount(currentPayment);
                 paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
             });
             throw e;
@@ -85,18 +86,19 @@ public class RefundServiceImpl implements RefundService {
 
         // Unlike Payment, Stripe often resolves a card refund synchronously - if it already landed on a
         // terminal status here, publish now rather than waiting for a webhook
-        var submitted = refund.submit(result.externalId(), result.status());
+        refund.submit(result.externalId(), result.status());
         return transactionTemplate.execute(_ -> {
-            var submittedRefund = refundRepository.markPending(submitted.id(), submitted.externalId(), submitted.status());
-            if (submittedRefund.status() == RefundStatus.SUCCEEDED) {
-                paymentKafkaProducer.publishRefundCompleted(eventCorrelationId, payment.orderId(), submittedRefund.amount());
-            } else if (submittedRefund.status() == RefundStatus.FAILED) {
+            if (refund.status() == RefundStatus.SUCCEEDED) {
+                paymentKafkaProducer.publishRefundCompleted(eventCorrelationId, payment.orderId(), refund.amount());
+            } else if (refund.status() == RefundStatus.FAILED) {
                 // reloaded: creating the refund already bumped the version of the payment loaded above
-                var currentPayment = paymentRepository.getById(submittedRefund.paymentId());
-                paymentRepository.updateRefundedAmount(currentPayment.releaseRefund(submittedRefund));
+                var currentPayment = paymentRepository.getById(refund.paymentId());
+                currentPayment.releaseRefund(refund);
+                paymentRepository.updateRefundedAmount(currentPayment);
                 paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
             }
-            return submittedRefund;
+            // stored last, so the refund as the database now holds it is what's returned
+            return refundRepository.markPending(refund.id(), refund.version(), refund.externalId(), refund.status());
         });
     }
 
@@ -117,10 +119,10 @@ public class RefundServiceImpl implements RefundService {
     private Refund createRefund(long paymentId, UUID idempotencyKey, Money amount) {
         try {
             return transactionTemplate.execute(_ -> {
-                var request = paymentRepository.getById(paymentId).requestRefund(amount, idempotencyKey);
-                var created = refundRepository.create(request.refund());
-                paymentRepository.updateRefundedAmount(request.payment());
-                return created;
+                var payment = paymentRepository.getById(paymentId);
+                var refund = refundRepository.create(payment.requestRefund(amount, idempotencyKey));
+                paymentRepository.updateRefundedAmount(payment);
+                return refund;
             });
         } catch (DuplicateIdempotencyKeyException e) {
             // Lost the race to a concurrent request with the same key, which inserted its refund
@@ -136,26 +138,26 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public Refund updateStatusByExternalId(String externalId, RefundStatus status) {
         var refund = refundRepository.getByExternalId(externalId);
-        var transitionedRefund = refund.applyGatewayStatus(status);
-        if (transitionedRefund.status() == refund.status()) {
+        if (!refund.applyGatewayStatus(status)) {
             // a redelivered event reporting the status the refund already has
             return refund;
         }
 
-        var updatedRefund = refundRepository.updateStatus(transitionedRefund.id(), transitionedRefund.status());
+        refund = refundRepository.updateStatus(refund.id(), refund.version(), refund.status());
 
         // A terminal status is final, so a refund that just changed into one got there for the first time.
-        if (updatedRefund.status().isTerminal()) {
-            var payment = paymentRepository.getById(updatedRefund.paymentId());
+        if (refund.status().isTerminal()) {
+            var payment = paymentRepository.getById(refund.paymentId());
             var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
-            if (updatedRefund.status() == RefundStatus.SUCCEEDED) {
-                paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), updatedRefund.amount());
+            if (refund.status() == RefundStatus.SUCCEEDED) {
+                paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), refund.amount());
             } else {
-                paymentRepository.updateRefundedAmount(payment.releaseRefund(updatedRefund));
+                payment.releaseRefund(refund);
+                paymentRepository.updateRefundedAmount(payment);
                 paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
             }
         }
 
-        return updatedRefund;
+        return refund;
     }
 }

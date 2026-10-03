@@ -46,24 +46,24 @@ public class PaymentServiceImpl implements PaymentService {
     // it's the durable trace of the attempt (see PaymentRepository.expireOverdue).
     @Override
     public PaymentIntentResult submitPayment(long orderId, Money amount) {
-        var initiatedPayment = paymentRepository.create(Payment.createNew(orderId, amount));
+        var payment = paymentRepository.create(Payment.createNew(orderId, amount));
 
-        var result = submitToGateway(orderId, amount, initiatedPayment);
+        var result = submitToGateway(orderId, amount, payment);
 
-        var pendingPayment = initiatedPayment.markPending(result.externalId());
-        pendingPayment = paymentRepository.markPending(pendingPayment.id(), pendingPayment.externalId());
-        return new PaymentIntentResult(pendingPayment, result.clientSecret());
+        payment.markPending(result.externalId());
+        payment = paymentRepository.markPending(payment.id(), payment.version(), payment.externalId());
+        return new PaymentIntentResult(payment, result.clientSecret());
     }
 
-    private SubmitPaymentResult submitToGateway(long orderId, Money amount, Payment initiatedPayment) {
+    private SubmitPaymentResult submitToGateway(long orderId, Money amount, Payment payment) {
         try {
             return paymentGateway.submitPayment(orderId, amount);
         } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
             // order-service already learns about this synchronously (the exception propagates
             // straight back through the HTTP call) and cancels the reservation itself, so no Kafka
             // event is published here.
-            var failedPayment = initiatedPayment.fail();
-            paymentRepository.updateStatus(failedPayment.id(), failedPayment.status());
+            payment.fail();
+            paymentRepository.updateStatus(payment.id(), payment.version(), payment.status());
             throw e;
         }
     }
@@ -72,22 +72,21 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public Payment updateStatusByExternalId(String externalId, PaymentStatus status) {
         var payment = paymentRepository.getByExternalId(externalId);
-        var transitionedPayment = payment.applyGatewayStatus(status);
-        if (transitionedPayment.status() == payment.status()) {
+        if (!payment.applyGatewayStatus(status)) {
             // a redelivered event reporting the status the payment already has
             return payment;
         }
 
-        var updatedPayment = paymentRepository.updateStatus(transitionedPayment.id(), transitionedPayment.status());
+        payment = paymentRepository.updateStatus(payment.id(), payment.version(), payment.status());
 
-        if (updatedPayment.status() == PaymentStatus.CONFIRMED) {
-            var correlationId = KafkaUtils.formatKafkaId(updatedPayment.orderId());
-            paymentKafkaProducer.publishPaymentCompleted(correlationId, updatedPayment.orderId());
+        if (payment.status() == PaymentStatus.CONFIRMED) {
+            var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
+            paymentKafkaProducer.publishPaymentCompleted(correlationId, payment.orderId());
         }
         // ATTEMPT_DECLINED is non-terminal - the customer may still retry the same PaymentIntent
         // with a different payment method, so order-service isn't told until this resolves.
 
-        return updatedPayment;
+        return payment;
     }
 
     @Override

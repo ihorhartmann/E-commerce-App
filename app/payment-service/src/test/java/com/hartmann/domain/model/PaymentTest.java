@@ -35,7 +35,7 @@ class PaymentTest {
 
     private Refund testRefund(long paymentId, String amount, RefundStatus status) {
         var now = Instant.now();
-        return Refund.createExisting(1L, paymentId, UUID.randomUUID(), "re_test", money(amount, Currency.USD), status, now, now);
+        return Refund.createExisting(1L, paymentId, UUID.randomUUID(), "re_test", money(amount, Currency.USD), status, 0L, now, now);
     }
 
     // --- constructor validation ---
@@ -209,10 +209,12 @@ class PaymentTest {
 
     @Test
     void requestRefund_throwsWhenPaymentIsNotConfirmed() {
-        var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
+        var refundedAmount = "0.00";
+        var payment = testPayment(PaymentStatus.PENDING, "100.00", refundedAmount);
 
         assertThatThrownBy(() -> payment.requestRefund(money("10.00", Currency.USD), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
+        assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
     @Test
@@ -229,33 +231,34 @@ class PaymentTest {
         var idempotencyKey = UUID.randomUUID();
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "10.00");
 
-        var request = payment.requestRefund(money(amount, Currency.USD), idempotencyKey);
+        var refund = payment.requestRefund(money(amount, Currency.USD), idempotencyKey);
 
-        var refund = request.refund();
         assertThat(refund.paymentId()).isEqualTo(payment.id());
         assertThat(refund.idempotencyKey()).isEqualTo(idempotencyKey);
         assertThat(refund.amount()).isEqualTo(money(amount, Currency.USD));
         assertThat(refund.status()).isEqualTo(RefundStatus.INITIATED);
         assertThat(refund.externalId()).isNull();
-        assertThat(request.payment().refundedAmount()).isEqualTo(money("50.00", Currency.USD));
-        assertThat(request.payment().version()).isEqualTo(payment.version());
+        assertThat(payment.refundedAmount()).isEqualTo(money("50.00", Currency.USD));
+        assertThat(payment.version()).isEqualTo(0L);
     }
 
     @Test
     void requestRefund_allowsRequestingExactlyTheRefundableBalance() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "40.00");
 
-        var request = payment.requestRefund(money("60.00", Currency.USD), UUID.randomUUID());
+        payment.requestRefund(money("60.00", Currency.USD), UUID.randomUUID());
 
-        assertThat(request.payment().refundedAmount()).isEqualTo(money("100.00", Currency.USD));
+        assertThat(payment.refundedAmount()).isEqualTo(money("100.00", Currency.USD));
     }
 
     @Test
     void requestRefund_throwsWhenRequestingMoreThanTheRefundableBalance() {
-        var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "40.00");
+        var refundedAmount = "40.00";
+        var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", refundedAmount);
 
         assertThatThrownBy(() -> payment.requestRefund(money("60.01", Currency.USD), UUID.randomUUID()))
                 .isInstanceOf(DomainException.class);
+        assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
     // --- releaseRefund ---
@@ -264,17 +267,19 @@ class PaymentTest {
     void releaseRefund_subtractsAFailedRefundFromTheRefundedAmount() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "70.00");
 
-        var released = payment.releaseRefund(testRefund(payment.id(), "40.00", RefundStatus.FAILED));
+        payment.releaseRefund(testRefund(payment.id(), "40.00", RefundStatus.FAILED));
 
-        assertThat(released.refundedAmount()).isEqualTo(money("30.00", Currency.USD));
+        assertThat(payment.refundedAmount()).isEqualTo(money("30.00", Currency.USD));
     }
 
     @Test
     void releaseRefund_throwsForARefundThatHasNotFailed() {
-        var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "70.00");
+        var refundedAmount = "70.00";
+        var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", refundedAmount);
         var refund = testRefund(payment.id(), "40.00", RefundStatus.PENDING);
 
         assertThatThrownBy(() -> payment.releaseRefund(refund)).isInstanceOf(DomainException.class);
+        assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
     @Test
@@ -303,10 +308,12 @@ class PaymentTest {
     void markPending_movesAnInitiatedPaymentToPendingWithTheExternalId() {
         var externalId = "pi_new";
 
-        var pending = testInitiatedPayment().markPending(externalId);
+        var payment = testInitiatedPayment();
 
-        assertThat(pending.status()).isEqualTo(PaymentStatus.PENDING);
-        assertThat(pending.externalId()).isEqualTo(externalId);
+        payment.markPending(externalId);
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(payment.externalId()).isEqualTo(externalId);
     }
 
     @Test
@@ -316,11 +323,24 @@ class PaymentTest {
         assertThatThrownBy(() -> payment.markPending("pi_new")).isInstanceOf(DomainException.class);
     }
 
+    @Test
+    void markPending_throwsForABlankExternalIdLeavingThePaymentInitiated() {
+        var payment = testInitiatedPayment();
+
+        assertThatThrownBy(() -> payment.markPending(" ")).isInstanceOf(DomainException.class);
+        assertThat(payment.status()).isEqualTo(PaymentStatus.INITIATED);
+        assertThat(payment.externalId()).isNull();
+    }
+
     // --- fail ---
 
     @Test
     void fail_movesAnInitiatedPaymentToFailed() {
-        assertThat(testInitiatedPayment().fail().status()).isEqualTo(PaymentStatus.FAILED);
+        var payment = testInitiatedPayment();
+
+        payment.fail();
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.FAILED);
     }
 
     @Test
@@ -328,23 +348,27 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
 
         assertThatThrownBy(payment::fail).isInstanceOf(DomainException.class);
+        assertThat(payment.status()).isEqualTo(PaymentStatus.PENDING);
     }
 
     // --- applyGatewayStatus ---
 
     @Test
-    void applyGatewayStatus_returnsTheSamePaymentForTheStatusItAlreadyHas() {
+    void applyGatewayStatus_reportsNoChangeForTheStatusItAlreadyHas() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "0.00");
+        var updatedAt = payment.updatedAt();
 
-        assertThat(payment.applyGatewayStatus(PaymentStatus.CONFIRMED)).isSameAs(payment);
+        assertThat(payment.applyGatewayStatus(PaymentStatus.CONFIRMED)).isFalse();
+        assertThat(payment.updatedAt()).isEqualTo(updatedAt);
     }
 
     @Test
     void applyGatewayStatus_confirmsAPendingOrDeclinedPayment() {
         for (var status : List.of(PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED)) {
-            var confirmed = testPayment(status, "100.00", "0.00").applyGatewayStatus(PaymentStatus.CONFIRMED);
+            var payment = testPayment(status, "100.00", "0.00");
 
-            assertThat(confirmed.status()).isEqualTo(PaymentStatus.CONFIRMED);
+            assertThat(payment.applyGatewayStatus(PaymentStatus.CONFIRMED)).isTrue();
+            assertThat(payment.status()).isEqualTo(PaymentStatus.CONFIRMED);
         }
     }
 
@@ -355,15 +379,16 @@ class PaymentTest {
 
             assertThatThrownBy(() -> payment.applyGatewayStatus(PaymentStatus.CONFIRMED))
                     .isInstanceOf(DomainException.class);
+            assertThat(payment.status()).isEqualTo(status);
         }
     }
 
     @Test
     void applyGatewayStatus_declinesAnAttemptOfAPendingPayment() {
-        var declined = testPayment(PaymentStatus.PENDING, "100.00", "0.00")
-                .applyGatewayStatus(PaymentStatus.ATTEMPT_DECLINED);
+        var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
 
-        assertThat(declined.status()).isEqualTo(PaymentStatus.ATTEMPT_DECLINED);
+        assertThat(payment.applyGatewayStatus(PaymentStatus.ATTEMPT_DECLINED)).isTrue();
+        assertThat(payment.status()).isEqualTo(PaymentStatus.ATTEMPT_DECLINED);
     }
 
     @Test

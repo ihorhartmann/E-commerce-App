@@ -12,9 +12,9 @@ public interface PaymentRepository {
 
     Payment getByOrderId(long orderId);
 
-    Payment markPending(long paymentId, String externalId);
+    Payment markPending(long paymentId, long version, String externalId);
 
-    Payment updateStatus(long paymentId, PaymentStatus status);
+    Payment updateStatus(long paymentId, long version, PaymentStatus status);
 
     Payment getByExternalId(String externalId);
 

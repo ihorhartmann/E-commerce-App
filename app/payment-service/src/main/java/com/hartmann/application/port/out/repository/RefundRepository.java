@@ -13,11 +13,11 @@ public interface RefundRepository {
 
     Optional<Refund> findByIdempotencyKey(UUID idempotencyKey);
 
-    Refund markPending(long refundId, String externalId, RefundStatus status);
+    Refund markPending(long refundId, long version, String externalId, RefundStatus status);
 
     List<Refund> findByPaymentId(long paymentId);
 
-    Refund updateStatus(long refundId, RefundStatus status);
+    Refund updateStatus(long refundId, long version, RefundStatus status);
 
     Refund getByExternalId(String externalId);
 }

@@ -56,7 +56,7 @@ class StripePaymentGatewayTest {
     // com.stripe.model.Refund is imported for the gateway's responses, so the domain refund is fully qualified here.
     private com.hartmann.domain.model.Refund testRefund(long id, UUID idempotencyKey, String amount) {
         return com.hartmann.domain.model.Refund.createExisting(
-                id, 1L, idempotencyKey, null, money(amount), RefundStatus.INITIATED, Instant.now(), null);
+                id, 1L, idempotencyKey, null, money(amount), RefundStatus.INITIATED, 0L, Instant.now(), null);
     }
 
     // --- submitPayment ---

@@ -52,7 +52,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
     @Override
     public Payment create(Payment payment) {
         var entity = PaymentEntity.from(payment);
-        var id = dsl.insertInto(PAYMENTS)
+        var record = dsl.insertInto(PAYMENTS)
                 .set(ORDER_ID, entity.orderId())
                 .set(EXTERNAL_ID, entity.externalId())
                 .set(AMOUNT, entity.amount())
@@ -63,10 +63,10 @@ public class PostgresPaymentRepository implements PaymentRepository {
                 .set(CREATED_AT, toOffsetDateTime(entity.createdAt()))
                 .set(UPDATED_AT, toOffsetDateTime(entity.updatedAt()))
                 .set(EXPIRES_AT, toOffsetDateTime(entity.expiresAt()))
-                .returning(ID)
-                .fetchOne(ID);
+                .returning(PAYMENT_FIELDS)
+                .fetchOne();
         //noinspection DataFlowIssue
-        return getById(id);
+        return toPayment(record);
     }
 
     @Override
@@ -88,32 +88,32 @@ public class PostgresPaymentRepository implements PaymentRepository {
     }
 
     @Override
-    public Payment markPending(long paymentId, String externalId) {
-        var updated = dsl.update(PAYMENTS)
+    public Payment markPending(long paymentId, long version, String externalId) {
+        return dsl.update(PAYMENTS)
                 .set(EXTERNAL_ID, externalId)
                 .set(STATUS, PaymentStatus.PENDING.name())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(paymentId))
-                .execute();
-        if (updated == 0) {
-            throw new ObjectNotFoundException("Payment with id " + paymentId + " not found");
-        }
-        return getById(paymentId);
+                .and(VERSION.eq(version))
+                .returning(PAYMENT_FIELDS)
+                .fetchOptional()
+                .map(this::toPayment)
+                .orElseThrow(() -> notUpdated(paymentId, version));
     }
 
     @Override
-    public Payment updateStatus(long paymentId, PaymentStatus status) {
-        var updated = dsl.update(PAYMENTS)
+    public Payment updateStatus(long paymentId, long version, PaymentStatus status) {
+        return dsl.update(PAYMENTS)
                 .set(STATUS, status.name())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(paymentId))
-                .execute();
-        if (updated == 0) {
-            throw new ObjectNotFoundException("Payment with id " + paymentId + " not found");
-        }
-        return getById(paymentId);
+                .and(VERSION.eq(version))
+                .returning(PAYMENT_FIELDS)
+                .fetchOptional()
+                .map(this::toPayment)
+                .orElseThrow(() -> notUpdated(paymentId, version));
     }
 
     @Override
@@ -127,22 +127,23 @@ public class PostgresPaymentRepository implements PaymentRepository {
 
     @Override
     public Payment updateRefundedAmount(Payment payment) {
-        var record = dsl.update(PAYMENTS)
+        return dsl.update(PAYMENTS)
                 .set(REFUNDED_AMOUNT, payment.refundedAmount().amount())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(payment.updatedAt()))
                 .where(ID.eq(payment.id()))
                 .and(VERSION.eq(payment.version()))
                 .returning(PAYMENT_FIELDS)
-                .fetchOne();
-        if (record != null) {
-            return toPayment(record);
-        }
+                .fetchOptional()
+                .map(this::toPayment)
+                .orElseThrow(() -> notUpdated(payment.id(), payment.version()));
+    }
 
-        // Nothing matched: either the payment is gone, or someone changed it after it was loaded.
-        getById(payment.id());
-        throw new ConcurrentUpdateException(
-                "Payment " + payment.id() + " was changed concurrently since version " + payment.version());
+    // Nothing matched: either the payment is gone (getById throws), or someone changed it after it was loaded.
+    private ConcurrentUpdateException notUpdated(long paymentId, long version) {
+        getById(paymentId);
+        return new ConcurrentUpdateException(
+                "Payment " + paymentId + " was changed concurrently since version " + version);
     }
 
     @Override

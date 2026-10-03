@@ -25,17 +25,19 @@ class RefundTest {
     void constructor_createsARefundWithTheGivenFields() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        var refund = Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, now, now);
+        var version = 7L;
+        var refund = Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, version, now, now);
 
         assertThat(refund.paymentId()).isEqualTo(100L);
         assertThat(refund.idempotencyKey()).isEqualTo(idempotencyKey);
         assertThat(refund.status()).isEqualTo(RefundStatus.PENDING);
+        assertThat(refund.version()).isEqualTo(version);
     }
 
     @Test
     void constructor_allowsANullExternalId() {
         var now = Instant.now();
-        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), null, testAmount(), RefundStatus.PENDING, now, now);
+        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), null, testAmount(), RefundStatus.PENDING, 0L, now, now);
 
         assertThat(refund.externalId()).isNull();
     }
@@ -44,14 +46,14 @@ class RefundTest {
     void constructor_rejectsANonPositivePaymentId() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        assertThatThrownBy(() -> Refund.createExisting(1L, 0L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, now, now))
+        assertThatThrownBy(() -> Refund.createExisting(1L, 0L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
                 .isInstanceOf(DomainException.class);
     }
 
     @Test
     void constructor_rejectsANullIdempotencyKey() {
         var now = Instant.now();
-        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, null, "re_test", testAmount(), RefundStatus.PENDING, now, now))
+        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, null, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -59,7 +61,7 @@ class RefundTest {
     void constructor_rejectsANullAmount() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", null, RefundStatus.PENDING, now, now))
+        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", null, RefundStatus.PENDING, 0L, now, now))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -67,7 +69,7 @@ class RefundTest {
     void constructor_rejectsANullStatus() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), null, now, now))
+        assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), null, 0L, now, now))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -80,14 +82,14 @@ class RefundTest {
         var externalId = "re_test";
         var amount = testAmount();
         var status = RefundStatus.PENDING;
-        assertThatThrownBy(() -> Refund.createExisting(id, paymentId, idempotencyKey, externalId, amount, status, null, now))
+        assertThatThrownBy(() -> Refund.createExisting(id, paymentId, idempotencyKey, externalId, amount, status, 0L, null, now))
                 .isInstanceOf(DomainException.class);
     }
 
     @Test
     void constructor_allowsNullUpdatedAt() {
         var now = Instant.now();
-        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, now, null);
+        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, 0L, now, null);
 
         assertThat(refund.updatedAt()).isNull();
     }
@@ -115,7 +117,7 @@ class RefundTest {
     void createExisting_usesTheGivenId() {
         var now = Instant.now();
         var id = 1L;
-        var refund = Refund.createExisting(id, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, now, now);
+        var refund = Refund.createExisting(id, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now);
 
         assertThat(refund.id()).isEqualTo(id);
     }
@@ -124,7 +126,7 @@ class RefundTest {
     void createExisting_throwsWhenIdIsNotPositive() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        assertThatThrownBy(() -> Refund.createExisting(0L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, now, now))
+        assertThatThrownBy(() -> Refund.createExisting(0L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
                 .isInstanceOf(DomainException.class);
     }
 
@@ -192,10 +194,10 @@ class RefundTest {
         var externalId = "re_new";
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
-        var submitted = refund.submit(externalId, RefundStatus.SUCCEEDED);
+        refund.submit(externalId, RefundStatus.SUCCEEDED);
 
-        assertThat(submitted.externalId()).isEqualTo(externalId);
-        assertThat(submitted.status()).isEqualTo(RefundStatus.SUCCEEDED);
+        assertThat(refund.externalId()).isEqualTo(externalId);
+        assertThat(refund.status()).isEqualTo(RefundStatus.SUCCEEDED);
     }
 
     @Test
@@ -210,6 +212,7 @@ class RefundTest {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
         assertThatThrownBy(() -> refund.submit(" ", RefundStatus.PENDING)).isInstanceOf(DomainException.class);
+        assertThat(refund.status()).isEqualTo(RefundStatus.INITIATED);
     }
 
     @Test
@@ -217,6 +220,7 @@ class RefundTest {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
         assertThatThrownBy(() -> refund.submit("re_new", RefundStatus.INITIATED)).isInstanceOf(DomainException.class);
+        assertThat(refund.externalId()).isNull();
     }
 
     // --- fail ---
@@ -225,7 +229,9 @@ class RefundTest {
     void fail_movesAnInitiatedRefundToFailed() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
-        assertThat(refund.fail().status()).isEqualTo(RefundStatus.FAILED);
+        refund.fail();
+
+        assertThat(refund.status()).isEqualTo(RefundStatus.FAILED);
     }
 
     @Test
@@ -238,10 +244,11 @@ class RefundTest {
     // --- applyGatewayStatus ---
 
     @Test
-    void applyGatewayStatus_returnsTheSameRefundForTheStatusItAlreadyHas() {
+    void applyGatewayStatus_reportsNoChangeForTheStatusItAlreadyHas() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.SUCCEEDED);
 
-        assertThat(refund.applyGatewayStatus(RefundStatus.SUCCEEDED)).isSameAs(refund);
+        assertThat(refund.applyGatewayStatus(RefundStatus.SUCCEEDED)).isFalse();
+        assertThat(refund.updatedAt()).isNull();
     }
 
     @Test
@@ -249,7 +256,8 @@ class RefundTest {
         for (var status : List.of(RefundStatus.SUCCEEDED, RefundStatus.FAILED)) {
             var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING);
 
-            assertThat(refund.applyGatewayStatus(status).status()).isEqualTo(status);
+            assertThat(refund.applyGatewayStatus(status)).isTrue();
+            assertThat(refund.status()).isEqualTo(status);
         }
     }
 
@@ -258,6 +266,7 @@ class RefundTest {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.SUCCEEDED);
 
         assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.FAILED)).isInstanceOf(DomainException.class);
+        assertThat(refund.status()).isEqualTo(RefundStatus.SUCCEEDED);
     }
 
     @Test
@@ -280,8 +289,8 @@ class RefundTest {
     void equals_returnsTrueForRefundsWithTheSameId() {
         var now = Instant.now();
         var id = 1L;
-        var a = Refund.createExisting(id, 100L, UUID.randomUUID(), "re_a", testAmount(), RefundStatus.PENDING, now, now);
-        var b = Refund.createExisting(id, 200L, UUID.randomUUID(), "re_b", testAmount(), RefundStatus.SUCCEEDED, now, now);
+        var a = Refund.createExisting(id, 100L, UUID.randomUUID(), "re_a", testAmount(), RefundStatus.PENDING, 0L, now, now);
+        var b = Refund.createExisting(id, 200L, UUID.randomUUID(), "re_b", testAmount(), RefundStatus.SUCCEEDED, 0L, now, now);
 
         assertThat(a).isEqualTo(b);
     }
@@ -290,8 +299,8 @@ class RefundTest {
     void equals_returnsFalseForRefundsWithDifferentIds() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
-        var a = Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, now, now);
-        var b = Refund.createExisting(2L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, now, now);
+        var a = Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now);
+        var b = Refund.createExisting(2L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now);
 
         assertThat(a).isNotEqualTo(b);
     }
@@ -311,7 +320,7 @@ class RefundTest {
     @Test
     void equals_returnsFalseForAnObjectOfADifferentType() {
         var now = Instant.now();
-        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, now, now);
+        var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now);
 
         assertThat(refund).isNotEqualTo("not a refund");
     }
