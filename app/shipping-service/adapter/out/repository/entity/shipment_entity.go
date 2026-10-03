@@ -20,6 +20,7 @@ type Shipment struct {
 	Holder         string    `gorm:"not null"`
 	CreatedAt      time.Time `gorm:"not null"`
 	UpdatedAt      *time.Time
+	Version        uint64 `gorm:"not null;default:0"`
 }
 
 func (Shipment) TableName() string {
@@ -41,6 +42,7 @@ func ToShipmentEntity(shipment *model.Shipment) *Shipment {
 		Holder:         string(shipment.Holder()),
 		CreatedAt:      shipment.CreatedAt(),
 		UpdatedAt:      toNillableTime(shipment.UpdatedAt()),
+		Version:        shipment.Version(),
 	}
 }
 
@@ -59,6 +61,7 @@ func FromShipmentEntity(shipment *Shipment) (*model.Shipment, error) {
 		model.ShipmentHolder(shipment.Holder),
 		shipment.CreatedAt,
 		fromNillableTime(shipment.UpdatedAt),
+		shipment.Version,
 	)
 }
 

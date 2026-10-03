@@ -29,7 +29,8 @@ func newTestShipment(t *testing.T) *Shipment {
 
 func inDeliveryShipment(t *testing.T) *Shipment {
 	t.Helper()
-	shipment, err := newTestShipment(t).StartDelivery()
+	shipment := newTestShipment(t)
+	err := shipment.StartDelivery()
 	if err != nil {
 		t.Fatalf("unexpected error starting delivery: %v", err)
 	}
@@ -38,7 +39,8 @@ func inDeliveryShipment(t *testing.T) *Shipment {
 
 func cancelledAfterPickupShipment(t *testing.T) *Shipment {
 	t.Helper()
-	shipment, err := inDeliveryShipment(t).Cancel()
+	shipment := inDeliveryShipment(t)
+	err := shipment.Cancel()
 	if err != nil {
 		t.Fatalf("unexpected error cancelling: %v", err)
 	}
@@ -47,7 +49,8 @@ func cancelledAfterPickupShipment(t *testing.T) *Shipment {
 
 func cancelledBeforePickupShipment(t *testing.T) *Shipment {
 	t.Helper()
-	shipment, err := newTestShipment(t).Cancel()
+	shipment := newTestShipment(t)
+	err := shipment.Cancel()
 	if err != nil {
 		t.Fatalf("unexpected error cancelling: %v", err)
 	}
@@ -89,13 +92,17 @@ func TestNewExistingShipment(t *testing.T) {
 
 	t.Run("creates a shipment with the given fields", func(t *testing.T) {
 		id := uint64(1)
-		shipment, err := NewExistingShipment(id, 100, "TRACK-1", testAddress(t), InDelivery, HolderCourier, now, now)
+		version := uint64(7)
+		shipment, err := NewExistingShipment(id, 100, "TRACK-1", testAddress(t), InDelivery, HolderCourier, now, now, version)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		if shipment.Id() != id {
 			t.Errorf("Id() = %d, want %d", shipment.Id(), id)
+		}
+		if shipment.Version() != version {
+			t.Errorf("Version() = %d, want %d", shipment.Version(), version)
 		}
 		if shipment.Status() != InDelivery {
 			t.Errorf("Status() = %v, want %v", shipment.Status(), InDelivery)
@@ -106,21 +113,21 @@ func TestNewExistingShipment(t *testing.T) {
 	})
 
 	t.Run("rejects a zero id", func(t *testing.T) {
-		_, err := NewExistingShipment(0, 100, "TRACK-1", testAddress(t), Created, HolderInventory, now, now)
+		_, err := NewExistingShipment(0, 100, "TRACK-1", testAddress(t), Created, HolderInventory, now, now, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
 	})
 
 	t.Run("rejects an invalid status", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), ShipmentStatus("Floating"), HolderInventory, now, now)
+		_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), "Floating", HolderInventory, now, now, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
 	})
 
 	t.Run("rejects an invalid holder", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), Created, ShipmentHolder("Somewhere"), now, now)
+		_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), Created, "Somewhere", now, now, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
@@ -137,7 +144,7 @@ func TestNewExistingShipment(t *testing.T) {
 			{Lost, HolderInventory},
 		}
 		for _, tt := range testCases {
-			_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), tt.status, tt.holder, now, now)
+			_, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), tt.status, tt.holder, now, now, 0)
 			if !errors.Is(err, domain.ErrInvalidInput) {
 				t.Errorf("status %s, holder %s: err = %v, want %v", tt.status, tt.holder, err, domain.ErrInvalidInput)
 			}
@@ -146,7 +153,7 @@ func TestNewExistingShipment(t *testing.T) {
 
 	t.Run("accepts a cancelled shipment held by either the inventory or the courier", func(t *testing.T) {
 		for _, holder := range []ShipmentHolder{HolderInventory, HolderCourier} {
-			shipment, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), Cancelled, holder, now, now)
+			shipment, err := NewExistingShipment(1, 100, "TRACK-1", testAddress(t), Cancelled, holder, now, now, 0)
 			if err != nil {
 				t.Fatalf("holder %s: unexpected error: %v", holder, err)
 			}
@@ -157,14 +164,14 @@ func TestNewExistingShipment(t *testing.T) {
 	})
 
 	t.Run("rejects a zero orderId", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 0, "TRACK-1", testAddress(t), Created, HolderInventory, now, now)
+		_, err := NewExistingShipment(1, 0, "TRACK-1", testAddress(t), Created, HolderInventory, now, now, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
 	})
 
 	t.Run("rejects a blank tracking number", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 100, "  ", testAddress(t), Created, HolderInventory, now, now)
+		_, err := NewExistingShipment(1, 100, "  ", testAddress(t), Created, HolderInventory, now, now, 0)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
@@ -173,7 +180,8 @@ func TestNewExistingShipment(t *testing.T) {
 
 func TestShipment_StartDelivery(t *testing.T) {
 	t.Run("moves to InDelivery and hands the goods to the courier", func(t *testing.T) {
-		shipment, err := newTestShipment(t).StartDelivery()
+		shipment := newTestShipment(t)
+		err := shipment.StartDelivery()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -186,17 +194,24 @@ func TestShipment_StartDelivery(t *testing.T) {
 		}
 	})
 
-	t.Run("throws when shipment is not Created", func(t *testing.T) {
-		_, err := inDeliveryShipment(t).StartDelivery()
+	t.Run("throws when shipment is not Created, leaving it unchanged", func(t *testing.T) {
+		shipment := cancelledBeforePickupShipment(t)
+		updatedAt := shipment.UpdatedAt()
+
+		err := shipment.StartDelivery()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
+		}
+		if shipment.Status() != Cancelled || shipment.Holder() != HolderInventory || !shipment.UpdatedAt().Equal(updatedAt) {
+			t.Errorf("rejected transition changed the shipment: status %v, holder %v", shipment.Status(), shipment.Holder())
 		}
 	})
 }
 
 func TestShipment_Deliver(t *testing.T) {
 	t.Run("moves to Delivered, keeping the courier as holder", func(t *testing.T) {
-		shipment, err := inDeliveryShipment(t).Deliver()
+		shipment := inDeliveryShipment(t)
+		err := shipment.Deliver()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -210,7 +225,7 @@ func TestShipment_Deliver(t *testing.T) {
 	})
 
 	t.Run("throws when shipment is not InDelivery", func(t *testing.T) {
-		_, err := newTestShipment(t).Deliver()
+		err := newTestShipment(t).Deliver()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
 		}
@@ -219,7 +234,8 @@ func TestShipment_Deliver(t *testing.T) {
 
 func TestShipment_Lose(t *testing.T) {
 	t.Run("moves to Lost, keeping the courier as holder", func(t *testing.T) {
-		shipment, err := inDeliveryShipment(t).Lose()
+		shipment := inDeliveryShipment(t)
+		err := shipment.Lose()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -233,7 +249,7 @@ func TestShipment_Lose(t *testing.T) {
 	})
 
 	t.Run("throws when shipment is not InDelivery", func(t *testing.T) {
-		_, err := newTestShipment(t).Lose()
+		err := newTestShipment(t).Lose()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
 		}
@@ -242,7 +258,8 @@ func TestShipment_Lose(t *testing.T) {
 
 func TestShipment_Cancel(t *testing.T) {
 	t.Run("cancels before pickup, keeping the goods with inventory", func(t *testing.T) {
-		shipment, err := newTestShipment(t).Cancel()
+		shipment := newTestShipment(t)
+		err := shipment.Cancel()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -256,7 +273,8 @@ func TestShipment_Cancel(t *testing.T) {
 	})
 
 	t.Run("cancels after pickup, keeping the goods with the courier", func(t *testing.T) {
-		shipment, err := inDeliveryShipment(t).Cancel()
+		shipment := inDeliveryShipment(t)
+		err := shipment.Cancel()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -270,12 +288,13 @@ func TestShipment_Cancel(t *testing.T) {
 	})
 
 	t.Run("throws when shipment already reached a terminal status", func(t *testing.T) {
-		delivered, err := inDeliveryShipment(t).Deliver()
+		delivered := inDeliveryShipment(t)
+		err := delivered.Deliver()
 		if err != nil {
 			t.Fatalf("unexpected error setting up delivered shipment: %v", err)
 		}
 
-		_, err = delivered.Cancel()
+		err = delivered.Cancel()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
 		}
@@ -284,7 +303,8 @@ func TestShipment_Cancel(t *testing.T) {
 
 func TestShipment_ConfirmReturnedToInventory(t *testing.T) {
 	t.Run("moves the holder back to inventory, keeping the status cancelled", func(t *testing.T) {
-		shipment, err := cancelledAfterPickupShipment(t).ConfirmReturnedToInventory()
+		shipment := cancelledAfterPickupShipment(t)
+		err := shipment.ConfirmReturnedToInventory()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -298,14 +318,14 @@ func TestShipment_ConfirmReturnedToInventory(t *testing.T) {
 	})
 
 	t.Run("throws when the goods were never picked up by a courier", func(t *testing.T) {
-		_, err := cancelledBeforePickupShipment(t).ConfirmReturnedToInventory()
+		err := cancelledBeforePickupShipment(t).ConfirmReturnedToInventory()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
 		}
 	})
 
 	t.Run("throws when shipment is not cancelled", func(t *testing.T) {
-		_, err := inDeliveryShipment(t).ConfirmReturnedToInventory()
+		err := inDeliveryShipment(t).ConfirmReturnedToInventory()
 		if !errors.Is(err, ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, ErrInvalidStatusTransition)
 		}

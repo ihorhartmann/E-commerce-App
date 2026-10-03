@@ -39,7 +39,7 @@ func testAddress(t *testing.T) value.Address {
 func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder) *model.Shipment {
 	t.Helper()
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(id, 100, "TRACK-1", testAddress(t), status, holder, now, now)
+	shipment, err := model.NewExistingShipment(id, 100, "TRACK-1", testAddress(t), status, holder, now, now, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
