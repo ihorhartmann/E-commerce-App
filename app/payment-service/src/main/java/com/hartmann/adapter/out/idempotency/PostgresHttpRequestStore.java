@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.table;
 import static org.jooq.impl.SQLDataType.INTEGER;
 import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
@@ -100,11 +101,12 @@ public class PostgresHttpRequestStore implements HttpRequestStore {
 
     @Override
     public int deleteExpired(Instant cutoff, int limit) {
-        return dsl.transactionResult(configuration -> configuration.dsl().execute(
-                "DELETE FROM payment.idempotent_http_requests WHERE ctid IN ("
-                        + "SELECT ctid FROM payment.idempotent_http_requests WHERE created_at < ? LIMIT ?)",
-                cutoff.atOffset(ZoneOffset.UTC), limit
-        ));
+        return dsl.transactionResult(configuration -> configuration.dsl().deleteFrom(IDEMPOTENT_HTTP_REQUESTS)
+                .where(ID.in(select(ID)
+                        .from(IDEMPOTENT_HTTP_REQUESTS)
+                        .where(CREATED_AT.lt(cutoff.atOffset(ZoneOffset.UTC)))
+                        .limit(limit)))
+                .execute());
     }
 
     private HttpRequestRecord toRecord(Record record) {

@@ -39,6 +39,11 @@ object DockerComposeStack {
         requiredEnv("KAFKA_HOST_PORT")
         requiredEnv("KAFKA_UI_PORT")
         requiredEnv("POSTGRES_PORT")
+        requiredEnv("KEYCLOAK_PORT")
+        requiredEnv("KEYCLOAK_ADMIN_USER")
+        requiredEnv("KEYCLOAK_ADMIN_PASSWORD")
+        requiredEnv("GATEWAY_PORT")
+        requiredEnv("GATEWAY_CLIENT_SECRET")
     }
 
     // No .withEnv(...): Testcontainers doesn't reliably pass these through to docker-compose's

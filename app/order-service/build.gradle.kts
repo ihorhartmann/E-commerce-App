@@ -42,10 +42,10 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
-        if (project.hasProperty("integration")) {
-            includeTags("integration")
-        } else {
-            excludeTags("integration")
+        when {
+            project.hasProperty("allTests") -> {}
+            project.hasProperty("integration") -> includeTags("integration")
+            else -> excludeTags("integration")
         }
     }
 }

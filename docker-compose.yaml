@@ -18,6 +18,42 @@ services:
       timeout: 5s
       retries: 15
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0
+    # --import-realm only creates a realm that doesn't exist yet: after editing the realm file,
+    # delete the realm (admin console) or recreate the postgres volume for the change to apply
+    command: ["start-dev", "--import-realm"]
+    networks:
+      - app-network
+    ports:
+      - "${KEYCLOAK_PORT}:8080"
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # public URL, always used as the token issuer (iss) - whoever requested the token
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT}
+      # lets other containers use http://keycloak:8080 for back-channel calls (token, jwks)
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+      GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
+      GATEWAY_PORT: ${GATEWAY_PORT}
+    volumes:
+      - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   kafka:
     image: apache/kafka:4.3.1
     networks:
