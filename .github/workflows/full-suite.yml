@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  # --- stage 1: unit tests, all 4 services in parallel ---
+  # --- stage 1: unit tests, all 5 services in parallel ---
 
   unit-inventory:
     runs-on: ubuntu-latest
@@ -63,10 +63,24 @@ jobs:
           cache: maven
       - run: mvn -B test -DexcludedGroups=integration
 
+  unit-gateway:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/gateway-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "26"
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew test
+
   # --- stage 2: REST + Kafka integration tests, only if every unit job above passed ---
 
   integration-inventory:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -80,7 +94,7 @@ jobs:
       - run: go test -tags=integration ./...
 
   integration-shipping:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -94,7 +108,7 @@ jobs:
       - run: go test -tags=integration ./...
 
   integration-order:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -109,7 +123,7 @@ jobs:
       - run: ./gradlew test -Pintegration
 
   integration-payment:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway]
     runs-on: ubuntu-latest
     defaults:
       run:

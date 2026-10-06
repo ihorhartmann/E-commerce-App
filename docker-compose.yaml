@@ -191,6 +191,40 @@ services:
       postgres:
         condition: service_healthy
 
+  gateway-service:
+    build:
+      context: ./app/gateway-service
+      dockerfile: Dockerfile
+    image: gateway-service:latest
+    networks:
+      - app-network
+    ports:
+      - "${GATEWAY_PORT}:${GATEWAY_PORT}"
+    environment:
+      GATEWAY_PORT: ${GATEWAY_PORT}
+      # public realm URL - equal to `iss` in tokens, used for browser redirects
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      # the same realm from inside the network - token, jwks, userinfo
+      OIDC_INTERNAL_URI: http://keycloak:8080/realms/ecommerce
+      OIDC_CLIENT_ID: gateway
+      OIDC_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
+      OIDC_ROLES_CLAIM: realm_access.roles
+      ORDER_SERVICE_URL: http://order-service:${ORDER_SERVICE_PORT}
+      PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}
+      INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
+      SHIPPING_SERVICE_URL: http://shipping-service:${SHIPPING_SERVICE_PORT}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      shipping-service:
+        condition: service_started
+
 networks:
   app-network:
     name: app-network
