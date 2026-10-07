@@ -41,15 +41,33 @@ func LoadFromEnv() (*Config, error) {
 		return nil, err
 	}
 
+	oidcIssuer, err := GetStrEnv(OIDCIssuerEnvVar)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcJWKSURI, err := GetStrEnv(OIDCJWKSURIEnvVar)
+	if err != nil {
+		return nil, err
+	}
+
+	oidcRolesClaim, err := GetStrEnv(OIDCRolesClaimEnvVar)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
-		Port:       port,
-		KafkaHost:  kafkaHost,
-		KafkaPort:  kafkaPort,
-		DBHost:     dbHost,
-		DBPort:     dbPort,
-		DBName:     dbName,
-		DBUser:     dbUser,
-		DBPassword: dbPassword,
+		Port:           port,
+		KafkaHost:      kafkaHost,
+		KafkaPort:      kafkaPort,
+		DBHost:         dbHost,
+		DBPort:         dbPort,
+		DBName:         dbName,
+		DBUser:         dbUser,
+		DBPassword:     dbPassword,
+		OIDCIssuer:     oidcIssuer,
+		OIDCJWKSURI:    oidcJWKSURI,
+		OIDCRolesClaim: oidcRolesClaim,
 	}, nil
 }
 
@@ -62,4 +80,10 @@ type Config struct {
 	DBName     string
 	DBUser     string
 	DBPassword string
+	// OIDCIssuer is the public Keycloak realm URL - equal to `iss` in every access token
+	OIDCIssuer string
+	// OIDCJWKSURI is where the realm's public keys are fetched from, inside the network
+	OIDCJWKSURI string
+	// OIDCRolesClaim is the dot-separated path to the roles array inside the token, e.g. realm_access.roles
+	OIDCRolesClaim string
 }

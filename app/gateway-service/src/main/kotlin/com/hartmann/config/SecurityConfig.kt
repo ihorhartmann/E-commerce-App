@@ -3,6 +3,7 @@ package com.hartmann.config
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.config.web.server.invoke
@@ -26,6 +27,7 @@ import org.springframework.security.web.server.csrf.ServerCsrfTokenRequestAttrib
 import org.springframework.security.web.server.util.matcher.AndServerWebExchangeMatcher
 import org.springframework.security.web.server.util.matcher.NegatedServerWebExchangeMatcher
 import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatchers.pathMatchers
 import org.springframework.web.server.WebFilter
 import reactor.core.publisher.Mono
 
@@ -40,6 +42,8 @@ class SecurityConfig {
         authorizeExchange {
             authorize(HEALTH_PATH, permitAll)
             authorize(STRIPE_WEBHOOK_PATH, permitAll)
+            // the catalog is public: browsing products needs no login, ordering them does
+            authorize(pathMatchers(HttpMethod.GET, PRODUCTS_PATH), permitAll)
             authorize(anyExchange, authenticated)
         }
         // browser: Authorization Code + PKCE login, tokens kept in the server-side session, HttpOnly session cookie
@@ -125,6 +129,7 @@ class SecurityConfig {
 
         const val HEALTH_PATH = "/health"
         const val STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe"
+        const val PRODUCTS_PATH = "/api/v1/products/**"
         const val END_SESSION_ENDPOINT = "end_session_endpoint"
 
         // WebFlux's default session cookie name (CookieWebSessionIdResolver)

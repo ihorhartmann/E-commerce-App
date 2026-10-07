@@ -28,11 +28,6 @@ spring:
               uri: ${ORDER_SERVICE_URL}
               predicates:
                 - Path=/api/v1/orders/**
-            - id: payment-service
-              uri: ${PAYMENT_SERVICE_URL}
-              predicates:
-                - Path=/api/v1/payments/**,/api/v1/refunds/**
-            # authenticated by the Stripe signature, not by a user token
             - id: stripe-webhook
               uri: ${PAYMENT_SERVICE_URL}
               predicates:

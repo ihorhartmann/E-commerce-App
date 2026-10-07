@@ -165,6 +165,13 @@ expired idempotency rows. A sweep is a self-triggered entry point - it decides o
 business port, the same role a Kafka consumer or HTTP handler plays for its own trigger - so it belongs in
 `Interfaces`, not `Infrastructure`, even though nothing here is framework-specific glue.
 
+`interfaces/http/auth` holds authentication for the HTTP API: the `TokenVerifier` port, `Principal` and `AccessRule`;
+its JWT/JWKS-based implementation (`JWKSTokenVerifier`) lives in `interfaces/http/auth/jwks` - in `Interfaces`, not
+`Infrastructure`, for the same reason as `interfaces/kafka/kafkago`. `middleware.AuthMiddleware` checks every request
+against the rule table in `interfaces/http/middleware/auth_access_rules.go` (anything not listed is denied) and must stay registered
+before `IdempotencyMiddleware`, so a rejected request never claims its Idempotency-Key. A new endpoint needs a rule
+there.
+
 `interfaces/http/idempotency` holds `HTTPIdempotencyService`, which decides whether a mutating HTTP request should
 proceed, replay a cached response, or be rejected, for `middleware.IdempotencyMiddleware`. It composes
 `application/port/out/idempotency.HTTPRequestStore` (a persistence port for idempotent_http_requests

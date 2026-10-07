@@ -103,7 +103,13 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Keycloak realm whose access tokens are accepted: public URL (= iss), keys from inside the network
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
+      OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      keycloak:
+        condition: service_healthy
       kafka:
         condition: service_started
       postgres:
@@ -129,7 +135,12 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
+      OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      keycloak:
+        condition: service_healthy
       kafka:
         condition: service_started
       inventory-service:
@@ -161,7 +172,12 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
+      OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      keycloak:
+        condition: service_healthy
       kafka:
         condition: service_started
       postgres:
@@ -185,7 +201,12 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
+      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
+      OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      keycloak:
+        condition: service_healthy
       kafka:
         condition: service_started
       postgres:
