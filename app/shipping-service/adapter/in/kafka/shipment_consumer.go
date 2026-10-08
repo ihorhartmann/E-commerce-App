@@ -57,6 +57,6 @@ func (c *ShipmentKafkaConsumer) handleCreateShipment(ctx context.Context, msg id
 		return NonRetryable(err)
 	}
 
-	_, err = c.shipmentService.CreateShipment(ctx, msg, command.OrderID, address)
+	_, err = c.shipmentService.CreateShipment(ctx, msg, command.OrderID, command.CustomerID, address)
 	return classify(err)
 }

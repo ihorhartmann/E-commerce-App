@@ -12,6 +12,7 @@ import (
 	"inventoryservice/interfaces/http/auth"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 const (
@@ -53,10 +54,10 @@ func validClaims(subject string) jwt.MapClaims {
 func TestJWKSTokenVerifier_Verify(t *testing.T) {
 	t.Run("returns the subject and the roles of a valid token", func(t *testing.T) {
 		key := generateKey(t)
-		subject := "0192f1d2-7c4b-7000-8000-000000000001"
+		subject := uuid.New()
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
-		got, err := verifier.Verify(context.Background(), signToken(t, key, validClaims(subject)))
+		got, err := verifier.Verify(context.Background(), signToken(t, key, validClaims(subject.String())))
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -71,7 +72,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("returns no roles when the roles claim is missing", func(t *testing.T) {
 		key := generateKey(t)
-		claims := validClaims("user")
+		claims := validClaims(uuid.NewString())
 		delete(claims, "realm_access")
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
@@ -88,7 +89,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 	t.Run("rejects a token signed by another key", func(t *testing.T) {
 		verifier := newJWKSTokenVerifier(staticKeyfunc(generateKey(t)), testIssuer, testRolesClaim)
 
-		_, err := verifier.Verify(context.Background(), signToken(t, generateKey(t), validClaims("user")))
+		_, err := verifier.Verify(context.Background(), signToken(t, generateKey(t), validClaims(uuid.NewString())))
 
 		if !errors.Is(err, auth.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
@@ -97,7 +98,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("rejects a token from another issuer", func(t *testing.T) {
 		key := generateKey(t)
-		claims := validClaims("user")
+		claims := validClaims(uuid.NewString())
 		claims["iss"] = "http://evil.example/realms/ecommerce"
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
@@ -110,7 +111,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("rejects an expired token", func(t *testing.T) {
 		key := generateKey(t)
-		claims := validClaims("user")
+		claims := validClaims(uuid.NewString())
 		claims["exp"] = time.Now().Add(-time.Minute).Unix()
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
@@ -123,7 +124,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("rejects a token without an expiry", func(t *testing.T) {
 		key := generateKey(t)
-		claims := validClaims("user")
+		claims := validClaims(uuid.NewString())
 		delete(claims, "exp")
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
@@ -136,7 +137,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("rejects a token signed with another algorithm", func(t *testing.T) {
 		key := generateKey(t)
-		hmacToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, validClaims("user")).SignedString([]byte("secret"))
+		hmacToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, validClaims(uuid.NewString())).SignedString([]byte("secret"))
 		if err != nil {
 			t.Fatalf("failed to sign token: %v", err)
 		}
@@ -151,11 +152,22 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 	t.Run("rejects a token without a subject", func(t *testing.T) {
 		key := generateKey(t)
-		claims := validClaims("user")
+		claims := validClaims(uuid.NewString())
 		delete(claims, "sub")
 		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, claims))
+
+		if !errors.Is(err, auth.ErrInvalidToken) {
+			t.Errorf("err = %v, want ErrInvalidToken", err)
+		}
+	})
+
+	t.Run("rejects a token whose subject is not a UUID", func(t *testing.T) {
+		key := generateKey(t)
+		verifier := newJWKSTokenVerifier(staticKeyfunc(key), testIssuer, testRolesClaim)
+
+		_, err := verifier.Verify(context.Background(), signToken(t, key, validClaims("not-a-uuid")))
 
 		if !errors.Is(err, auth.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)

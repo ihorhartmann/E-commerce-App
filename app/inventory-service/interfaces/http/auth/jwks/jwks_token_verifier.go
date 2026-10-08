@@ -10,6 +10,7 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // signingAlgorithm is the only algorithm accepted - Keycloak signs access tokens with RS256 by default, and pinning it
@@ -62,7 +63,13 @@ func (v *JWKSTokenVerifier) Verify(_ context.Context, rawToken string) (auth.Pri
 		return auth.Principal{}, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errMissingSubject)
 	}
 
-	return auth.Principal{UserID: subject, Roles: v.roles(claims)}, nil
+	// Keycloak user ids are UUIDs - anything else means the token can't name a customer or courier
+	userID, err := uuid.Parse(subject)
+	if err != nil {
+		return auth.Principal{}, fmt.Errorf("%w: sub is not a UUID: %w", auth.ErrInvalidToken, err)
+	}
+
+	return auth.Principal{UserID: userID, Roles: v.roles(claims)}, nil
 }
 
 // roles reads the string array at the configured claim path (e.g. realm_access.roles); anything else means no roles.

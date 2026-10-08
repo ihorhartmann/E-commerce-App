@@ -11,15 +11,16 @@ import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Positive
 import java.math.BigDecimal
+import java.util.UUID
 
 data class PlaceOrderRequest(
-    @field:Positive val userId: Long,
     @field:NotEmpty @field:Valid val items: List<OrderItemRequest>,
     @field:NotNull @field:Valid val address: AddressRequest,
 )
 
-fun fromPlaceOrderRequest(request: PlaceOrderRequest): Order = Order.createNew(
-    userId = request.userId,
+/** [customerId] comes from the caller's access token, never from the request body - a client can't order for someone else. */
+fun fromPlaceOrderRequest(request: PlaceOrderRequest, customerId: UUID): Order = Order.createNew(
+    customerId = customerId,
     items = request.items.map { fromOrderItemRequest(it) },
     address = fromAddressRequest(request.address),
 )

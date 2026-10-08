@@ -14,8 +14,6 @@ const (
 	authorizationHeader   = "Authorization"
 	wwwAuthenticateHeader = "WWW-Authenticate"
 	bearerPrefix          = "Bearer "
-	// principalContextKey is where the authenticated caller is stored for the handlers (gin.Context.Set).
-	principalContextKey = "principal"
 )
 
 // AuthMiddleware decides, before any handler runs, whether the caller may make the request: it finds the first rule
@@ -58,7 +56,7 @@ func (m *AuthMiddleware) Handle(c *gin.Context) {
 		return
 	}
 
-	c.Set(principalContextKey, principal)
+	c.Set(auth.PrincipalContextKey, principal)
 	c.Next()
 }
 

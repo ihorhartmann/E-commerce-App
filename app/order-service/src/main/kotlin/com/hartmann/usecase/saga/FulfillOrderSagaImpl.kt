@@ -24,7 +24,7 @@ class FulfillOrderSagaImpl(
             order.confirmPayment()
 
             orderRepository.save(order)
-            orderKafkaProducer.publishCreateShipment(message.correlationId, order.id, order.address)
+            orderKafkaProducer.publishCreateShipment(message.correlationId, order.id, order.customerId, order.address)
         }
 
     @Transactional

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	commonkafka "shippingservice/application/port/common/kafka"
@@ -13,6 +14,8 @@ import (
 	"shippingservice/application/port/out/repository/transaction"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
+
+	"github.com/google/uuid"
 )
 
 type ShipmentServiceImpl struct {
@@ -45,14 +48,32 @@ func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingN
 	return s.shipmentRepository.GetByTrackingNumber(ctx, trackingNumber)
 }
 
-func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
+func (s *ShipmentServiceImpl) GetCustomerShipmentByTrackingNumber(
+	ctx context.Context,
+	trackingNumber string,
+	customerID uuid.UUID,
+) (*model.Shipment, error) {
+	shipment, err := s.GetByTrackingNumber(ctx, trackingNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	// "not found" rather than "forbidden": another customer's shipment must not even be confirmed to exist
+	if !shipment.IsOwnedBy(customerID) {
+		return nil, repository.ErrShipmentNotFound
+	}
+
+	return shipment, nil
+}
+
+func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, customerID uuid.UUID, address value.Address) (*model.Shipment, error) {
 	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
 		alreadyProcessed, err := s.processedMessageStore.MarkProcessed(ctx, msg)
 		if alreadyProcessed || err != nil {
 			return nil, err
 		}
 
-		shipment, err := model.NewShipment(orderID, address)
+		shipment, err := model.NewShipment(orderID, customerID, address)
 		if err != nil {
 			return nil, err
 		}
@@ -70,16 +91,20 @@ func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotenc
 	})
 }
 
-func (s *ShipmentServiceImpl) StartDelivery(ctx context.Context, id uint64) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, (*model.Shipment).StartDelivery)
+func (s *ShipmentServiceImpl) StartDelivery(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
+	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error { return shipment.StartDelivery(courierID) })
 }
 
-func (s *ShipmentServiceImpl) Deliver(ctx context.Context, id uint64) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, (*model.Shipment).Deliver)
+func (s *ShipmentServiceImpl) Deliver(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
+	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error {
+		return requireAssignedCourier(shipment, courierID, (*model.Shipment).Deliver)
+	})
 }
 
-func (s *ShipmentServiceImpl) Lose(ctx context.Context, id uint64) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, (*model.Shipment).Lose)
+func (s *ShipmentServiceImpl) Lose(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
+	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error {
+		return requireAssignedCourier(shipment, courierID, (*model.Shipment).Lose)
+	})
 }
 
 func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shipment, error) {
@@ -91,14 +116,14 @@ func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shi
 // always re-publishes the current status via PublishShipmentStatusChanged). It's triggered over
 // REST, with no incoming saga correlationID to reuse - the orderId is the only available
 // correlation point, so it's derived here instead.
-func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
+func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
 		shipment, err := s.shipmentRepository.GetByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 
-		if err = shipment.ConfirmReturnedToInventory(); err != nil {
+		if err = requireAssignedCourier(shipment, courierID, (*model.Shipment).ConfirmReturnedToInventory); err != nil {
 			return nil, err
 		}
 
@@ -145,4 +170,14 @@ func (s *ShipmentServiceImpl) applyTransition(
 
 		return shipment, nil
 	})
+}
+
+// requireAssignedCourier runs a transition only for the courier who picked the shipment up - nobody else may deliver
+// it, report it lost or bring it back.
+func requireAssignedCourier(shipment *model.Shipment, courierID uuid.UUID, transition func(*model.Shipment) error) error {
+	if !shipment.IsAssignedTo(courierID) {
+		return fmt.Errorf("%w: shipment %d", ErrNotAssignedCourier, shipment.Id())
+	}
+
+	return transition(shipment)
 }

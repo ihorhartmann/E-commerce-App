@@ -36,7 +36,7 @@ private fun testItem() = OrderItem.createExisting(
 )
 
 private fun placedOrder() =
-    Order.createExisting(id = 1, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
+    Order.createExisting(id = 1, customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
 
 private fun processingOrder() = placedOrder().apply { confirmPayment() }
 
@@ -83,7 +83,7 @@ class FulfillOrderSagaImplTest {
 
         assertEquals(OrderStatus.PROCESSING, savedOrder?.status)
         verify(exactly = 1) { processedKafkaMessageStore.markProcessed(message) }
-        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.address) }
+        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.customerId, order.address) }
     }
 
     @Test
@@ -100,7 +100,7 @@ class FulfillOrderSagaImplTest {
         assertNull(savedOrder)
         verify(exactly = 0) { orderRepository.getOrder(any()) }
         verify(exactly = 0) { orderRepository.save(any()) }
-        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
+        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any(), any()) }
     }
 
     @Test
@@ -185,7 +185,7 @@ class FulfillOrderSagaImplTest {
         saga.onShipmentDelivered(message, 1)
 
         assertEquals(OrderStatus.FULFILLED, savedOrder?.status)
-        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
+        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishHoldReservation(any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishFulfillReservation(any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }

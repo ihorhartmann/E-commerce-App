@@ -11,6 +11,7 @@ import (
 	"shippingservice/adapter/in/http/auth/mocks"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 )
 
@@ -29,8 +30,8 @@ func newAuthTestApp(verifier auth.TokenVerifier) *gin.Engine {
 	router := gin.New()
 	router.Use(ErrorHandlerMiddleware(), NewAuthMiddleware(verifier).Handle)
 	handler := func(c *gin.Context) {
-		principal, _ := c.Value(principalContextKey).(auth.Principal)
-		c.String(http.StatusOK, principal.UserID)
+		principal, _ := c.Value(auth.PrincipalContextKey).(auth.Principal)
+		c.String(http.StatusOK, principal.UserID.String())
 	}
 	router.GET(healthPath, handler)
 	router.GET("/api/v1/shipments/tracking/:trackingNumber", handler)
@@ -77,7 +78,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "courier-token"
-		userID := "courier-1"
+		userID := uuid.New()
 		verifier.EXPECT().Verify(gomock.Any(), token).
 			Return(auth.Principal{UserID: userID, Roles: []string{"COURIER"}}, nil).Times(1)
 
@@ -86,7 +87,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
-		if gotUserID := readBody(t, resp); gotUserID != userID {
+		if gotUserID := readBody(t, resp); gotUserID != userID.String() {
 			t.Errorf("principal seen by the handler = %q, want %q", gotUserID, userID)
 		}
 	})
@@ -96,7 +97,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "client-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: "client-1", Roles: []string{"CLIENT"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"CLIENT"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, trackingPath, "Bearer "+token)
 
@@ -151,7 +152,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "courier-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: "courier-1", Roles: []string{"COURIER"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"COURIER"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, cancelPath, "Bearer "+token)
 
@@ -177,7 +178,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "admin-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: "admin-1", Roles: []string{"ADMIN"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"ADMIN"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, unlistedPath, "Bearer "+token)
 

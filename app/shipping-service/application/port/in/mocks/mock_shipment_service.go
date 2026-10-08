@@ -16,6 +16,7 @@ import (
 	model "shippingservice/domain/model"
 	value "shippingservice/domain/value"
 
+	uuid "github.com/google/uuid"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -59,48 +60,48 @@ func (mr *MockShipmentServiceMockRecorder) Cancel(ctx, id any) *gomock.Call {
 }
 
 // ConfirmReturnedToInventory mocks base method.
-func (m *MockShipmentService) ConfirmReturnedToInventory(ctx context.Context, id uint64) (*model.Shipment, error) {
+func (m *MockShipmentService) ConfirmReturnedToInventory(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ConfirmReturnedToInventory", ctx, id)
+	ret := m.ctrl.Call(m, "ConfirmReturnedToInventory", ctx, id, courierID)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ConfirmReturnedToInventory indicates an expected call of ConfirmReturnedToInventory.
-func (mr *MockShipmentServiceMockRecorder) ConfirmReturnedToInventory(ctx, id any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) ConfirmReturnedToInventory(ctx, id, courierID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmReturnedToInventory", reflect.TypeOf((*MockShipmentService)(nil).ConfirmReturnedToInventory), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfirmReturnedToInventory", reflect.TypeOf((*MockShipmentService)(nil).ConfirmReturnedToInventory), ctx, id, courierID)
 }
 
 // CreateShipment mocks base method.
-func (m *MockShipmentService) CreateShipment(ctx context.Context, msg dto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
+func (m *MockShipmentService) CreateShipment(ctx context.Context, msg dto.KafkaMessageMetadata, orderID uint64, customerID uuid.UUID, address value.Address) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateShipment", ctx, msg, orderID, address)
+	ret := m.ctrl.Call(m, "CreateShipment", ctx, msg, orderID, customerID, address)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateShipment indicates an expected call of CreateShipment.
-func (mr *MockShipmentServiceMockRecorder) CreateShipment(ctx, msg, orderID, address any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) CreateShipment(ctx, msg, orderID, customerID, address any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateShipment", reflect.TypeOf((*MockShipmentService)(nil).CreateShipment), ctx, msg, orderID, address)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateShipment", reflect.TypeOf((*MockShipmentService)(nil).CreateShipment), ctx, msg, orderID, customerID, address)
 }
 
 // Deliver mocks base method.
-func (m *MockShipmentService) Deliver(ctx context.Context, id uint64) (*model.Shipment, error) {
+func (m *MockShipmentService) Deliver(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Deliver", ctx, id)
+	ret := m.ctrl.Call(m, "Deliver", ctx, id, courierID)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Deliver indicates an expected call of Deliver.
-func (mr *MockShipmentServiceMockRecorder) Deliver(ctx, id any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) Deliver(ctx, id, courierID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Deliver", reflect.TypeOf((*MockShipmentService)(nil).Deliver), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Deliver", reflect.TypeOf((*MockShipmentService)(nil).Deliver), ctx, id, courierID)
 }
 
 // GetByTrackingNumber mocks base method.
@@ -118,32 +119,47 @@ func (mr *MockShipmentServiceMockRecorder) GetByTrackingNumber(ctx, trackingNumb
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTrackingNumber", reflect.TypeOf((*MockShipmentService)(nil).GetByTrackingNumber), ctx, trackingNumber)
 }
 
-// Lose mocks base method.
-func (m *MockShipmentService) Lose(ctx context.Context, id uint64) (*model.Shipment, error) {
+// GetCustomerShipmentByTrackingNumber mocks base method.
+func (m *MockShipmentService) GetCustomerShipmentByTrackingNumber(ctx context.Context, trackingNumber string, customerID uuid.UUID) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Lose", ctx, id)
+	ret := m.ctrl.Call(m, "GetCustomerShipmentByTrackingNumber", ctx, trackingNumber, customerID)
+	ret0, _ := ret[0].(*model.Shipment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCustomerShipmentByTrackingNumber indicates an expected call of GetCustomerShipmentByTrackingNumber.
+func (mr *MockShipmentServiceMockRecorder) GetCustomerShipmentByTrackingNumber(ctx, trackingNumber, customerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCustomerShipmentByTrackingNumber", reflect.TypeOf((*MockShipmentService)(nil).GetCustomerShipmentByTrackingNumber), ctx, trackingNumber, customerID)
+}
+
+// Lose mocks base method.
+func (m *MockShipmentService) Lose(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Lose", ctx, id, courierID)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Lose indicates an expected call of Lose.
-func (mr *MockShipmentServiceMockRecorder) Lose(ctx, id any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) Lose(ctx, id, courierID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Lose", reflect.TypeOf((*MockShipmentService)(nil).Lose), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Lose", reflect.TypeOf((*MockShipmentService)(nil).Lose), ctx, id, courierID)
 }
 
 // StartDelivery mocks base method.
-func (m *MockShipmentService) StartDelivery(ctx context.Context, id uint64) (*model.Shipment, error) {
+func (m *MockShipmentService) StartDelivery(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StartDelivery", ctx, id)
+	ret := m.ctrl.Call(m, "StartDelivery", ctx, id, courierID)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // StartDelivery indicates an expected call of StartDelivery.
-func (mr *MockShipmentServiceMockRecorder) StartDelivery(ctx, id any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) StartDelivery(ctx, id, courierID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartDelivery", reflect.TypeOf((*MockShipmentService)(nil).StartDelivery), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartDelivery", reflect.TypeOf((*MockShipmentService)(nil).StartDelivery), ctx, id, courierID)
 }

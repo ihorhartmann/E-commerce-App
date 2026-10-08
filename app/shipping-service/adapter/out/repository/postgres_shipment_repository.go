@@ -84,6 +84,7 @@ func (r *postgresShipmentRepository) Update(ctx context.Context, shipment *model
 		Updates(map[string]any{
 			"status":     row.Status,
 			"holder":     row.Holder,
+			"courier_id": row.CourierID,
 			"updated_at": row.UpdatedAt,
 			"version":    gorm.Expr("version + 1"),
 		})

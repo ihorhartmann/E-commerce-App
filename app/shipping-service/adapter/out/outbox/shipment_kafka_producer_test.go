@@ -14,6 +14,7 @@ import (
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 
+	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 )
 
@@ -24,7 +25,7 @@ func testShipment(t *testing.T, orderID uint64, trackingNumber string, status mo
 		t.Fatalf("failed to build test address: %v", err)
 	}
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(1, orderID, trackingNumber, address, status, model.HolderCourier, now, now, 0)
+	shipment, err := model.NewExistingShipment(1, orderID, uuid.New(), uuid.New(), trackingNumber, address, status, model.HolderCourier, now, now, 0)
 	if err != nil {
 		t.Fatalf("failed to build test shipment: %v", err)
 	}

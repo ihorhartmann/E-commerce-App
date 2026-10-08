@@ -3,6 +3,8 @@ package auth
 import (
 	"net/http"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestAccessRule_Matches(t *testing.T) {
@@ -56,7 +58,7 @@ func TestAccessRule_Matches(t *testing.T) {
 }
 
 func TestPrincipal_HasAnyRole(t *testing.T) {
-	principal := Principal{UserID: "user-1", Roles: []string{"CLIENT", "offline_access"}}
+	principal := Principal{UserID: uuid.New(), Roles: []string{"CLIENT", "offline_access"}}
 
 	t.Run("true when the principal has one of the roles", func(t *testing.T) {
 		if !principal.HasAnyRole("ADMIN", "CLIENT") {

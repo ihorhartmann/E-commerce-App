@@ -15,6 +15,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -29,11 +30,11 @@ private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Curr
 
 private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 0): Order =
     if (id == 0L) {
-        Order.createNew(userId = 1, items = items, address = testAddress())
+        Order.createNew(customerId = UUID.randomUUID(), items = items, address = testAddress())
     } else {
         Order.createExisting(
             id = id,
-            userId = 1,
+            customerId = UUID.randomUUID(),
             items = items,
             address = testAddress(),
             status = OrderStatus.PLACED,
@@ -55,7 +56,7 @@ private fun cancelRequestedBeforePickup() = orderWithShipment().apply { cancelSh
 // but the model still has to guard against such a persisted state.
 private fun cancelRequestedWithoutRefund() = Order.createExisting(
     id = 1,
-    userId = 1,
+    customerId = UUID.randomUUID(),
     items = listOf(testItem()),
     address = testAddress(),
     status = OrderStatus.CANCEL_REQUESTED,
@@ -89,10 +90,12 @@ class OrderTest {
 
     @Test
     fun `createNew - builds a new order in PLACED status with no id yet`() {
-        val order = Order.createNew(userId = 1, items = listOf(testItem()), address = testAddress())
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+
+        val order = Order.createNew(customerId = customerId, items = listOf(testItem()), address = testAddress())
 
         assertEquals(0L, order.id)
-        assertEquals(1L, order.userId)
+        assertEquals(customerId, order.customerId)
         assertEquals(OrderStatus.PLACED, order.status)
         assertNotNull(order.createdAt)
     }
@@ -105,7 +108,7 @@ class OrderTest {
         val version = 7L
         val order = Order.createExisting(
             id = id,
-            userId = 1,
+            customerId = UUID.randomUUID(),
             items = listOf(testItem()),
             address = testAddress(),
             status = OrderStatus.PROCESSING,
@@ -123,13 +126,34 @@ class OrderTest {
         assertThrows<IllegalArgumentException> {
             Order.createExisting(
                 id = 0,
-                userId = 1,
+                customerId = UUID.randomUUID(),
                 items = listOf(testItem()),
                 address = testAddress(),
                 status = OrderStatus.PLACED,
                 createdAt = Instant.now(),
             )
         }
+    }
+
+    // --- isOwnedBy ---
+
+    @Test
+    fun `isOwnedBy - true for the customer who placed the order`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val order = Order.createNew(customerId = customerId, items = listOf(testItem()), address = testAddress())
+
+        assertTrue(order.isOwnedBy(customerId))
+    }
+
+    @Test
+    fun `isOwnedBy - false for another customer`() {
+        val order = Order.createNew(
+            customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001"),
+            items = listOf(testItem()),
+            address = testAddress(),
+        )
+
+        assertFalse(order.isOwnedBy(UUID.fromString("0192f1d2-7c4b-7000-8000-000000000002")))
     }
 
     // --- totalPrice ---

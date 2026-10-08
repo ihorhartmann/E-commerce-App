@@ -18,10 +18,12 @@ import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateExcept
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -41,6 +43,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 @WebMvcTest(OrderController::class, properties = ["oidc.roles-claim=realm_access.roles"])
 @Import(SecurityConfig::class)
@@ -72,15 +75,17 @@ class OrderControllerTest {
         whenever(httpIdempotencyService.claim(any(), any(), any())).thenReturn(RequestAttempt.claimed())
     }
 
-    private fun clientJwt() = jwt().authorities(SimpleGrantedAuthority("ROLE_CLIENT"))
+    // the subject is the customer id the controller passes on - a UUID, as Keycloak issues it
+    private fun clientJwt(customerId: UUID = UUID.randomUUID()) =
+        jwt().jwt { it.subject(customerId.toString()) }.authorities(SimpleGrantedAuthority("ROLE_CLIENT"))
 
     private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
     private fun testItem() = OrderItem.createExisting(1, 1, 1, 2, Money(BigDecimal("10.00"), Currency.USD))
 
-    private fun testOrder(id: Long = 1) = Order.createExisting(
+    private fun testOrder(id: Long = 1, customerId: UUID = UUID.randomUUID()) = Order.createExisting(
         id = id,
-        userId = 1,
+        customerId = customerId,
         items = listOf(testItem()),
         address = testAddress(),
         status = OrderStatus.PLACED,
@@ -89,7 +94,6 @@ class OrderControllerTest {
 
     private val validPlaceOrderRequestJson: String = """
         {
-          "userId": 1,
           "items": [{"productId": 1, "quantity": 2, "price": {"amount": 10.00, "currency": "USD"}}],
           "address": {"city": "Kyiv", "postalCode": "01001", "line1": "Khreshchatyk 1"}
         }
@@ -116,10 +120,30 @@ class OrderControllerTest {
     }
 
     @Test
+    fun `placeOrder - places the order for the customer from the token`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val captor = argumentCaptor<Order>()
+        whenever(placeOrderUseCase.execute(captor.capture()))
+            .thenReturn(CheckoutResult(testOrder(customerId = customerId), "secret_123"))
+
+        mockMvc.post("/api/v1/orders") {
+            with(clientJwt(customerId))
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-10")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.customerId") { value(customerId.toString()) }
+        }
+
+        verify(placeOrderUseCase, times(1)).execute(any())
+        assertEquals(customerId, captor.firstValue.customerId)
+    }
+
+    @Test
     fun `placeOrder - returns 400 when the request fails validation`() {
         val invalidRequestJson = """
             {
-              "userId": -1,
               "items": [],
               "address": {"city": "", "postalCode": "01001", "line1": "Khreshchatyk 1"}
             }
@@ -133,7 +157,6 @@ class OrderControllerTest {
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error") { value("Validation failed") }
-            jsonPath("$.details.userId") { exists() }
             jsonPath("$.details.items") { exists() }
             jsonPath("$.details['address.city']") { exists() }
         }
@@ -267,35 +290,38 @@ class OrderControllerTest {
     }
 
     @Test
-    fun `getOrderById - returns 200 with the order`() {
+    fun `getOrderById - returns 200 with the order of the customer from the token`() {
         val orderId = 1L
-        val order = testOrder(id = orderId)
-        whenever(getOrderUseCase.execute(orderId)).thenReturn(order)
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val order = testOrder(id = orderId, customerId = customerId)
+        whenever(getOrderUseCase.execute(orderId, customerId)).thenReturn(order)
 
         mockMvc.get("/api/v1/orders/{orderId}", orderId) {
-            with(clientJwt())
+            with(clientJwt(customerId))
         }.andExpect {
             status { isOk() }
             jsonPath("$.id") { value(orderId) }
+            jsonPath("$.customerId") { value(customerId.toString()) }
         }
 
-        verify(getOrderUseCase, times(1)).execute(orderId)
+        verify(getOrderUseCase, times(1)).execute(orderId, customerId)
     }
 
     @Test
     fun `getOrderById - returns 404 when the order does not exist`() {
         val orderId = 99L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
         val message = "Order [ID=$orderId] was not found"
-        whenever(getOrderUseCase.execute(orderId)).thenThrow(OrderNotFoundException(orderId))
+        whenever(getOrderUseCase.execute(orderId, customerId)).thenThrow(OrderNotFoundException(orderId))
 
         mockMvc.get("/api/v1/orders/{orderId}", orderId) {
-            with(clientJwt())
+            with(clientJwt(customerId))
         }.andExpect {
             status { isNotFound() }
             jsonPath("$.error") { value(message) }
         }
 
-        verify(getOrderUseCase, times(1)).execute(orderId)
+        verify(getOrderUseCase, times(1)).execute(orderId, customerId)
     }
 
     @Test
@@ -364,7 +390,7 @@ class OrderControllerTest {
             status { isUnauthorized() }
         }
 
-        verify(getOrderUseCase, never()).execute(any())
+        verify(getOrderUseCase, never()).execute(any(), any())
     }
 
     @Test
@@ -375,6 +401,6 @@ class OrderControllerTest {
             status { isForbidden() }
         }
 
-        verify(getOrderUseCase, never()).execute(any())
+        verify(getOrderUseCase, never()).execute(any(), any())
     }
 }

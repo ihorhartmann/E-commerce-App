@@ -12,6 +12,7 @@ import (
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	idempotencymocks "shippingservice/application/port/out/idempotency/mocks"
 	kafkamocks "shippingservice/application/port/out/kafka/mocks"
+	"shippingservice/application/port/out/repository"
 	repomocks "shippingservice/application/port/out/repository/mocks"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
@@ -36,10 +37,11 @@ func testAddress(t *testing.T) value.Address {
 	return address
 }
 
-func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder) *model.Shipment {
+// testShipment builds a shipment of a random customer; courierID must be uuid.Nil before pickup and set after it.
+func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder, courierID uuid.UUID) *model.Shipment {
 	t.Helper()
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(id, 100, "TRACK-1", testAddress(t), status, holder, now, now, 0)
+	shipment, err := model.NewExistingShipment(id, 100, uuid.New(), courierID, "TRACK-1", testAddress(t), status, holder, now, now, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
@@ -49,7 +51,7 @@ func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder m
 func TestShipmentServiceImpl_GetByTrackingNumber(t *testing.T) {
 	t.Run("returns the shipment from the repository", func(t *testing.T) {
 		trackingNumber := "TRACK-1"
-		shipment := testShipment(t, 1, model.Created, model.HolderInventory)
+		shipment := testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		shipmentRepo.EXPECT().GetByTrackingNumber(gomock.Any(), trackingNumber).Return(shipment, nil).Times(1)
 
@@ -89,13 +91,59 @@ func TestShipmentServiceImpl_GetByTrackingNumber(t *testing.T) {
 	})
 }
 
+func TestShipmentServiceImpl_GetCustomerShipmentByTrackingNumber(t *testing.T) {
+	t.Run("returns the shipment to the customer who owns it", func(t *testing.T) {
+		trackingNumber := "TRACK-1"
+		shipment := testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		shipmentRepo.EXPECT().GetByTrackingNumber(gomock.Any(), trackingNumber).Return(shipment, nil).Times(1)
+
+		service := NewShipmentServiceImpl(
+			shipmentRepo,
+			kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t)),
+			idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)),
+			noopTxExecutor{},
+		)
+
+		got, err := service.GetCustomerShipmentByTrackingNumber(context.Background(), trackingNumber, shipment.CustomerID())
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(got, shipment) {
+			t.Errorf("GetCustomerShipmentByTrackingNumber() = %+v, want %+v", got, shipment)
+		}
+	})
+
+	t.Run("reports another customer's shipment as not found", func(t *testing.T) {
+		trackingNumber := "TRACK-1"
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		shipmentRepo.EXPECT().GetByTrackingNumber(gomock.Any(), trackingNumber).
+			Return(testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil), nil).Times(1)
+
+		service := NewShipmentServiceImpl(
+			shipmentRepo,
+			kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t)),
+			idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)),
+			noopTxExecutor{},
+		)
+
+		_, err := service.GetCustomerShipmentByTrackingNumber(context.Background(), trackingNumber, uuid.New())
+
+		if !errors.Is(err, repository.ErrShipmentNotFound) {
+			t.Errorf("err = %v, want %v", err, repository.ErrShipmentNotFound)
+		}
+	})
+}
+
 func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "CreateShipment"}
 
 	t.Run("persists a new shipment via the repository, then publishes the status change", func(t *testing.T) {
 		orderID := uint64(100)
+		customerID := uuid.New()
 		address := testAddress(t)
-		persisted := testShipment(t, 1, model.Created, model.HolderInventory)
+		persisted := testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
@@ -105,6 +153,9 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 			func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
 				if s.OrderId() != orderID {
 					t.Errorf("Create() shipment.OrderId() = %v, want %v", s.OrderId(), orderID)
+				}
+				if s.CustomerID() != customerID {
+					t.Errorf("Create() shipment.CustomerID() = %v, want %v", s.CustomerID(), customerID)
 				}
 				if s.Address() != address {
 					t.Errorf("Create() shipment.Address() = %+v, want %+v", s.Address(), address)
@@ -116,7 +167,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
 
-		got, err := service.CreateShipment(context.Background(), msg, orderID, address)
+		got, err := service.CreateShipment(context.Background(), msg, orderID, customerID, address)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -138,7 +189,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
 
-		got, err := service.CreateShipment(context.Background(), msg, orderID, address)
+		got, err := service.CreateShipment(context.Background(), msg, orderID, uuid.New(), address)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -162,7 +213,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
 
-		_, err := service.CreateShipment(context.Background(), msg, orderID, address)
+		_, err := service.CreateShipment(context.Background(), msg, orderID, uuid.New(), address)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -173,7 +224,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 		orderID := uint64(100)
 		address := testAddress(t)
 		wantErr := errors.New("kafka down")
-		persisted := testShipment(t, 1, model.Created, model.HolderInventory)
+		persisted := testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
@@ -184,7 +235,7 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
 
-		_, err := service.CreateShipment(context.Background(), msg, orderID, address)
+		_, err := service.CreateShipment(context.Background(), msg, orderID, uuid.New(), address)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -195,7 +246,8 @@ func TestShipmentServiceImpl_CreateShipment(t *testing.T) {
 func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 	t.Run("starts delivery, persists, and publishes the status change", func(t *testing.T) {
 		id := uint64(1)
-		shipment := testShipment(t, id, model.Created, model.HolderInventory)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -212,12 +264,13 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		got, err := service.StartDelivery(context.Background(), id)
+		got, err := service.StartDelivery(context.Background(), id, courierID)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if transitioned == nil || transitioned.Status() != model.InDelivery || transitioned.Holder() != model.HolderCourier {
+		if transitioned == nil || transitioned.Status() != model.InDelivery || transitioned.Holder() != model.HolderCourier ||
+			transitioned.CourierID() != courierID {
 			t.Fatalf("unexpected transition: %+v", transitioned)
 		}
 		if !reflect.DeepEqual(got, transitioned) {
@@ -237,7 +290,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.StartDelivery(context.Background(), id)
+		_, err := service.StartDelivery(context.Background(), id, uuid.New())
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -246,7 +299,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 	t.Run("propagates a domain error when the shipment is not in a startable status", func(t *testing.T) {
 		id := uint64(1)
-		shipment := testShipment(t, id, model.Delivered, model.HolderCourier) // already terminal
+		shipment := testShipment(t, id, model.Delivered, model.HolderCourier, uuid.New()) // already terminal
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -256,7 +309,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.StartDelivery(context.Background(), id)
+		_, err := service.StartDelivery(context.Background(), id, uuid.New())
 
 		if !errors.Is(err, model.ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, model.ErrInvalidStatusTransition)
@@ -266,7 +319,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 	t.Run("propagates an error persisting the transitioned shipment", func(t *testing.T) {
 		id := uint64(1)
 		wantErr := errors.New("db down")
-		shipment := testShipment(t, id, model.Created, model.HolderInventory)
+		shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -276,7 +329,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.StartDelivery(context.Background(), id)
+		_, err := service.StartDelivery(context.Background(), id, uuid.New())
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -286,8 +339,8 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 	t.Run("propagates an error publishing the status change", func(t *testing.T) {
 		id := uint64(1)
 		wantErr := errors.New("kafka down")
-		shipment := testShipment(t, id, model.Created, model.HolderInventory)
-		updated := testShipment(t, id, model.InDelivery, model.HolderCourier)
+		shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
+		updated := testShipment(t, id, model.InDelivery, model.HolderCourier, uuid.New())
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -297,7 +350,7 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.StartDelivery(context.Background(), id)
+		_, err := service.StartDelivery(context.Background(), id, uuid.New())
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -306,72 +359,122 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 }
 
 func TestShipmentServiceImpl_Deliver(t *testing.T) {
-	id := uint64(1)
-	shipment := testShipment(t, id, model.InDelivery, model.HolderCourier)
-	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
-	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+	t.Run("delivers the shipment for the assigned courier, persists, and publishes the status change", func(t *testing.T) {
+		id := uint64(1)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, courierID)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
-	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
-	var transitioned *model.Shipment
-	shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-		func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
-			transitioned = s
-			return s, nil
-		},
-	)
-	producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
+		var transitioned *model.Shipment
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
+				transitioned = s
+				return s, nil
+			},
+		)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
 
-	service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-	got, err := service.Deliver(context.Background(), id)
+		got, err := service.Deliver(context.Background(), id, courierID)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if transitioned == nil || transitioned.Status() != model.Delivered || transitioned.Holder() != model.HolderCourier {
-		t.Fatalf("unexpected transition: %+v", transitioned)
-	}
-	if !reflect.DeepEqual(got, transitioned) {
-		t.Errorf("Deliver() = %+v, want %+v", got, transitioned)
-	}
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if transitioned == nil || transitioned.Status() != model.Delivered || transitioned.Holder() != model.HolderCourier {
+			t.Fatalf("unexpected transition: %+v", transitioned)
+		}
+		if !reflect.DeepEqual(got, transitioned) {
+			t.Errorf("Deliver() = %+v, want %+v", got, transitioned)
+		}
+	})
+
+	t.Run("rejects a courier the shipment is not assigned to, without persisting or publishing", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, uuid.New())
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		_, err := service.Deliver(context.Background(), id, uuid.New())
+
+		if !errors.Is(err, ErrNotAssignedCourier) {
+			t.Errorf("err = %v, want %v", err, ErrNotAssignedCourier)
+		}
+		if shipment.Status() != model.InDelivery {
+			t.Errorf("rejected transition changed the status to %v", shipment.Status())
+		}
+	})
 }
 
 func TestShipmentServiceImpl_Lose(t *testing.T) {
-	id := uint64(1)
-	shipment := testShipment(t, id, model.InDelivery, model.HolderCourier)
-	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
-	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+	t.Run("reports lost the shipment for the assigned courier, persists, and publishes the status change", func(t *testing.T) {
+		id := uint64(1)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, courierID)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
-	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
-	var transitioned *model.Shipment
-	shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-		func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
-			transitioned = s
-			return s, nil
-		},
-	)
-	producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
+		var transitioned *model.Shipment
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
+				transitioned = s
+				return s, nil
+			},
+		)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
 
-	service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-	got, err := service.Lose(context.Background(), id)
+		got, err := service.Lose(context.Background(), id, courierID)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if transitioned == nil || transitioned.Status() != model.Lost || transitioned.Holder() != model.HolderCourier {
-		t.Fatalf("unexpected transition: %+v", transitioned)
-	}
-	if !reflect.DeepEqual(got, transitioned) {
-		t.Errorf("Lose() = %+v, want %+v", got, transitioned)
-	}
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if transitioned == nil || transitioned.Status() != model.Lost || transitioned.Holder() != model.HolderCourier {
+			t.Fatalf("unexpected transition: %+v", transitioned)
+		}
+		if !reflect.DeepEqual(got, transitioned) {
+			t.Errorf("Lose() = %+v, want %+v", got, transitioned)
+		}
+	})
+
+	t.Run("rejects a courier the shipment is not assigned to, without persisting or publishing", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, uuid.New())
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		_, err := service.Lose(context.Background(), id, uuid.New())
+
+		if !errors.Is(err, ErrNotAssignedCourier) {
+			t.Errorf("err = %v, want %v", err, ErrNotAssignedCourier)
+		}
+		if shipment.Status() != model.InDelivery {
+			t.Errorf("rejected transition changed the status to %v", shipment.Status())
+		}
+	})
 }
 
 func TestShipmentServiceImpl_Cancel(t *testing.T) {
 	id := uint64(1)
-	shipment := testShipment(t, id, model.Created, model.HolderInventory)
+	shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
 	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -404,7 +507,8 @@ func TestShipmentServiceImpl_Cancel(t *testing.T) {
 func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 	t.Run("moves the holder back to inventory and publishes the returned event", func(t *testing.T) {
 		id := uint64(1)
-		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier, courierID)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -422,7 +526,7 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		got, err := service.ConfirmReturnedToInventory(context.Background(), id)
+		got, err := service.ConfirmReturnedToInventory(context.Background(), id, courierID)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -447,16 +551,17 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.ConfirmReturnedToInventory(context.Background(), id)
+		_, err := service.ConfirmReturnedToInventory(context.Background(), id, uuid.New())
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
 		}
 	})
 
-	t.Run("propagates a domain error when the goods were never picked up by a courier", func(t *testing.T) {
+	t.Run("propagates a domain error when the goods are already back at the inventory", func(t *testing.T) {
 		id := uint64(1)
-		shipment := testShipment(t, id, model.Cancelled, model.HolderInventory) // never left the warehouse
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.Cancelled, model.HolderInventory, courierID)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -466,17 +571,40 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.ConfirmReturnedToInventory(context.Background(), id)
+		_, err := service.ConfirmReturnedToInventory(context.Background(), id, courierID)
 
 		if !errors.Is(err, model.ErrInvalidStatusTransition) {
 			t.Errorf("err = %v, want %v", err, model.ErrInvalidStatusTransition)
 		}
 	})
 
+	t.Run("rejects a courier the shipment is not assigned to, without persisting or publishing", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier, uuid.New())
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentReturnedToInventory(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		_, err := service.ConfirmReturnedToInventory(context.Background(), id, uuid.New())
+
+		if !errors.Is(err, ErrNotAssignedCourier) {
+			t.Errorf("err = %v, want %v", err, ErrNotAssignedCourier)
+		}
+		if shipment.Holder() != model.HolderCourier {
+			t.Errorf("rejected transition changed the holder to %v", shipment.Holder())
+		}
+	})
+
 	t.Run("propagates an error persisting the transitioned shipment", func(t *testing.T) {
 		id := uint64(1)
 		wantErr := errors.New("db down")
-		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier, courierID)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -486,7 +614,7 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.ConfirmReturnedToInventory(context.Background(), id)
+		_, err := service.ConfirmReturnedToInventory(context.Background(), id, courierID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)
@@ -496,8 +624,9 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 	t.Run("propagates an error publishing the returned-to-inventory event", func(t *testing.T) {
 		id := uint64(1)
 		wantErr := errors.New("kafka down")
-		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier)
-		updated := testShipment(t, id, model.Cancelled, model.HolderInventory)
+		courierID := uuid.New()
+		shipment := testShipment(t, id, model.Cancelled, model.HolderCourier, courierID)
+		updated := testShipment(t, id, model.Cancelled, model.HolderInventory, courierID)
 		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
 		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
@@ -507,7 +636,7 @@ func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {
 
 		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		_, err := service.ConfirmReturnedToInventory(context.Background(), id)
+		_, err := service.ConfirmReturnedToInventory(context.Background(), id, courierID)
 
 		if !errors.Is(err, wantErr) {
 			t.Errorf("err = %v, want %v", err, wantErr)

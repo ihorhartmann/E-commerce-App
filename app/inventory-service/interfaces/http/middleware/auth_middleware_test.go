@@ -11,6 +11,7 @@ import (
 	"inventoryservice/interfaces/http/auth/mocks"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"go.uber.org/mock/gomock"
 )
 
@@ -29,7 +30,7 @@ func newAuthTestApp(verifier auth.TokenVerifier) *fiber.App {
 	app.Use(NewAuthMiddleware(verifier).Handle)
 	handler := func(c *fiber.Ctx) error {
 		principal, _ := c.Locals(principalLocalsKey).(auth.Principal)
-		return c.Status(http.StatusOK).SendString(principal.UserID)
+		return c.Status(http.StatusOK).SendString(principal.UserID.String())
 	}
 	app.Get(healthPath, handler)
 	app.Get("/api/v1/products/:id", handler)
@@ -91,7 +92,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "admin-token"
-		userID := "admin-1"
+		userID := uuid.New()
 		verifier.EXPECT().Verify(gomock.Any(), token).
 			Return(auth.Principal{UserID: userID, Roles: []string{"ADMIN"}}, nil).Times(1)
 
@@ -100,7 +101,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 		}
-		if gotUserID := readBody(t, resp); gotUserID != userID {
+		if gotUserID := readBody(t, resp); gotUserID != userID.String() {
 			t.Errorf("principal seen by the handler = %q, want %q", gotUserID, userID)
 		}
 	})
@@ -151,7 +152,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "client-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: "client-1", Roles: []string{"CLIENT"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"CLIENT"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPut, productPath, "Bearer "+token)
 
@@ -177,7 +178,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "admin-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: "admin-1", Roles: []string{"ADMIN"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"ADMIN"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, unlistedPath, "Bearer "+token)
 
