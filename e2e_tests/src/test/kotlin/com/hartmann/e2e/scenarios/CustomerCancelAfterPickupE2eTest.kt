@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -26,9 +27,9 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
 
         val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
         val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, trackingNumber)
+        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
 
-        ShippingApi.pickup(shippingUrl, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
+        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterPickup = InventoryApi.getProduct(inventoryUrl, productId)
@@ -40,7 +41,7 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
         assertThat(shipmentAfterCancel.holder).isEqualTo("Courier")
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterCancel = OrderApi.getOrder(orderUrl, processingOrder.id)
+            val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterCancel.status).isEqualTo("CANCEL_REQUESTED")
             assertThat(orderAfterCancel.refund?.requestedAt).isNotNull()
         }
@@ -50,7 +51,7 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
         val productBeforeReturn = InventoryApi.getProduct(inventoryUrl, productId)
         assertThat(productBeforeReturn.quantity).isEqualTo(product.quantity - quantity)
 
-        ShippingApi.confirmReturnedToInventory(shippingUrl, shipment.id)
+        ShippingApi.confirmReturnedToInventory(shippingUrl, TestUser.COURIER1, shipment.id)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterReturn = InventoryApi.getProduct(inventoryUrl, productId)
@@ -59,7 +60,7 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
 
         // both halves - the physical return above and the refund - must complete before CANCELLED
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterReturn = OrderApi.getOrder(orderUrl, processingOrder.id)
+            val orderAfterReturn = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterReturn.status).isEqualTo("CANCELLED")
             assertThat(orderAfterReturn.refund?.confirmedAt).isNotNull()
         }

@@ -1,5 +1,7 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
+import com.hartmann.e2e.support.auth.TokenProvider
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -25,6 +27,8 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
         val product = InventoryApi.getProduct(inventoryUrl, productId)
 
         val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
+        // the order belongs to whoever placed it - taken from the token, not from the request
+        assertThat(processingOrder.customerId).isEqualTo(TokenProvider.subject(TestUser.CLIENT1))
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterConfirmation = InventoryApi.getProduct(inventoryUrl, productId)
@@ -33,10 +37,10 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
         }
 
         val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, trackingNumber)
+        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
         assertThat(shipment.status).isEqualTo("Created")
 
-        ShippingApi.pickup(shippingUrl, shipment.id) // Created -> In Delivery: FulfillReservationCommand sells the stock
+        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery: FulfillReservationCommand sells the stock
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterPickup = InventoryApi.getProduct(inventoryUrl, productId)
@@ -44,10 +48,10 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
             assertThat(productAfterPickup.reserved).isEqualTo(product.reserved)
         }
 
-        ShippingApi.deliver(shippingUrl, shipment.id) // In Delivery -> Delivered
+        ShippingApi.deliver(shippingUrl, TestUser.COURIER1, shipment.id) // In Delivery -> Delivered
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterDelivery = OrderApi.getOrder(orderUrl, processingOrder.id)
+            val orderAfterDelivery = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterDelivery.status).isEqualTo("FULFILLED")
             assertThat(orderAfterDelivery.shipment?.deliveredAt).isNotNull()
         }

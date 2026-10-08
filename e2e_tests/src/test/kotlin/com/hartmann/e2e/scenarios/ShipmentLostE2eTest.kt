@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -27,9 +28,9 @@ class ShipmentLostE2eTest : E2eScenarioTest() {
         val processingOrder =
             E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
         val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, trackingNumber)
+        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
 
-        ShippingApi.pickup(shippingUrl, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
+        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterPickup = InventoryApi.getProduct(inventoryUrl, productId)
@@ -37,11 +38,11 @@ class ShipmentLostE2eTest : E2eScenarioTest() {
             assertThat(productAfterPickup.reserved).isEqualTo(product.reserved)
         }
 
-        val shipmentAfterLose = ShippingApi.lose(shippingUrl, shipment.id) // In Delivery -> Lost
+        val shipmentAfterLose = ShippingApi.lose(shippingUrl, TestUser.COURIER1, shipment.id) // In Delivery -> Lost
         assertThat(shipmentAfterLose.status).isEqualTo("Lost")
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterLoss = OrderApi.getOrder(orderUrl, processingOrder.id)
+            val orderAfterLoss = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterLoss.status).isEqualTo("CANCELLED")
             assertThat(orderAfterLoss.cancellationReason).isEqualTo("SHIPMENT_LOST")
             assertThat(orderAfterLoss.refund?.confirmedAt).isNotNull()

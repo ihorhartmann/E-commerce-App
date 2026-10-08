@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -26,13 +27,13 @@ class CustomerCancelBeforePickupE2eTest : E2eScenarioTest() {
 
         val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
         val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, trackingNumber)
+        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
         assertThat(shipment.status).isEqualTo("Created") // not picked up yet
 
         ShippingApi.cancel(shippingUrl, shipment.id)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterCancel = OrderApi.getOrder(orderUrl, processingOrder.id)
+            val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterCancel.status).isEqualTo("CANCELLED")
             assertThat(orderAfterCancel.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
             assertThat(orderAfterCancel.refund?.confirmedAt).isNotNull()

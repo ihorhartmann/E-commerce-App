@@ -172,6 +172,24 @@
       ]
     },
     {
+      "username": "courier2",
+      "email": "courier2@example.com",
+      "firstName": "Courier",
+      "lastName": "Two",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "courier2",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "COURIER"
+      ]
+    },
+    {
       "username": "admin",
       "email": "admin@example.com",
       "firstName": "Admin",

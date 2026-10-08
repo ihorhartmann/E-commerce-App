@@ -1,18 +1,20 @@
 package com.hartmann.e2e.support.api.payment
 
-import io.restassured.RestAssured.given
+import com.hartmann.e2e.support.auth.TestUser
+import com.hartmann.e2e.support.auth.givenAs
 import java.net.HttpURLConnection
 
+/** Payment-service reads are admin-only: customers see their payment and refund in the order instead. */
 object PaymentApi {
     fun getPaymentByOrderId(baseUrl: String, orderId: Long): PaymentResponse =
-        given()
+        givenAs(TestUser.ADMIN)
             .get("$baseUrl/api/v1/payments/$orderId")
             .then()
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(PaymentResponse::class.java)
 
     fun getRefundsByOrderId(baseUrl: String, orderId: Long): List<RefundResponse> =
-        given()
+        givenAs(TestUser.ADMIN)
             .get("$baseUrl/api/v1/refunds/$orderId")
             .then()
             .statusCode(HttpURLConnection.HTTP_OK)

@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -39,7 +40,7 @@ class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
         // ATTEMPT_DECLINED is not terminal - the customer may still retry the same PaymentIntent
         // with a different payment method, so order-service is never told and the reservation
         // stays held rather than being released.
-        val orderAfterDecline = OrderApi.getOrder(orderUrl, placedOrder.id)
+        val orderAfterDecline = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, placedOrder.id)
         assertThat(orderAfterDecline.status).isEqualTo("PLACED")
         val productAfterDecline = InventoryApi.getProduct(inventoryUrl, productId)
         assertThat(productAfterDecline.available).isEqualTo(product.available - quantity)
@@ -51,7 +52,7 @@ class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
             .statusCode(HttpURLConnection.HTTP_OK)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterRetry = OrderApi.getOrder(orderUrl, placedOrder.id)
+            val orderAfterRetry = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, placedOrder.id)
             assertThat(orderAfterRetry.status).isEqualTo("PROCESSING")
             assertThat(orderAfterRetry.paymentConfirmedAt).isNotNull()
         }

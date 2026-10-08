@@ -8,6 +8,7 @@ import com.hartmann.e2e.support.api.order.OrderResponse
 import com.hartmann.e2e.support.api.payment.PaymentApi
 import com.hartmann.e2e.support.api.payment.StripeApi
 import com.hartmann.e2e.support.api.order.PlaceOrderRequest
+import com.hartmann.e2e.support.auth.TestUser
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import java.math.BigDecimal
@@ -24,11 +25,12 @@ object E2eSharedSteps {
         quantity: Int,
         unitPrice: BigDecimal,
         currency: String = "USD",
+        customer: TestUser = TestUser.CLIENT1,
     ): OrderResponse =
         OrderApi.placeOrderExpectingSuccess(
             orderBaseUrl,
+            customer,
             PlaceOrderRequest(
-                userId = 1,
                 items = listOf(OrderItemRequest(productId, quantity, MoneyRequest(unitPrice, currency))),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),
@@ -40,8 +42,9 @@ object E2eSharedSteps {
         productId: Long,
         quantity: Int,
         unitPrice: BigDecimal,
+        customer: TestUser = TestUser.CLIENT1,
     ): OrderResponse {
-        val placedOrder = placeOrder(orderBaseUrl, productId, quantity, unitPrice)
+        val placedOrder = placeOrder(orderBaseUrl, productId, quantity, unitPrice, customer = customer)
         // Stripe amounts are minor units (cents) - confirms the exact amount it received matches
         // what we sent, not just that it deserialized back into the same value in our own DB.
         val expectedCents = placedOrder.totalPrice.amount.movePointRight(2).toInt()
@@ -52,7 +55,7 @@ object E2eSharedSteps {
 
         lateinit var processingOrder: OrderResponse
         await().atMost(POLL_TIMEOUT).untilAsserted {
-            processingOrder = OrderApi.getOrder(orderBaseUrl, placedOrder.id)
+            processingOrder = OrderApi.getOrder(orderBaseUrl, customer, placedOrder.id)
             assertThat(processingOrder.status).isEqualTo("PROCESSING")
             assertThat(processingOrder.paymentConfirmedAt).isNotNull()
             assertThat(processingOrder.shipment).isNotNull()
