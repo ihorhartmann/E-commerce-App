@@ -16,6 +16,8 @@ repositories {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
+    implementation("org.springframework.boot:spring-boot-starter-security-oauth2-client")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql:12.4.0")
@@ -27,6 +29,7 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql:42.7.13")
     testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-security-test")
     testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("org.mockito.kotlin:mockito-kotlin:6.3.0")
     testImplementation("org.springframework.kafka:spring-kafka-test")
@@ -42,10 +45,10 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform {
-        if (project.hasProperty("integration")) {
-            includeTags("integration")
-        } else {
-            excludeTags("integration")
+        when {
+            project.hasProperty("allTests") -> {}
+            project.hasProperty("integration") -> includeTags("integration")
+            else -> excludeTags("integration")
         }
     }
 }

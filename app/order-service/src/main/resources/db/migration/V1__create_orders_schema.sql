@@ -1,6 +1,6 @@
 CREATE TABLE orders.orders (
     id                        BIGSERIAL PRIMARY KEY,
-    user_id                   BIGINT NOT NULL,
+    customer_id               UUID NOT NULL,
     address_city              VARCHAR(255) NOT NULL,
     address_postal_code       VARCHAR(255) NOT NULL,
     address_line1             VARCHAR(255) NOT NULL,

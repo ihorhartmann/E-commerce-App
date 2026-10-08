@@ -2,6 +2,7 @@ package com.hartmann.frameworks.config
 
 import com.hartmann.interfaceadapter.out.http.HttpInventoryClient
 import com.hartmann.interfaceadapter.out.http.HttpPaymentClient
+import com.hartmann.interfaceadapter.out.http.LoggingClientHttpRequestInterceptor
 import com.hartmann.interfaceadapter.out.http.Resilience4jInventoryClient
 import com.hartmann.interfaceadapter.out.http.Resilience4jPaymentClient
 import com.hartmann.interfaceadapter.out.http.connectFailureRetryConfig
@@ -11,6 +12,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import io.github.resilience4j.retry.Retry
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -37,9 +39,10 @@ class HttpClientConfig {
         @Value($$"${inventory-service.url}") baseUrl: String,
         @Value($$"${inventory-service.read-timeout}") readTimeout: Duration,
         httpClient: HttpClient,
-        loggingInterceptor: ClientHttpRequestInterceptor,
+        @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
+        @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
     ): InventoryClient = Resilience4jInventoryClient(
-        HttpInventoryClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor)),
+        HttpInventoryClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor)),
         retry("inventory-service"),
         circuitBreaker("inventory-service", Resilience4jInventoryClient.circuitBreakerConfig()),
     )
@@ -49,9 +52,10 @@ class HttpClientConfig {
         @Value($$"${payment-service.url}") baseUrl: String,
         @Value($$"${payment-service.read-timeout}") readTimeout: Duration,
         httpClient: HttpClient,
-        loggingInterceptor: ClientHttpRequestInterceptor,
+        @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
+        @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
     ): PaymentClient = Resilience4jPaymentClient(
-        HttpPaymentClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor)),
+        HttpPaymentClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor)),
         retry("payment-service"),
         circuitBreaker("payment-service", Resilience4jPaymentClient.circuitBreakerConfig()),
     )
@@ -61,12 +65,14 @@ class HttpClientConfig {
         readTimeout: Duration,
         httpClient: HttpClient,
         loggingInterceptor: ClientHttpRequestInterceptor,
+        serviceTokenInterceptor: ClientHttpRequestInterceptor,
     ): RestClient {
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply { setReadTimeout(readTimeout) }
         return RestClient.builder()
             .baseUrl(baseUrl)
             .requestFactory(requestFactory)
             .requestInterceptor(loggingInterceptor)
+            .requestInterceptor(serviceTokenInterceptor)
             .build()
     }
 

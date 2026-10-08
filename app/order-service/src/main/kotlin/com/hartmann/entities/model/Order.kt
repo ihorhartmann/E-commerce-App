@@ -8,10 +8,11 @@ import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
 import java.time.Instant
 import java.math.BigDecimal
+import java.util.UUID
 
 class Order private constructor(
     val id: Long,
-    val userId: Long,
+    val customerId: UUID,
     val items: List<OrderItem>,
     val address: Address,
     status: OrderStatus,
@@ -38,10 +39,12 @@ class Order private constructor(
         private set
 
     init {
-        require(userId > 0) { "userId must be positive" }
         require(items.isNotEmpty()) { "order must contain at least one item" }
         require(items.map { it.price.currency }.distinct().size == 1) { "all order item currencies must match" }
     }
+
+    /** Whether the order was placed by this customer - the only one allowed to see it. */
+    fun isOwnedBy(customerId: UUID): Boolean = this.customerId == customerId
 
     fun totalPrice(): Money {
         val currency: Currency = items.first().price.currency
@@ -205,14 +208,14 @@ class Order private constructor(
     override fun hashCode(): Int = id.hashCode()
 
     override fun toString(): String =
-        "Order(id=$id, userId=$userId, status=$status, cancellationReason=$cancellationReason, " +
+        "Order(id=$id, customerId=$customerId, status=$status, cancellationReason=$cancellationReason, " +
                 "awaitingReturn=$awaitingReturn, shipment=$shipment, refund=$refund, version=$version)"
 
     companion object {
-        fun createNew(userId: Long, items: List<OrderItem>, address: Address): Order {
+        fun createNew(customerId: UUID, items: List<OrderItem>, address: Address): Order {
             return Order(
                 id = 0,
-                userId = userId,
+                customerId = customerId,
                 items = items,
                 address = address,
                 status = OrderStatus.PLACED,
@@ -229,7 +232,7 @@ class Order private constructor(
 
         fun createExisting(
             id: Long,
-            userId: Long,
+            customerId: UUID,
             items: List<OrderItem>,
             address: Address,
             status: OrderStatus,
@@ -245,7 +248,7 @@ class Order private constructor(
             require(id > 0) { "id must be positive" }
             return Order(
                 id = id,
-                userId = userId,
+                customerId = customerId,
                 items = items,
                 address = address,
                 status = status,

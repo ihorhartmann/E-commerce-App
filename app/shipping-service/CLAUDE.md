@@ -152,6 +152,13 @@ HTTP error handling must be declared in an `errors.go` file located next to the 
 Each controller must provide a `RegisterRoutes` function responsible for registering all controller routes. See the
 [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
 
+`adapter/in/http/auth` holds authentication for the HTTP API: the `TokenVerifier` interface, `Principal` and
+`AccessRule`; its JWT/JWKS-based implementation (`JWKSTokenVerifier`) lives in `infrastructure/jwks`, like the
+kafka-go implementations of adapter interfaces. `middleware.AuthMiddleware` checks every request against the rule
+table in `adapter/in/http/middleware/auth_access_rules.go` (anything not listed is denied) and must stay registered after
+`ErrorHandlerMiddleware` and before `IdempotencyMiddleware`, so a rejected request never claims its Idempotency-Key.
+A new endpoint needs a rule there.
+
 `adapter/in/http/idempotency` holds `HTTPIdempotencyService`, which decides whether a mutating HTTP request should
 proceed, replay a cached response, or be rejected, for `middleware.IdempotencyMiddleware`. It composes
 `application/port/out/idempotency.HTTPRequestStore` (a persistence port for idempotent_http_requests rows,

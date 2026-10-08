@@ -22,6 +22,7 @@ import jakarta.persistence.Table
 import jakarta.persistence.Version
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 @Entity
 @Table(name = "orders", schema = "orders")
@@ -30,7 +31,7 @@ class OrderEntity(
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long = 0,
 
-    var userId: Long = 0,
+    var customerId: UUID = UUID(0, 0),
 
     @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("id ASC")
@@ -74,7 +75,7 @@ class OrderEntity(
 fun toOrderEntity(order: Order): OrderEntity {
     val entity = OrderEntity(
         id = order.id,
-        userId = order.userId,
+        customerId = order.customerId,
         addressCity = order.address.city,
         addressPostalCode = order.address.postalCode,
         addressLine1 = order.address.line1,
@@ -120,7 +121,7 @@ fun fromOrderEntity(entity: OrderEntity): Order {
 
     return Order.createExisting(
         id = entity.id,
-        userId = entity.userId,
+        customerId = entity.customerId,
         items = entity.items.map(::fromOrderItemEntity),
         address = Address(entity.addressCity, entity.addressPostalCode, entity.addressLine1, entity.addressLine2),
         status = entity.status,

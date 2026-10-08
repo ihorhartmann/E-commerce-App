@@ -34,6 +34,9 @@ func HandleError(c *gin.Context, err error) {
 		_ = c.Error(WithStatus(http.StatusBadRequest, err))
 	case errors.Is(err, model.ErrInvalidStatusTransition):
 		_ = c.Error(WithStatus(http.StatusConflict, err))
+	case errors.Is(err, service.ErrNotAssignedCourier):
+		// 403, not 404: couriers may look any shipment up, so its existence is no secret to them
+		_ = c.Error(WithStatus(http.StatusForbidden, err))
 	case errors.Is(err, repository.ErrShipmentNotFound):
 		_ = c.Error(WithStatus(http.StatusNotFound, err))
 	case errors.Is(err, repository.ErrConcurrentUpdate):

@@ -9,11 +9,16 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Shipment struct {
-	id             uint64
-	orderId        uint64
+	id         uint64
+	orderId    uint64
+	customerID uuid.UUID
+	// courierID is the courier who picked the shipment up; uuid.Nil until then.
+	courierID      uuid.UUID
 	trackingNumber string
 	address        value.Address
 	status         ShipmentStatus
@@ -28,6 +33,8 @@ type Shipment struct {
 func NewExistingShipment(
 	id uint64,
 	orderId uint64,
+	customerID uuid.UUID,
+	courierID uuid.UUID,
 	trackingNumber string,
 	address value.Address,
 	status ShipmentStatus,
@@ -36,16 +43,15 @@ func NewExistingShipment(
 	updatedAt time.Time,
 	version uint64,
 ) (*Shipment, error) {
-	if id == 0 || !status.isValid() || !holder.isValid() || !holderMatchesStatus(status, holder) {
-		return nil, domain.ErrInvalidInput
-	}
-	if err := validateShipment(orderId, trackingNumber); err != nil {
+	if err := validateShipment(id, orderId, customerID, courierID, trackingNumber, status, holder); err != nil {
 		return nil, err
 	}
 
 	return &Shipment{
 		id:             id,
 		orderId:        orderId,
+		customerID:     customerID,
+		courierID:      courierID,
 		trackingNumber: trackingNumber,
 		address:        address,
 		status:         status,
@@ -58,8 +64,8 @@ func NewExistingShipment(
 
 // NewShipment creates a brand-new shipment in the initial Created status, with the goods still
 // held by the inventory (not yet picked up by a courier). It generates its own tracking number.
-func NewShipment(orderId uint64, address value.Address) (*Shipment, error) {
-	if orderId == 0 {
+func NewShipment(orderId uint64, customerID uuid.UUID, address value.Address) (*Shipment, error) {
+	if orderId == 0 || customerID == uuid.Nil {
 		return nil, domain.ErrInvalidInput
 	}
 
@@ -70,6 +76,7 @@ func NewShipment(orderId uint64, address value.Address) (*Shipment, error) {
 
 	return &Shipment{
 		orderId:        orderId,
+		customerID:     customerID,
 		trackingNumber: trackingNumber,
 		address:        address,
 		status:         Created,
@@ -88,35 +95,53 @@ func generateTrackingNumber(orderId uint64) (string, error) {
 	return fmt.Sprintf("%d%s", orderId, strings.ToUpper(hex.EncodeToString(suffix))), nil
 }
 
-// holderMatchesStatus reports whether a shipment in status can be held by holder: the goods leave
-// the inventory only at pickup (StartDelivery) and can come back to it only after a cancellation.
-func holderMatchesStatus(status ShipmentStatus, holder ShipmentHolder) bool {
+// holderMatchStatus reports whether a shipment in status can be held by holder and assigned to courierID:
+// the goods leave the inventory only at pickup (StartDelivery), which assigns the courier, and can come back to it
+// only after a cancellation.
+func holderMatchStatus(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID) bool {
 	switch status {
 	case Created:
-		return holder == HolderInventory
+		return holder == HolderInventory && courierID == uuid.Nil
 	case InDelivery, Delivered, Lost:
-		return holder == HolderCourier
+		return holder == HolderCourier && courierID != uuid.Nil
 	case Cancelled:
-		// cancelled before pickup or already returned (inventory), or still on its way back (courier)
-		return true
+		// still on its way back (courier), or back at the inventory: cancelled before pickup (no courier) or returned
+		return holder == HolderInventory || courierID != uuid.Nil
 	default:
 		return false
 	}
 }
 
-func validateShipment(orderId uint64, trackingNumber string) error {
-	if orderId == 0 || strings.TrimSpace(trackingNumber) == "" {
+func validateShipment(
+	id uint64,
+	orderId uint64,
+	customerID uuid.UUID,
+	courierID uuid.UUID,
+	trackingNumber string,
+	status ShipmentStatus,
+	holder ShipmentHolder,
+) error {
+	if id == 0 || orderId == 0 || customerID == uuid.Nil || strings.TrimSpace(trackingNumber) == "" {
+		return domain.ErrInvalidInput
+	}
+	if !status.isValid() || !holder.isValid() || !holderMatchStatus(status, holder, courierID) {
 		return domain.ErrInvalidInput
 	}
 
 	return nil
 }
 
-func (s *Shipment) StartDelivery() error {
+// StartDelivery is the pickup: the courier takes the goods from the inventory, and the shipment becomes theirs - only
+// they may deliver it, report it lost or bring it back.
+func (s *Shipment) StartDelivery(courierID uuid.UUID) error {
+	if courierID == uuid.Nil {
+		return domain.ErrInvalidInput
+	}
 	if err := s.requireStatus("start delivery", Created); err != nil {
 		return err
 	}
 
+	s.courierID = courierID
 	s.changeState(InDelivery, HolderCourier)
 	return nil
 }
@@ -160,6 +185,14 @@ func (s *Shipment) ConfirmReturnedToInventory() error {
 
 	s.changeState(s.status, HolderInventory)
 	return nil
+}
+
+func (s *Shipment) IsOwnedBy(customerID uuid.UUID) bool {
+	return s.customerID == customerID
+}
+
+func (s *Shipment) IsAssignedTo(courierID uuid.UUID) bool {
+	return s.courierID != uuid.Nil && s.courierID == courierID
 }
 
 func (s *Shipment) requireStatus(action string, expected ...ShipmentStatus) error {
@@ -220,4 +253,13 @@ func (s *Shipment) UpdatedAt() time.Time {
 
 func (s *Shipment) Version() uint64 {
 	return s.version
+}
+
+func (s *Shipment) CustomerID() uuid.UUID {
+	return s.customerID
+}
+
+// CourierID returns uuid.Nil until a courier picks the shipment up.
+func (s *Shipment) CourierID() uuid.UUID {
+	return s.courierID
 }

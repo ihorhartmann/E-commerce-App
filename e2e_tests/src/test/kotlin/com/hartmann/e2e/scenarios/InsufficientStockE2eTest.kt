@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -25,8 +26,8 @@ class InsufficientStockE2eTest : E2eScenarioTest() {
 
         val statusCode = OrderApi.placeOrder(
             orderUrl,
+            TestUser.CLIENT1,
             PlaceOrderRequest(
-                userId = 1,
                 items = listOf(OrderItemRequest(productId, requestedQuantity, MoneyRequest(BigDecimal("1299.99"), "USD"))),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),

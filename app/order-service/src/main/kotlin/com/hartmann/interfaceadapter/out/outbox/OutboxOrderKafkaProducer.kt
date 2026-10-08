@@ -15,6 +15,7 @@ import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
+import java.util.UUID
 
 /**
  * Implements OrderKafkaProducer by writing to the transactional outbox instead of publishing to
@@ -43,8 +44,8 @@ class OutboxOrderKafkaProducer(
         insert(correlationId, KafkaConst.INVENTORY_COMMANDS_TOPIC, KafkaConst.RESTOCK_COMMAND, orderId.toString(), toRestockCommand(orderId, items))
     }
 
-    override fun publishCreateShipment(correlationId: String, orderId: Long, address: Address) {
-        insert(correlationId, KafkaConst.SHIPPING_COMMANDS_TOPIC, KafkaConst.CREATE_SHIPMENT_COMMAND, orderId.toString(), toCreateShipmentCommand(orderId, address))
+    override fun publishCreateShipment(correlationId: String, orderId: Long, customerId: UUID, address: Address) {
+        insert(correlationId, KafkaConst.SHIPPING_COMMANDS_TOPIC, KafkaConst.CREATE_SHIPMENT_COMMAND, orderId.toString(), toCreateShipmentCommand(orderId, customerId, address))
     }
 
     override fun publishRefundRequested(correlationId: String, orderId: Long, amount: BigDecimal, currency: String) {

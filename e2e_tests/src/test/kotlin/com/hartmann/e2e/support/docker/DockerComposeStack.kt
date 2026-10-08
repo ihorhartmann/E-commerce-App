@@ -1,5 +1,6 @@
 package com.hartmann.e2e.support.docker
 
+import com.hartmann.e2e.support.auth.TestUser
 import org.testcontainers.containers.ComposeContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import java.io.File
@@ -15,14 +16,17 @@ import java.time.Duration
 object DockerComposeStack {
     private val STARTUP_TIMEOUT: Duration = Duration.ofMinutes(3)
     private const val POSTGRES_CONTAINER_PORT = 5432
+    private const val KEYCLOAK_CONTAINER_PORT = 8080
+    private const val REALM_PATH = "/realms/ecommerce"
 
-    private fun requiredEnv(name: String): String =
+    fun requiredEnv(name: String): String =
         System.getenv(name) ?: error("$name is not set - export it before running tests.")
 
     private val inventoryPort = requiredEnv("INVENTORY_SERVICE_PORT").toInt()
     private val orderPort = requiredEnv("ORDER_SERVICE_PORT").toInt()
     private val paymentPort = requiredEnv("PAYMENT_SERVICE_PORT").toInt()
     private val shippingPort = requiredEnv("SHIPPING_SERVICE_PORT").toInt()
+    private val gatewayPort = requiredEnv("GATEWAY_PORT").toInt()
 
     val stripeSecretKey: String = requiredEnv("STRIPE_SECRET_KEY")
     val stripePublishableKey: String = requiredEnv("STRIPE_PUBLISHABLE_KEY")
@@ -39,6 +43,12 @@ object DockerComposeStack {
         requiredEnv("KAFKA_HOST_PORT")
         requiredEnv("KAFKA_UI_PORT")
         requiredEnv("POSTGRES_PORT")
+        requiredEnv("KEYCLOAK_PORT")
+        requiredEnv("KEYCLOAK_ADMIN_USER")
+        requiredEnv("KEYCLOAK_ADMIN_PASSWORD")
+        requiredEnv("GATEWAY_CLIENT_SECRET")
+        requiredEnv("ORDER_SERVICE_CLIENT_SECRET")
+        TestUser.entries.forEach { requiredEnv(it.passwordEnv) }
     }
 
     // No .withEnv(...): Testcontainers doesn't reliably pass these through to docker-compose's
@@ -69,6 +79,20 @@ object DockerComposeStack {
                 Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT),
             )
             .withExposedService(
+                "keycloak",
+                KEYCLOAK_CONTAINER_PORT,
+                // the realm is imported once its discovery document answers; /health/ready is on the management port,
+                // which is not published
+                Wait.forHttp("$REALM_PATH/.well-known/openid-configuration")
+                    .forStatusCode(HttpURLConnection.HTTP_OK)
+                    .withStartupTimeout(STARTUP_TIMEOUT),
+            )
+            .withExposedService(
+                "gateway-service",
+                gatewayPort,
+                Wait.forHttp("/health").forStatusCode(HttpURLConnection.HTTP_OK).withStartupTimeout(STARTUP_TIMEOUT),
+            )
+            .withExposedService(
                 "postgres",
                 POSTGRES_CONTAINER_PORT,
                 Wait.forListeningPort().withStartupTimeout(STARTUP_TIMEOUT),
@@ -92,6 +116,13 @@ object DockerComposeStack {
     val paymentServiceUrl: String by lazy { serviceUrl("payment-service", paymentPort) }
 
     val shippingServiceUrl: String by lazy { serviceUrl("shipping-service", shippingPort) }
+
+    val gatewayUrl: String by lazy { serviceUrl("gateway-service", gatewayPort) }
+
+    // the address tokens are fetched through doesn't matter: Keycloak always writes its public URL (KC_HOSTNAME) into `iss`
+    val keycloakTokenUrl: String by lazy {
+        "${serviceUrl("keycloak", KEYCLOAK_CONTAINER_PORT)}$REALM_PATH/protocol/openid-connect/token"
+    }
 
     val postgresJdbcUrl: String by lazy {
         val host = compose.getServiceHost("postgres", POSTGRES_CONTAINER_PORT)

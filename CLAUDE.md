@@ -1,17 +1,32 @@
 # Overall Architecture
 
-The system consists of four services:
+The system consists of four business services:
 
 * Inventory
 * Order
 * Payment
 * Shipping
 
+plus the **Gateway**, the single entry point for clients, and **Keycloak** as the identity provider.
+
 Services communicate with each other through Kafka and HTTP and expose REST APIs for frontend communication.
 
-All services are located in the `app` directory.
+All services are located in the `app` directory; the Keycloak realm (roles, clients, test users) is
+`docker/keycloak/realm-ecommerce.json`.
 
 The **Order Service** acts as the orchestrator for the other services.
+
+## Authentication and authorization
+
+* Keycloak issues the access tokens (JWT); realm roles (`CLIENT`, `COURIER`, `ADMIN`, plus service roles such as
+  `INVENTORY_RESERVE`) are in the claim named by `OIDC_ROLES_CLAIM`, the user id is `sub` (a UUID).
+* The Gateway logs browser users in (Authorization Code + PKCE, tokens kept in the server-side session) and relays
+  their token; Bearer clients (Postman, e2e tests) send their own. It only checks that a request is authenticated.
+* Every service is an OAuth2 resource server: it validates the token itself (JWKS, issuer), checks the caller's role
+  per endpoint (anything not listed is denied), and its use cases check resource ownership (another customer's
+  resource is reported as not found).
+* Service-to-service HTTP calls carry the calling service's own token (OAuth2 client credentials), never a user's.
+  Kafka messages carry no token: consumers trust the ids in messages from the internal services.
 
 ## Services
 
@@ -38,6 +53,12 @@ The **Order Service** acts as the orchestrator for the other services.
 * Architecture: Hexagonal
 * Language: Go
 * Technologies: GORM, Gin, kafka-go
+
+5. **Gateway**
+
+* Architecture: none (no domain - routing and security configuration only)
+* Language: Kotlin
+* Technologies: Spring Cloud Gateway (WebFlux), Spring Security OAuth2 Client + Resource Server
 
 # Code principles
 

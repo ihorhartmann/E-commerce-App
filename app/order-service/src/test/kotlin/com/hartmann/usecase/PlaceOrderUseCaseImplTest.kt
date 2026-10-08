@@ -24,6 +24,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
@@ -37,9 +38,9 @@ private fun testItem() = OrderItem.createExisting(
 
 private fun testOrder(id: Long = 0): Order =
     if (id == 0L) {
-        Order.createNew(userId = 1, items = listOf(testItem()), address = testAddress())
+        Order.createNew(customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress())
     } else {
-        Order.createExisting(id = id, userId = 1, items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
+        Order.createExisting(id = id, customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
     }
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)

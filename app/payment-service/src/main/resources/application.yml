@@ -9,6 +9,15 @@ stripe:
   # across every Stripe network retry StripePaymentGateway allows - keep the two in step
   read-timeout: 8s
 
+# Keycloak realm whose access tokens this service accepts (read via @Value, so a missing env var fails the startup)
+oidc:
+  # public realm URL - equal to `iss` in every token
+  issuer: ${OIDC_ISSUER}
+  # the realm's public keys, reached from inside the network
+  jwks-uri: ${OIDC_JWKS_URI}
+  # dot-separated path to the roles array inside the token, e.g. realm_access.roles
+  roles-claim: ${OIDC_ROLES_CLAIM}
+
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}

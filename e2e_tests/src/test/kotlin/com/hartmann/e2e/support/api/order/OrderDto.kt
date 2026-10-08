@@ -2,9 +2,9 @@ package com.hartmann.e2e.support.api.order
 
 import java.math.BigDecimal
 import java.time.LocalDateTime
+import java.util.UUID
 
 data class PlaceOrderRequest(
-    val userId: Long,
     val items: List<OrderItemRequest>,
     val address: AddressRequest,
 )
@@ -29,7 +29,7 @@ data class AddressRequest(
 
 data class OrderResponse(
     val id: Long,
-    val userId: Long,
+    val customerId: UUID,
     val paymentConfirmedAt: LocalDateTime?,
     val shipment: ShipmentInfoDto?,
     val cancellationReason: String?,

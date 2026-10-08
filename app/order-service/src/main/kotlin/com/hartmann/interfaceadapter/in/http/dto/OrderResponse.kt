@@ -8,10 +8,11 @@ import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 data class OrderResponse(
     val id: Long,
-    val userId: Long,
+    val customerId: UUID,
     val paymentConfirmedAt: Instant?,
     val shipment: ShipmentResponseDto?,
     val cancellationReason: String?,
@@ -27,7 +28,7 @@ data class OrderResponse(
 
 fun toOrderResponse(order: Order, clientSecret: String? = null): OrderResponse = OrderResponse(
     id = order.id,
-    userId = order.userId,
+    customerId = order.customerId,
     paymentConfirmedAt = order.paymentConfirmedAt,
     shipment = order.shipment?.let { toShipmentResponseDto(it) },
     cancellationReason = order.cancellationReason?.name,

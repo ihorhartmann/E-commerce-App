@@ -1,6 +1,7 @@
 package com.hartmann.interfaceadapter.`in`.http
 
 import com.hartmann.entities.exception.DomainException
+import com.hartmann.frameworks.config.SecurityConfig
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
 import com.hartmann.entities.model.OrderStatus
@@ -17,10 +18,12 @@ import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateExcept
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
@@ -28,16 +31,22 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
-@WebMvcTest(OrderController::class)
+@WebMvcTest(OrderController::class, properties = ["oidc.roles-claim=realm_access.roles"])
+@Import(SecurityConfig::class)
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderControllerTest {
 
@@ -57,18 +66,26 @@ class OrderControllerTest {
     @MockitoBean
     private lateinit var httpIdempotencyService: HttpIdempotencyService
 
+    // SecurityConfig's real decoder would fetch Keycloak's keys; the tests authenticate with jwt() instead
+    @MockitoBean
+    private lateinit var jwtDecoder: JwtDecoder
+
     @BeforeEach
     fun stubIdempotencyStart() {
         whenever(httpIdempotencyService.claim(any(), any(), any())).thenReturn(RequestAttempt.claimed())
     }
 
+    // the subject is the customer id the controller passes on - a UUID, as Keycloak issues it
+    private fun clientJwt(customerId: UUID = UUID.randomUUID()) =
+        jwt().jwt { it.subject(customerId.toString()) }.authorities(SimpleGrantedAuthority("ROLE_CLIENT"))
+
     private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
     private fun testItem() = OrderItem.createExisting(1, 1, 1, 2, Money(BigDecimal("10.00"), Currency.USD))
 
-    private fun testOrder(id: Long = 1) = Order.createExisting(
+    private fun testOrder(id: Long = 1, customerId: UUID = UUID.randomUUID()) = Order.createExisting(
         id = id,
-        userId = 1,
+        customerId = customerId,
         items = listOf(testItem()),
         address = testAddress(),
         status = OrderStatus.PLACED,
@@ -77,7 +94,6 @@ class OrderControllerTest {
 
     private val validPlaceOrderRequestJson: String = """
         {
-          "userId": 1,
           "items": [{"productId": 1, "quantity": 2, "price": {"amount": 10.00, "currency": "USD"}}],
           "address": {"city": "Kyiv", "postalCode": "01001", "line1": "Khreshchatyk 1"}
         }
@@ -90,6 +106,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenReturn(CheckoutResult(order, clientSecret))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-1")
             content = validPlaceOrderRequestJson
@@ -103,23 +120,43 @@ class OrderControllerTest {
     }
 
     @Test
+    fun `placeOrder - places the order for the customer from the token`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val captor = argumentCaptor<Order>()
+        whenever(placeOrderUseCase.execute(captor.capture()))
+            .thenReturn(CheckoutResult(testOrder(customerId = customerId), "secret_123"))
+
+        mockMvc.post("/api/v1/orders") {
+            with(clientJwt(customerId))
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-10")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.customerId") { value(customerId.toString()) }
+        }
+
+        verify(placeOrderUseCase, times(1)).execute(any())
+        assertEquals(customerId, captor.firstValue.customerId)
+    }
+
+    @Test
     fun `placeOrder - returns 400 when the request fails validation`() {
         val invalidRequestJson = """
             {
-              "userId": -1,
               "items": [],
               "address": {"city": "", "postalCode": "01001", "line1": "Khreshchatyk 1"}
             }
         """.trimIndent()
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-2")
             content = invalidRequestJson
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error") { value("Validation failed") }
-            jsonPath("$.details.userId") { exists() }
             jsonPath("$.details.items") { exists() }
             jsonPath("$.details['address.city']") { exists() }
         }
@@ -133,6 +170,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(InsufficientStockException(message))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-3")
             content = validPlaceOrderRequestJson
@@ -150,6 +188,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(InventoryUnavailableException(message))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-inventory-unavailable")
             content = validPlaceOrderRequestJson
@@ -167,6 +206,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(PaymentServiceUnavailableException(message))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-payment-service-unavailable")
             content = validPlaceOrderRequestJson
@@ -184,6 +224,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(ConcurrentUpdateException(message, RuntimeException()))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-concurrent-update")
             content = validPlaceOrderRequestJson
@@ -201,6 +242,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenAnswer { throw DomainException(message) }
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-4")
             content = validPlaceOrderRequestJson
@@ -218,6 +260,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(IllegalStateException(message))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-5")
             content = validPlaceOrderRequestJson
@@ -234,6 +277,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenThrow(RuntimeException("unexpected error"))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-6")
             content = validPlaceOrderRequestJson
@@ -246,36 +290,44 @@ class OrderControllerTest {
     }
 
     @Test
-    fun `getOrderById - returns 200 with the order`() {
+    fun `getOrderById - returns 200 with the order of the customer from the token`() {
         val orderId = 1L
-        val order = testOrder(id = orderId)
-        whenever(getOrderUseCase.execute(orderId)).thenReturn(order)
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val order = testOrder(id = orderId, customerId = customerId)
+        whenever(getOrderUseCase.execute(orderId, customerId)).thenReturn(order)
 
-        mockMvc.get("/api/v1/orders/{orderId}", orderId).andExpect {
+        mockMvc.get("/api/v1/orders/{orderId}", orderId) {
+            with(clientJwt(customerId))
+        }.andExpect {
             status { isOk() }
             jsonPath("$.id") { value(orderId) }
+            jsonPath("$.customerId") { value(customerId.toString()) }
         }
 
-        verify(getOrderUseCase, times(1)).execute(orderId)
+        verify(getOrderUseCase, times(1)).execute(orderId, customerId)
     }
 
     @Test
     fun `getOrderById - returns 404 when the order does not exist`() {
         val orderId = 99L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
         val message = "Order [ID=$orderId] was not found"
-        whenever(getOrderUseCase.execute(orderId)).thenThrow(OrderNotFoundException(orderId))
+        whenever(getOrderUseCase.execute(orderId, customerId)).thenThrow(OrderNotFoundException(orderId))
 
-        mockMvc.get("/api/v1/orders/{orderId}", orderId).andExpect {
+        mockMvc.get("/api/v1/orders/{orderId}", orderId) {
+            with(clientJwt(customerId))
+        }.andExpect {
             status { isNotFound() }
             jsonPath("$.error") { value(message) }
         }
 
-        verify(getOrderUseCase, times(1)).execute(orderId)
+        verify(getOrderUseCase, times(1)).execute(orderId, customerId)
     }
 
     @Test
     fun `placeOrder - returns 400 and never calls the use case when Idempotency-Key is missing`() {
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             content = validPlaceOrderRequestJson
         }.andExpect {
@@ -292,6 +344,7 @@ class OrderControllerTest {
         whenever(placeOrderUseCase.execute(any())).thenReturn(CheckoutResult(order, clientSecret))
 
         mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
             contentType = MediaType.APPLICATION_JSON
             header("Idempotency-Key", "key-7")
             content = validPlaceOrderRequestJson
@@ -300,5 +353,54 @@ class OrderControllerTest {
         }
 
         verify(httpIdempotencyService, times(1)).complete(eq("key-7"), eq(HttpStatus.CREATED.value()), any())
+    }
+
+    @Test
+    fun `placeOrder - returns 401 before claiming the Idempotency-Key when no token is sent`() {
+        mockMvc.post("/api/v1/orders") {
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-8")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isUnauthorized() }
+        }
+
+        verify(httpIdempotencyService, never()).claim(any(), any(), any())
+        verify(placeOrderUseCase, never()).execute(any())
+    }
+
+    @Test
+    fun `placeOrder - returns 403 when the caller is not a client`() {
+        mockMvc.post("/api/v1/orders") {
+            with(jwt().authorities(SimpleGrantedAuthority("ROLE_COURIER")))
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-9")
+            content = validPlaceOrderRequestJson
+        }.andExpect {
+            status { isForbidden() }
+        }
+
+        verify(httpIdempotencyService, never()).claim(any(), any(), any())
+        verify(placeOrderUseCase, never()).execute(any())
+    }
+
+    @Test
+    fun `getOrderById - returns 401 when no token is sent`() {
+        mockMvc.get("/api/v1/orders/{orderId}", 1L).andExpect {
+            status { isUnauthorized() }
+        }
+
+        verify(getOrderUseCase, never()).execute(any(), any())
+    }
+
+    @Test
+    fun `getOrderById - returns 403 when the caller is not a client`() {
+        mockMvc.get("/api/v1/orders/{orderId}", 1L) {
+            with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN")))
+        }.andExpect {
+            status { isForbidden() }
+        }
+
+        verify(getOrderUseCase, never()).execute(any(), any())
     }
 }

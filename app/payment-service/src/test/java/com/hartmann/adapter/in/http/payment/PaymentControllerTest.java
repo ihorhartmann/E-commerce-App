@@ -14,8 +14,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.hartmann.infrastructure.config.SecurityConfig;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -27,12 +32,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(PaymentController.class)
+@WebMvcTest(controllers = PaymentController.class, properties = "oidc.roles-claim=realm_access.roles")
+@Import(SecurityConfig.class)
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class PaymentControllerTest {
 
@@ -50,6 +57,22 @@ class PaymentControllerTest {
     @BeforeEach
     void stubIdempotencyStart() {
         when(httpIdempotencyService.claim(any(), any(), any(Duration.class))).thenReturn(RequestAttempt.claimed());
+    }
+
+    // SecurityConfig's real decoder would fetch Keycloak's keys; the tests authenticate with jwt() instead
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
+
+    private static JwtRequestPostProcessor jwtWithRole(String role) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role));
+    }
+
+    private static JwtRequestPostProcessor adminJwt() {
+        return jwtWithRole("ADMIN");
+    }
+
+    private static JwtRequestPostProcessor orderServiceJwt() {
+        return jwtWithRole("PAYMENT_SUBMIT");
     }
 
     private Money testAmount() {
@@ -73,7 +96,7 @@ class PaymentControllerTest {
         var payment = testPayment(1L, orderId, PaymentStatus.CONFIRMED);
         when(paymentService.getByOrderId(orderId)).thenReturn(payment);
 
-        mockMvc.perform(get("/api/v1/payments/{orderId}", orderId))
+        mockMvc.perform(get("/api/v1/payments/{orderId}", orderId).with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(payment.id()))
                 .andExpect(jsonPath("$.orderId").value(orderId))
@@ -88,7 +111,7 @@ class PaymentControllerTest {
         var message = "Payment for order " + orderId + " not found";
         when(paymentService.getByOrderId(orderId)).thenThrow(new ObjectNotFoundException(message));
 
-        mockMvc.perform(get("/api/v1/payments/{orderId}", orderId))
+        mockMvc.perform(get("/api/v1/payments/{orderId}", orderId).with(adminJwt()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value(message));
 
@@ -104,6 +127,7 @@ class PaymentControllerTest {
                 .thenReturn(new PaymentIntentResult(payment, clientSecret));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-1")
                         .content(submitPaymentRequestJson(orderId)))
@@ -121,6 +145,7 @@ class PaymentControllerTest {
         when(paymentService.submitPayment(anyLong(), eq(testAmount()))).thenThrow(new DomainException(message));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-2")
                         .content(submitPaymentRequestJson(orderId)))
@@ -136,6 +161,7 @@ class PaymentControllerTest {
         when(paymentService.submitPayment(anyLong(), eq(testAmount()))).thenThrow(new RuntimeException("unexpected error"));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-3")
                         .content(submitPaymentRequestJson(orderId)))
@@ -143,5 +169,44 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.detail").value("Internal server error"));
 
         verify(paymentService, times(1)).submitPayment(anyLong(), eq(testAmount()));
+    }
+
+    @Test
+    void submitPayment_returns401WhenNoTokenIsSent() throws Exception {
+        mockMvc.perform(post("/api/v1/payments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-4")
+                        .content(submitPaymentRequestJson(100L)))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void submitPayment_returns403WhenACustomerCallsItDirectly() throws Exception {
+        mockMvc.perform(post("/api/v1/payments")
+                        .with(jwtWithRole("CLIENT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-5")
+                        .content(submitPaymentRequestJson(100L)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void getByOrderId_returns401WhenNoTokenIsSent() throws Exception {
+        mockMvc.perform(get("/api/v1/payments/{orderId}", 100L))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void getByOrderId_returns403WhenTheCallerIsNotAnAdmin() throws Exception {
+        mockMvc.perform(get("/api/v1/payments/{orderId}", 100L).with(jwtWithRole("CLIENT")))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(paymentService);
     }
 }

@@ -15,8 +15,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.hartmann.infrastructure.config.SecurityConfig;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -34,12 +39,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(RefundController.class)
+@WebMvcTest(controllers = RefundController.class, properties = "oidc.roles-claim=realm_access.roles")
+@Import(SecurityConfig.class)
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class RefundControllerTest {
 
@@ -60,6 +67,18 @@ class RefundControllerTest {
     @BeforeEach
     void stubIdempotencyStart() {
         when(httpIdempotencyService.claim(any(), any(), any(Duration.class))).thenReturn(RequestAttempt.claimed());
+    }
+
+    // SecurityConfig's real decoder would fetch Keycloak's keys; the tests authenticate with jwt() instead
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
+
+    private static JwtRequestPostProcessor jwtWithRole(String role) {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role));
+    }
+
+    private static JwtRequestPostProcessor adminJwt() {
+        return jwtWithRole("ADMIN");
     }
 
     private Money testAmount() {
@@ -83,7 +102,7 @@ class RefundControllerTest {
         var refunds = List.of(testRefund(1L, 1L, RefundStatus.PENDING));
         when(refundService.getByOrderId(orderId)).thenReturn(refunds);
 
-        mockMvc.perform(get("/api/v1/refunds/{orderId}", orderId))
+        mockMvc.perform(get("/api/v1/refunds/{orderId}", orderId).with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(1L))
                 .andExpect(jsonPath("$[0].status").value("PENDING"));
@@ -98,7 +117,7 @@ class RefundControllerTest {
         var refund = testRefund(1L, paymentId, RefundStatus.PENDING);
         when(refundService.submitRefund(eq(idempotencyKey), isNull(), eq(paymentId), eq(testAmount()))).thenReturn(refund);
 
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString())
                         .content(submitRefundRequestJson(paymentId)))
@@ -117,7 +136,7 @@ class RefundControllerTest {
         when(refundService.submitRefund(eq(idempotencyKey), isNull(), eq(paymentId), eq(testAmount())))
                 .thenThrow(new ObjectNotFoundException(message));
 
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString())
                         .content(submitRefundRequestJson(paymentId)))
@@ -134,7 +153,7 @@ class RefundControllerTest {
         var message = "Refund amount 20.00 exceeds refundable balance 10.00 for payment " + paymentId;
         when(refundService.submitRefund(eq(idempotencyKey), isNull(), eq(paymentId), eq(testAmount()))).thenThrow(new DomainException(message));
 
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString())
                         .content(submitRefundRequestJson(paymentId)))
@@ -152,7 +171,7 @@ class RefundControllerTest {
         when(refundService.submitRefund(eq(idempotencyKey), isNull(), eq(paymentId), eq(testAmount())))
                 .thenThrow(new IdempotencyKeyReusedException(message));
 
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString())
                         .content(submitRefundRequestJson(paymentId)))
@@ -164,7 +183,7 @@ class RefundControllerTest {
 
     @Test
     void submitRefund_returns400WithoutCallingTheServiceWhenTheIdempotencyKeyIsNotAUuid() throws Exception {
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, "key-5")
                         .content(submitRefundRequestJson(1L)))
@@ -180,7 +199,7 @@ class RefundControllerTest {
         var idempotencyKey = UUID.randomUUID();
         when(refundService.submitRefund(eq(idempotencyKey), isNull(), anyLong(), eq(testAmount()))).thenThrow(new RuntimeException("boom"));
 
-        mockMvc.perform(post("/api/v1/refunds")
+        mockMvc.perform(post("/api/v1/refunds").with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, idempotencyKey.toString())
                         .content(submitRefundRequestJson(paymentId)))
@@ -188,5 +207,32 @@ class RefundControllerTest {
                 .andExpect(jsonPath("$.detail").value("Internal server error"));
 
         verify(refundService, times(1)).submitRefund(eq(idempotencyKey), isNull(), anyLong(), eq(testAmount()));
+    }
+
+    @Test
+    void getByOrderId_returns401WhenNoTokenIsSent() throws Exception {
+        mockMvc.perform(get("/api/v1/refunds/{orderId}", 1L))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(refundService);
+    }
+
+    @Test
+    void getByOrderId_returns403WhenTheCallerIsNotAnAdmin() throws Exception {
+        mockMvc.perform(get("/api/v1/refunds/{orderId}", 1L).with(jwtWithRole("CLIENT")))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(refundService);
+    }
+
+    @Test
+    void submitRefund_returns403BeforeClaimingTheIdempotencyKeyWhenTheCallerIsNotAnAdmin() throws Exception {
+        mockMvc.perform(post("/api/v1/refunds").with(jwtWithRole("CLIENT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(IdempotencyFilter.IDEMPOTENCY_KEY_HEADER, UUID.randomUUID().toString())
+                        .content(submitRefundRequestJson(1L)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(httpIdempotencyService, refundService);
     }
 }

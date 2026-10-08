@@ -1,0 +1,220 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "CLIENT",
+        "description": "Customer: places and manages own orders"
+      },
+      {
+        "name": "COURIER",
+        "description": "Courier: handles assigned shipments"
+      },
+      {
+        "name": "ADMIN",
+        "description": "Administrator: manages products and couriers"
+      },
+      {
+        "name": "INVENTORY_RESERVE",
+        "description": "Service: reserves stock in the inventory-service (held by order-service)"
+      },
+      {
+        "name": "PAYMENT_SUBMIT",
+        "description": "Service: submits payments to the payment-service (held by order-service)"
+      },
+      {
+        "name": "offline_access",
+        "description": "${role_offline-access}"
+      },
+      {
+        "name": "uma_authorization",
+        "description": "${role_uma_authorization}"
+      },
+      {
+        "name": "default-roles-ecommerce",
+        "description": "${role_default-roles}",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "CLIENT"
+          ]
+        }
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-ecommerce",
+    "composite": true
+  },
+  "clients": [
+    {
+      "clientId": "gateway",
+      "name": "Spring Cloud Gateway",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${GATEWAY_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:${GATEWAY_PORT}/login/oauth2/code/keycloak"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:${GATEWAY_PORT}/"
+      }
+    },
+    {
+      "clientId": "order-service",
+      "name": "Order service (service-to-service calls)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ORDER_SERVICE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "e2e-tests",
+      "name": "E2E tests (password grant, dev/test only)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "postman",
+      "name": "Postman (manual testing)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://oauth.pstmn.io/v1/callback"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "client1",
+      "email": "client1@example.com",
+      "firstName": "Client",
+      "lastName": "One",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "client1",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-ecommerce"
+      ]
+    },
+    {
+      "username": "client2",
+      "email": "client2@example.com",
+      "firstName": "Client",
+      "lastName": "Two",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "client2",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-ecommerce"
+      ]
+    },
+    {
+      "username": "courier1",
+      "email": "courier1@example.com",
+      "firstName": "Courier",
+      "lastName": "One",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "courier1",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "COURIER"
+      ]
+    },
+    {
+      "username": "courier2",
+      "email": "courier2@example.com",
+      "firstName": "Courier",
+      "lastName": "Two",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "courier2",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "COURIER"
+      ]
+    },
+    {
+      "username": "admin",
+      "email": "admin@example.com",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "username": "service-account-order-service",
+      "enabled": true,
+      "serviceAccountClientId": "order-service",
+      "realmRoles": [
+        "INVENTORY_RESERVE",
+        "PAYMENT_SUBMIT"
+      ]
+    }
+  ]
+}

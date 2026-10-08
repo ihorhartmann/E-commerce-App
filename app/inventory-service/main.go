@@ -4,6 +4,7 @@ import (
 	"context"
 	"inventoryservice/application/port/common/kafka"
 	"inventoryservice/infrastructure/idempotency/store"
+	"inventoryservice/interfaces/http/auth/jwks"
 	"inventoryservice/interfaces/http/middleware"
 	"inventoryservice/interfaces/kafka/kafkago"
 	"inventoryservice/interfaces/scheduled"
@@ -66,10 +67,23 @@ func main() {
 	scheduled.NewHTTPRequestSweep(httpRequestStore).StartAsync(sweepCtx)
 	scheduled.NewProcessedKafkaMessageSweep(processedMessageStore).StartAsync(sweepCtx)
 
+	authCtx, cancelAuth := context.WithCancel(context.Background())
+	tokenVerifier, err := jwks.NewJWKSTokenVerifier(authCtx, config.OIDCJWKSURI, config.OIDCIssuer, config.OIDCRolesClaim)
+	if err != nil {
+		slog.Error("failed to create access token verifier", "error", err)
+		cancelAuth()
+		cancelSweep()
+		_ = reservationConsumer.Close()
+		closeDB(db)
+		os.Exit(1)
+	}
+
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleError,
 	})
 	app.Use(middleware.LoggingMiddleware)
+	// before idempotency: a rejected request must not claim its Idempotency-Key
+	app.Use(middleware.NewAuthMiddleware(tokenVerifier).Handle)
 	app.Use(middleware.NewIdempotencyMiddleware(idempotencyService).Handle)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
@@ -96,6 +110,7 @@ func main() {
 	}
 
 	cancelSweep()
+	cancelAuth()
 
 	if err = app.Shutdown(); err != nil {
 		slog.Error("failed to shut down http server", "error", err)

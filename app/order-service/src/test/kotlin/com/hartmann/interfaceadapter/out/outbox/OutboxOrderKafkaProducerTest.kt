@@ -15,6 +15,7 @@ import org.junit.jupiter.api.TestInstance
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
+import java.util.UUID
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OutboxOrderKafkaProducerTest {
@@ -86,22 +87,24 @@ class OutboxOrderKafkaProducerTest {
     }
 
     @Test
-    fun `publishCreateShipment - inserts a CreateShipment command with the mapped address`() {
+    fun `publishCreateShipment - inserts a CreateShipment command with the customer and the mapped address`() {
         val orderId = 46L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
         val city = "Kyiv"
         val postalCode = "01001"
         val line1 = "Khreshchatyk 1"
         val line2 = ""
         val address = Address(city = city, postalCode = postalCode, line1 = line1, line2 = line2)
 
-        producer.publishCreateShipment("corr-5", orderId, address)
+        producer.publishCreateShipment("corr-5", orderId, customerId, address)
 
         val message = captureInsertedMessage()
         assertEquals(KafkaConst.SHIPPING_COMMANDS_TOPIC, message.topic)
         assertEquals(orderId.toString(), message.key)
         assertEquals(KafkaConst.CREATE_SHIPMENT_COMMAND, message.messageType)
         assertEquals(
-            "{\"orderId\":$orderId,\"address\":{\"city\":\"$city\",\"postalCode\":\"$postalCode\",\"line1\":\"$line1\",\"line2\":\"$line2\"}}",
+            "{\"orderId\":$orderId,\"customerId\":\"$customerId\"," +
+                "\"address\":{\"city\":\"$city\",\"postalCode\":\"$postalCode\",\"line1\":\"$line1\",\"line2\":\"$line2\"}}",
             message.payload,
         )
     }
