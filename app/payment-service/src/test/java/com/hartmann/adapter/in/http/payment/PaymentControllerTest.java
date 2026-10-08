@@ -71,6 +71,10 @@ class PaymentControllerTest {
         return jwtWithRole("ADMIN");
     }
 
+    private static JwtRequestPostProcessor orderServiceJwt() {
+        return jwtWithRole("PAYMENT_SUBMIT");
+    }
+
     private Money testAmount() {
         return new Money(new BigDecimal("50.00"), Currency.USD);
     }
@@ -123,6 +127,7 @@ class PaymentControllerTest {
                 .thenReturn(new PaymentIntentResult(payment, clientSecret));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-1")
                         .content(submitPaymentRequestJson(orderId)))
@@ -140,6 +145,7 @@ class PaymentControllerTest {
         when(paymentService.submitPayment(anyLong(), eq(testAmount()))).thenThrow(new DomainException(message));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-2")
                         .content(submitPaymentRequestJson(orderId)))
@@ -155,6 +161,7 @@ class PaymentControllerTest {
         when(paymentService.submitPayment(anyLong(), eq(testAmount()))).thenThrow(new RuntimeException("unexpected error"));
 
         mockMvc.perform(post("/api/v1/payments")
+                        .with(orderServiceJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Idempotency-Key", "key-3")
                         .content(submitPaymentRequestJson(orderId)))
@@ -162,6 +169,29 @@ class PaymentControllerTest {
                 .andExpect(jsonPath("$.detail").value("Internal server error"));
 
         verify(paymentService, times(1)).submitPayment(anyLong(), eq(testAmount()));
+    }
+
+    @Test
+    void submitPayment_returns401WhenNoTokenIsSent() throws Exception {
+        mockMvc.perform(post("/api/v1/payments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-4")
+                        .content(submitPaymentRequestJson(100L)))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void submitPayment_returns403WhenACustomerCallsItDirectly() throws Exception {
+        mockMvc.perform(post("/api/v1/payments")
+                        .with(jwtWithRole("CLIENT"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Idempotency-Key", "key-5")
+                        .content(submitPaymentRequestJson(100L)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(paymentService);
     }
 
     @Test

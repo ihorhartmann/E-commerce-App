@@ -11,9 +11,11 @@ import org.springframework.stereotype.Component
  * Centralizes outbound REST call logging so individual REST clients don't each have to log
  * their own send/response pairs. Shared across every RestClient this service builds.
  */
-@Component
+@Component(LoggingClientHttpRequestInterceptor.BEAN_NAME)
 class LoggingClientHttpRequestInterceptor : ClientHttpRequestInterceptor {
     companion object {
+        const val BEAN_NAME = "loggingInterceptor"
+
         private val LOG = LoggerFactory.getLogger(LoggingClientHttpRequestInterceptor::class.java)
     }
 

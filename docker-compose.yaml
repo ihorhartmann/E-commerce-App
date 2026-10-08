@@ -41,6 +41,7 @@ services:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
       GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
+      ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
       GATEWAY_PORT: ${GATEWAY_PORT}
     volumes:
       - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
@@ -138,6 +139,9 @@ services:
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+      OIDC_TOKEN_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
+      OIDC_CLIENT_ID: order-service
+      OIDC_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
     depends_on:
       keycloak:
         condition: service_healthy

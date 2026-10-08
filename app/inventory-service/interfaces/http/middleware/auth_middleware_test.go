@@ -76,15 +76,31 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		}
 	})
 
-	t.Run("lets the internal reservation call through without a token", func(t *testing.T) {
+	t.Run("lets the order-service's own token through to the reservations", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		verifier := mocks.NewMockTokenVerifier(ctrl)
-		verifier.EXPECT().Verify(gomock.Any(), gomock.Any()).Times(0)
+		token := "order-service-token"
+		verifier.EXPECT().Verify(gomock.Any(), token).
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"INVENTORY_RESERVE"}}, nil).Times(1)
 
-		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, reservationsPath, "")
+		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, reservationsPath, "Bearer "+token)
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+	})
+
+	t.Run("answers 403 when a customer calls the reservations directly", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		verifier := mocks.NewMockTokenVerifier(ctrl)
+		token := "client-token"
+		verifier.EXPECT().Verify(gomock.Any(), token).
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"CLIENT"}}, nil).Times(1)
+
+		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, reservationsPath, "Bearer "+token)
+
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 		}
 	})
 

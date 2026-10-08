@@ -16,7 +16,8 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * OAuth2 resource server. Customers never call this service: everything they need about a payment or refund comes from
  * the order-service, and the gateway doesn't route here except for the Stripe webhook. So the read endpoints are for
- * admins (diagnostics, e2e tests) only, and the rest are machine-to-machine calls.
+ * admins (diagnostics, e2e tests) only, and the rest are machine-to-machine calls, authenticated by the calling
+ * service's own token.
  */
 @Configuration
 public class SecurityConfig {
@@ -25,6 +26,8 @@ public class SecurityConfig {
     private static final String REFUNDS_PATH = "/api/v1/refunds";
     private static final String STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe";
     private static final String ADMIN_ROLE = "ADMIN";
+    // held by the order-service's own client (client credentials), never by a user
+    private static final String PAYMENT_SUBMIT_ROLE = "PAYMENT_SUBMIT";
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -36,8 +39,8 @@ public class SecurityConfig {
                         .requestMatchers(ERROR_PATH).permitAll()
                         // authenticated by the Stripe signature, not by a user token
                         .requestMatchers(HttpMethod.POST, STRIPE_WEBHOOK_PATH).permitAll()
-                        // synchronous call from the order-service inside the network, not exposed by the gateway.
-                        .requestMatchers(HttpMethod.POST, PAYMENTS_PATH).permitAll()
+                        // synchronous call from the order-service with its own token, never a user's; not exposed by the gateway
+                        .requestMatchers(HttpMethod.POST, PAYMENTS_PATH).hasRole(PAYMENT_SUBMIT_ROLE)
                         .requestMatchers(HttpMethod.GET, PAYMENTS_PATH + "/**").hasRole(ADMIN_ROLE)
                         .requestMatchers(HttpMethod.GET, REFUNDS_PATH + "/**").hasRole(ADMIN_ROLE)
                         // nothing calls it - refunds are requested over Kafka; admin-only until it is removed

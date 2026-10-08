@@ -12,6 +12,10 @@ oidc:
   jwks-uri: ${OIDC_JWKS_URI}
   # dot-separated path to the roles array inside the token, e.g. realm_access.roles
   roles-claim: ${OIDC_ROLES_CLAIM}
+  # this service's own client: its calls to the inventory- and payment-service carry a client-credentials token
+  token-uri: ${OIDC_TOKEN_URI}
+  client-id: ${OIDC_CLIENT_ID}
+  client-secret: ${OIDC_CLIENT_SECRET}
 
 inventory-service:
   url: ${INVENTORY_SERVICE_URL}

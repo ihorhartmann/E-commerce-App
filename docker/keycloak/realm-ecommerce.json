@@ -21,6 +21,14 @@
         "description": "Administrator: manages products and couriers"
       },
       {
+        "name": "INVENTORY_RESERVE",
+        "description": "Service: reserves stock in the inventory-service (held by order-service)"
+      },
+      {
+        "name": "PAYMENT_SUBMIT",
+        "description": "Service: submits payments to the payment-service (held by order-service)"
+      },
+      {
         "name": "offline_access",
         "description": "${role_offline-access}"
       },
@@ -65,6 +73,19 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:${GATEWAY_PORT}/"
       }
+    },
+    {
+      "clientId": "order-service",
+      "name": "Order service (service-to-service calls)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${ORDER_SERVICE_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true
     },
     {
       "clientId": "e2e-tests",
@@ -166,6 +187,15 @@
       ],
       "realmRoles": [
         "ADMIN"
+      ]
+    },
+    {
+      "username": "service-account-order-service",
+      "enabled": true,
+      "serviceAccountClientId": "order-service",
+      "realmRoles": [
+        "INVENTORY_RESERVE",
+        "PAYMENT_SUBMIT"
       ]
     }
   ]
