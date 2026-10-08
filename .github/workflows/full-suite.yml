@@ -162,6 +162,13 @@ jobs:
       KEYCLOAK_ADMIN_PASSWORD: password
       GATEWAY_PORT: 8080
       GATEWAY_CLIENT_SECRET: e2e-gateway-secret
+      ORDER_SERVICE_CLIENT_SECRET: e2e-order-service-secret
+      # passwords of the test users in docker/keycloak/realm-ecommerce.json
+      E2E_CLIENT1_PASSWORD: client1
+      E2E_CLIENT2_PASSWORD: client2
+      E2E_COURIER1_PASSWORD: courier1
+      E2E_COURIER2_PASSWORD: courier2
+      E2E_ADMIN_PASSWORD: admin
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
