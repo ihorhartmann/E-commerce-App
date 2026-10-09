@@ -81,7 +81,7 @@ private fun toOrderItemResponseDto(item: OrderItem): OrderItemResponseDto = Orde
 
 data class MoneyResponseDto(val amount: BigDecimal, val currency: String)
 
-private fun toMoneyResponseDto(money: Money): MoneyResponseDto =
+internal fun toMoneyResponseDto(money: Money): MoneyResponseDto =
     MoneyResponseDto(money.amount, money.currency.name)
 
 data class AddressResponseDto(val city: String, val postalCode: String, val line1: String, val line2: String)

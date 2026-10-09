@@ -9,12 +9,14 @@ import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
+import com.hartmann.usecase.port.`in`.usecase.FindCustomerOrdersUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
 import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
+import com.hartmann.usecase.port.out.repository.dto.OrderPage
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
@@ -58,6 +60,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private lateinit var getOrderUseCase: GetOrderUseCase
+
+    @MockitoBean
+    private lateinit var findCustomerOrdersUseCase: FindCustomerOrdersUseCase
 
     // IdempotencyFilter runs ahead of every controller in this slice too, so it needs a bean here
     // regardless of whether a given test cares about idempotency itself. Stubbing this
@@ -402,5 +407,103 @@ class OrderControllerTest {
         }
 
         verify(getOrderUseCase, never()).execute(any(), any())
+    }
+
+    @Test
+    fun `findCustomerOrders - returns 200 with the requested page of the customer's orders`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val page = 1
+        val size = 2
+        val orderId = 7L
+        val totalElements = 3L
+        val order = testOrder(id = orderId, customerId = customerId)
+        whenever(findCustomerOrdersUseCase.execute(customerId, page, size)).thenReturn(OrderPage(listOf(order), totalElements))
+
+        mockMvc.get("/api/v1/orders?page={page}&size={size}", page, size) {
+            with(clientJwt(customerId))
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.page") { value(page) }
+            jsonPath("$.size") { value(size) }
+            jsonPath("$.totalElements") { value(totalElements) }
+            jsonPath("$.totalPages") { value(2) }
+            jsonPath("$.items.length()") { value(1) }
+            jsonPath("$.items[0].id") { value(orderId) }
+            jsonPath("$.items[0].status") { value(order.status.name) }
+            jsonPath("$.items[0].totalPrice.amount") { value(20.0) }
+            jsonPath("$.items[0].totalPrice.currency") { value("USD") }
+            jsonPath("$.items[0].itemCount") { value(order.items.size) }
+            jsonPath("$.items[0].createdAt") { exists() }
+        }
+
+        verify(findCustomerOrdersUseCase, times(1)).execute(customerId, page, size)
+    }
+
+    @Test
+    fun `findCustomerOrders - asks for the first page of the default size when the request names none`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val firstPage = 0
+        val defaultSize = 20
+        whenever(findCustomerOrdersUseCase.execute(customerId, firstPage, defaultSize)).thenReturn(OrderPage(emptyList(), 0))
+
+        mockMvc.get("/api/v1/orders") {
+            with(clientJwt(customerId))
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.items.length()") { value(0) }
+            jsonPath("$.totalPages") { value(0) }
+        }
+
+        verify(findCustomerOrdersUseCase, times(1)).execute(customerId, firstPage, defaultSize)
+    }
+
+    @Test
+    fun `findCustomerOrders - returns 400 when the use case rejects the page`() {
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val size = 101
+        val firstPage = 0
+        val message = "size must be between 1 and 100"
+        whenever(findCustomerOrdersUseCase.execute(customerId, firstPage, size)).thenThrow(IllegalArgumentException(message))
+
+        mockMvc.get("/api/v1/orders?size={size}", size) {
+            with(clientJwt(customerId))
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value(message) }
+        }
+
+        verify(findCustomerOrdersUseCase, times(1)).execute(customerId, firstPage, size)
+    }
+
+    @Test
+    fun `findCustomerOrders - returns 400 without calling the use case when the page is not a number`() {
+        mockMvc.get("/api/v1/orders?page=first") {
+            with(clientJwt())
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("Invalid value for page") }
+        }
+
+        verify(findCustomerOrdersUseCase, never()).execute(any(), any(), any())
+    }
+
+    @Test
+    fun `findCustomerOrders - returns 401 when no token is sent`() {
+        mockMvc.get("/api/v1/orders").andExpect {
+            status { isUnauthorized() }
+        }
+
+        verify(findCustomerOrdersUseCase, never()).execute(any(), any(), any())
+    }
+
+    @Test
+    fun `findCustomerOrders - returns 403 when the caller is not a client`() {
+        mockMvc.get("/api/v1/orders") {
+            with(jwt().authorities(SimpleGrantedAuthority("ROLE_COURIER")))
+        }.andExpect {
+            status { isForbidden() }
+        }
+
+        verify(findCustomerOrdersUseCase, never()).execute(any(), any(), any())
     }
 }

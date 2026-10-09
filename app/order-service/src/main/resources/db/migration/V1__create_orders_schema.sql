@@ -23,6 +23,9 @@ CREATE TABLE orders.orders (
     updated_at                TIMESTAMPTZ
 );
 
+-- "my orders": a customer's orders, newest first
+CREATE INDEX idx_orders_customer_id_created_at ON orders.orders (customer_id, created_at DESC, id DESC);
+
 CREATE TABLE orders.order_items (
     id             BIGSERIAL PRIMARY KEY,
     order_id       BIGINT NOT NULL REFERENCES orders.orders (id),

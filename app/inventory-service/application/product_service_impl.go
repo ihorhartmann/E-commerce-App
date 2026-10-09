@@ -9,9 +9,13 @@ import (
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/application/port/out/repository/transaction"
 	"inventoryservice/domain"
+	"math"
 
 	"inventoryservice/domain/model"
 )
+
+// maxPageSize is the most products GetProducts returns at once.
+const maxPageSize = 100
 
 type ProductServiceImpl struct {
 	in.ProductService
@@ -52,6 +56,20 @@ func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Produc
 	}
 
 	return ps.productRepository.GetByID(ctx, id)
+}
+
+func (ps *ProductServiceImpl) GetProducts(ctx context.Context, page, size int) (*dto.ProductPageDTO, error) {
+	// the page limit keeps page*size from overflowing
+	if page < 0 || size < 1 || size > maxPageSize || page > math.MaxInt32 {
+		return nil, domain.ErrInvalidInput
+	}
+
+	products, totalElements, err := ps.productRepository.GetProducts(ctx, page*size, size)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.ProductPageDTO{Products: products, TotalElements: totalElements}, nil
 }
 
 // Delete deletes the product unless some of its stock is reserved.

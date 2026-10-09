@@ -20,6 +20,7 @@ func NewProductController(productService in.ProductService) *ProductController {
 func (pc *ProductController) RegisterRoutes(router fiber.Router) {
 	pg := router.Group("/products")
 
+	pg.Get("/", pc.GetProducts)
 	pg.Post("/", pc.CreateProduct)
 	pg.Put("/:id", pc.UpdateProduct)
 	pg.Get("/:id", pc.GetProduct)
@@ -81,6 +82,24 @@ func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(dto.ToProductResponse(product))
+}
+
+func (pc *ProductController) GetProducts(c *fiber.Ctx) error {
+	page, err := parseIntQuery(c, "page", 0)
+	if err != nil {
+		return errors.HandleProductError(errors.ErrInvalidPageParam)
+	}
+	size, err := parseIntQuery(c, "size", defaultPageSize)
+	if err != nil {
+		return errors.HandleProductError(errors.ErrInvalidPageParam)
+	}
+
+	productPage, err := pc.productService.GetProducts(c.Context(), page, size)
+	if err != nil {
+		return errors.HandleProductError(err)
+	}
+
+	return c.JSON(dto.ToProductListResponse(productPage, page, size))
 }
 
 func (pc *ProductController) DeleteProduct(c *fiber.Ctx) error {

@@ -30,4 +30,13 @@ object OrderApi {
         findOrder(baseUrl, customer, orderId)
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(OrderResponse::class.java)
+
+    fun findCustomerOrders(baseUrl: String, customer: TestUser, page: Int, size: Int): ListOrdersResponse =
+        givenAs(customer)
+            .queryParam("page", page)
+            .queryParam("size", size)
+            .get("$baseUrl/api/v1/orders")
+            .then()
+            .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().`as`(ListOrdersResponse::class.java)
 }

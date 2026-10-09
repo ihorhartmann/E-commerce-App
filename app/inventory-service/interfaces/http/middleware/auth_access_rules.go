@@ -18,6 +18,7 @@ func accessRules() []auth.AccessRule {
 	return []auth.AccessRule{
 		auth.PermitAll(http.MethodGet, "/health"),
 		// the catalog is public: browsing products needs no login, ordering them does
+		auth.PermitAll(http.MethodGet, "/api/v1/products"),
 		auth.PermitAll(http.MethodGet, "/api/v1/products/*"),
 		auth.RequireRole(http.MethodPost, "/api/v1/products", adminRole),
 		auth.RequireRole(http.MethodPut, "/api/v1/products/*", adminRole),

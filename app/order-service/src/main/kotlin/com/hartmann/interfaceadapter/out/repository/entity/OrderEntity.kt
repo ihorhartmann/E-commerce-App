@@ -20,6 +20,7 @@ import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
 import jakarta.persistence.Version
+import org.hibernate.annotations.BatchSize
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
@@ -33,6 +34,8 @@ class OrderEntity(
 
     var customerId: UUID = UUID(0, 0),
 
+    // a page of orders loads its items in batches, not with one query per order
+    @BatchSize(size = 100)
     @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("id ASC")
     var items: MutableList<OrderItemEntity> = mutableListOf(),

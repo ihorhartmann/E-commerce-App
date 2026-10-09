@@ -4,6 +4,7 @@ import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.auth.givenAs
 import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
+import io.restassured.response.ValidatableResponse
 import java.net.HttpURLConnection
 import java.util.UUID
 
@@ -25,4 +26,17 @@ object InventoryApi {
             .then()
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(ProductResponse::class.java)
+
+    // the catalog is public - no token
+    fun doGetProducts(baseUrl: String, page: Int, size: Int): ValidatableResponse =
+        given()
+            .queryParam("page", page)
+            .queryParam("size", size)
+            .get("$baseUrl/api/v1/products")
+            .then()
+
+    fun getProducts(baseUrl: String, page: Int, size: Int): ListProductsResponse =
+        doGetProducts(baseUrl, page, size)
+            .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().`as`(ListProductsResponse::class.java)
 }
