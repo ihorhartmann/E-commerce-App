@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 
@@ -128,6 +129,54 @@ func TestProductServiceImpl_Get(t *testing.T) {
 			t.Errorf("got = %+v, want nil", got)
 		}
 	})
+}
+
+func TestProductServiceImpl_GetProducts(t *testing.T) {
+	t.Run("returns the requested page of products and the number of all products", func(t *testing.T) {
+		page := 3
+		size := 10
+		totalElements := int64(35)
+		products := []*model.Product{testProduct(t, 31, 7, 0), testProduct(t, 32, 6, 4)}
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		productRepo.EXPECT().GetProducts(gomock.Any(), 30, size).Return(products, totalElements, nil).Times(1)
+
+		service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		got, err := service.GetProducts(context.Background(), page, size)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := &dto.ProductPageDTO{Products: products, TotalElements: totalElements}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("GetProducts() = %+v, want %+v", got, want)
+		}
+	})
+
+	invalidPages := []struct {
+		name string
+		page int
+		size int
+	}{
+		{name: "a negative page", page: -1, size: 10},
+		{name: "a zero size", page: 0, size: 0},
+		{name: "a size above the maximum", page: 0, size: maxPageSize + 1},
+		{name: "a page too large to compute its offset", page: math.MaxInt32 + 1, size: 5},
+	}
+	for _, invalidPage := range invalidPages {
+		t.Run("rejects "+invalidPage.name+" without calling the repository", func(t *testing.T) {
+			productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+			productRepo.EXPECT().GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+			service := NewProductService(productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+			_, err := service.GetProducts(context.Background(), invalidPage.page, invalidPage.size)
+
+			if !errors.Is(err, domain.ErrInvalidInput) {
+				t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+			}
+		})
+	}
 }
 
 func TestProductServiceImpl_Delete(t *testing.T) {

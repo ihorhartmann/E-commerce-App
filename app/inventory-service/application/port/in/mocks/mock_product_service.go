@@ -87,6 +87,21 @@ func (mr *MockProductServiceMockRecorder) Get(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockProductService)(nil).Get), ctx, id)
 }
 
+// GetProducts mocks base method.
+func (m *MockProductService) GetProducts(ctx context.Context, page, size int) (*dto.ProductPageDTO, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetProducts", ctx, page, size)
+	ret0, _ := ret[0].(*dto.ProductPageDTO)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetProducts indicates an expected call of GetProducts.
+func (mr *MockProductServiceMockRecorder) GetProducts(ctx, page, size any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetProducts", reflect.TypeOf((*MockProductService)(nil).GetProducts), ctx, page, size)
+}
+
 // Restock mocks base method.
 func (m *MockProductService) Restock(ctx context.Context, msg dto0.KafkaMessageMetadata, items []dto.ReservationDTO) error {
 	m.ctrl.T.Helper()

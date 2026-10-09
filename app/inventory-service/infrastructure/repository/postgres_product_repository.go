@@ -112,6 +112,34 @@ func (r *postgresProductRepository) GetByIDs(ctx context.Context, ids []uint64) 
 	return products, nil
 }
 
+// GetProducts orders by the primary key, so a page never shifts between requests unless products are added or
+// deleted. The count is a separate statement, so outside a transaction it may already include a change the page
+// doesn't show.
+func (r *postgresProductRepository) GetProducts(ctx context.Context, offset, limit int) ([]*model.Product, int64, error) {
+	db := transaction.FromWithDefault(ctx, r.db)
+
+	var totalElements int64
+	if err := db.WithContext(ctx).Model(&entity.Product{}).Count(&totalElements).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rows []*entity.Product
+	if err := db.WithContext(ctx).Order("id").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	products := make([]*model.Product, 0, len(rows))
+	for _, row := range rows {
+		product, err := entity.FromProductEntity(row)
+		if err != nil {
+			return nil, 0, err
+		}
+		products = append(products, product)
+	}
+
+	return products, totalElements, nil
+}
+
 // distinct returns ids without repetitions, keeping the order in which each id first appears.
 func distinct(ids []uint64) []uint64 {
 	seen := make(map[uint64]struct{}, len(ids))

@@ -331,6 +331,131 @@ func TestProductController_GetProduct(t *testing.T) {
 	})
 }
 
+func TestProductController_GetProducts(t *testing.T) {
+	t.Run("returns 200 with the requested page of the catalog, without the stock counts", func(t *testing.T) {
+		page := 1
+		size := 2
+		id := uint64(7)
+		totalElements := int64(3)
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productPage := &dto.ProductPageDTO{Products: []*model.Product{testProduct(t, id, 10, 4)}, TotalElements: totalElements}
+		productService.EXPECT().GetProducts(gomock.Any(), page, size).Return(productPage, nil).Times(1)
+		app := newProductTestApp(productService)
+
+		req := httptest.NewRequest("GET", "/products?page=1&size=2", nil)
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("status = %d, want 200", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["page"] != float64(page) {
+			t.Errorf("page = %v, want %d", body["page"], page)
+		}
+		if body["size"] != float64(size) {
+			t.Errorf("size = %v, want %d", body["size"], size)
+		}
+		if body["totalElements"] != float64(totalElements) {
+			t.Errorf("totalElements = %v, want %d", body["totalElements"], totalElements)
+		}
+		if body["totalPages"] != float64(2) {
+			t.Errorf("totalPages = %v, want 2", body["totalPages"])
+		}
+		items, ok := body["items"].([]any)
+		if !ok || len(items) != 1 {
+			t.Fatalf("items = %v, want one product", body["items"])
+		}
+		item := items[0].(map[string]any)
+		if item["id"] != float64(id) {
+			t.Errorf("items[0].id = %v, want %d", item["id"], id)
+		}
+		if item["name"] != "Widget" {
+			t.Errorf("items[0].name = %v, want %q", item["name"], "Widget")
+		}
+		if item["available"] != float64(6) {
+			t.Errorf("items[0].available = %v, want 6", item["available"])
+		}
+		if item["price"] == nil {
+			t.Errorf("items[0].price is missing")
+		}
+		for _, internalField := range []string{"quantity", "reserved"} {
+			if _, present := item[internalField]; present {
+				t.Errorf("items[0] exposes %q", internalField)
+			}
+		}
+	})
+
+	t.Run("asks for the first page of the default size when the request names none", func(t *testing.T) {
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productPage := &dto.ProductPageDTO{Products: []*model.Product{}, TotalElements: 0}
+		productService.EXPECT().GetProducts(gomock.Any(), 0, defaultPageSize).Return(productPage, nil).Times(1)
+		app := newProductTestApp(productService)
+
+		req := httptest.NewRequest("GET", "/products", nil)
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("status = %d, want 200", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if items, ok := body["items"].([]any); !ok || len(items) != 0 {
+			t.Errorf("items = %v, want an empty list", body["items"])
+		}
+		if body["totalPages"] != float64(0) {
+			t.Errorf("totalPages = %v, want 0", body["totalPages"])
+		}
+	})
+
+	t.Run("returns 400 without calling the service when page or size isn't an integer", func(t *testing.T) {
+		for _, query := range []string{"page=first", "size=many"} {
+			productService := mocks.NewMockProductService(gomock.NewController(t))
+			productService.EXPECT().GetProducts(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			app := newProductTestApp(productService)
+
+			req := httptest.NewRequest("GET", "/products?"+query, nil)
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != 400 {
+				t.Errorf("%s: status = %d, want 400", query, resp.StatusCode)
+			}
+			body := decodeBody(t, resp.Body)
+			if body["error"] != httperrors.ErrInvalidPageParam.Error() {
+				t.Errorf("%s: error = %v, want %q", query, body["error"], httperrors.ErrInvalidPageParam.Error())
+			}
+		}
+	})
+
+	t.Run("returns 400 when the service rejects the page", func(t *testing.T) {
+		size := 101
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().GetProducts(gomock.Any(), 0, size).Return(nil, domain.ErrInvalidInput).Times(1)
+		app := newProductTestApp(productService)
+
+		req := httptest.NewRequest("GET", "/products?size=101", nil)
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 400 {
+			t.Errorf("status = %d, want 400", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["error"] != domain.ErrInvalidInput.Error() {
+			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		}
+	})
+}
+
 func TestProductController_DeleteProduct(t *testing.T) {
 	t.Run("returns 204 when the product is deleted", func(t *testing.T) {
 		id := uint64(1)

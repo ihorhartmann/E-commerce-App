@@ -33,6 +33,7 @@ func newAuthTestApp(verifier auth.TokenVerifier) *fiber.App {
 		return c.Status(http.StatusOK).SendString(principal.UserID.String())
 	}
 	app.Get(healthPath, handler)
+	app.Get(productsPath, handler)
 	app.Get("/api/v1/products/:id", handler)
 	app.Post(productsPath, handler)
 	app.Put("/api/v1/products/:id", handler)
@@ -70,6 +71,18 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier.EXPECT().Verify(gomock.Any(), gomock.Any()).Times(0)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, productPath, "")
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+	})
+
+	t.Run("lets the public catalog list through without a token", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		verifier := mocks.NewMockTokenVerifier(ctrl)
+		verifier.EXPECT().Verify(gomock.Any(), gomock.Any()).Times(0)
+
+		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, productsPath+"?page=0&size=20", "")
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)

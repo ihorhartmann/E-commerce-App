@@ -10,7 +10,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-var ErrInvalidRequestBody = errors.New("invalid request body")
+var (
+	ErrInvalidRequestBody = errors.New("invalid request body")
+	ErrInvalidPageParam   = errors.New("page and size must be integers")
+)
 
 func ErrorResponse(message string) fiber.Map {
 	return fiber.Map{"error": message}
@@ -23,7 +26,7 @@ func handleCommonError(err error) (error, bool) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidInput):
 		return WithStatus(http.StatusBadRequest, err), true
-	case errors.Is(err, ErrInvalidRequestBody):
+	case errors.Is(err, ErrInvalidRequestBody), errors.Is(err, ErrInvalidPageParam):
 		return WithStatus(http.StatusBadRequest, err), true
 	// 503, not 409: a concurrent update is transient, while the idempotency middleware caches and
 	// replays every 4xx, which would make a retry with the same key fail forever.
