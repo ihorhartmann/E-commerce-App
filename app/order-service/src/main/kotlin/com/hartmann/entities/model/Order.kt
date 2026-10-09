@@ -85,9 +85,9 @@ class Order private constructor(
         paymentConfirmedAt = Instant.now()
     }
 
-    fun createShipment(trackingNumber: String) {
+    fun createShipment(shipmentId: Long) {
         requireStatus("create shipment", OrderStatus.PROCESSING)
-        shipment = ShipmentInfo.create(trackingNumber)
+        shipment = ShipmentInfo.create(shipmentId)
     }
 
     fun startDelivery() {

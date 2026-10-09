@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"net/http"
-	"strconv"
 
 	"shippingservice/adapter/in/http/auth"
 	"shippingservice/adapter/in/http/dto"
@@ -14,8 +13,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// courierRole may look any shipment up; everyone else sees only their own.
-const courierRole = "COURIER"
+// defaultPageSize is the page size of a list request that doesn't ask for one.
+const defaultPageSize = 20
 
 type ShipmentController struct {
 	shipmentService portin.ShipmentService
@@ -28,7 +27,9 @@ func NewShipmentController(shipmentService portin.ShipmentService) *ShipmentCont
 func (sc *ShipmentController) RegisterRoutes(router *gin.RouterGroup) {
 	sg := router.Group("/shipments")
 
-	sg.GET("/tracking/:trackingNumber", sc.GetByTrackingNumber)
+	sg.GET("/available", sc.GetAvailableShipments)
+	sg.GET("/mine", sc.GetCourierActiveShipments)
+	sg.GET("/:id", sc.GetShipment)
 	sg.POST("/:id/pickup", sc.Pickup)
 	sg.POST("/:id/deliver", sc.Deliver)
 	sg.POST("/:id/lose", sc.Lose)
@@ -36,34 +37,76 @@ func (sc *ShipmentController) RegisterRoutes(router *gin.RouterGroup) {
 	sg.POST("/:id/return", sc.ConfirmReturnedToInventory)
 }
 
-// GetByTrackingNumber shows a courier any shipment (they look shipments up to pick them up), and a customer only
-// their own - another customer's shipment is reported as not found.
-func (sc *ShipmentController) GetByTrackingNumber(c *gin.Context) {
-	trackingNumber := c.Param("trackingNumber")
-	if trackingNumber == "" {
-		HandleError(c, ErrEmptyTrackingNumber)
+// GetAvailableShipments lists the shipments any courier may pick up, without their street - it's shown only to the
+// courier who picks the shipment up.
+func (sc *ShipmentController) GetAvailableShipments(c *gin.Context) {
+	page, err := parseIntQuery(c, "page", 0)
+	if err != nil {
+		HandleError(c, ErrInvalidPageParam)
+		return
+	}
+	size, err := parseIntQuery(c, "size", defaultPageSize)
+	if err != nil {
+		HandleError(c, ErrInvalidPageParam)
 		return
 	}
 
-	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
-	if !ok {
-		HandleError(c, auth.ErrMissingPrincipal)
-		return
-	}
-
-	var shipment *model.Shipment
-	var err error
-	if principal.HasAnyRole(courierRole) {
-		shipment, err = sc.shipmentService.GetByTrackingNumber(c.Request.Context(), trackingNumber)
-	} else {
-		shipment, err = sc.shipmentService.GetCustomerShipmentByTrackingNumber(c.Request.Context(), trackingNumber, principal.UserID)
-	}
+	shipmentPage, err := sc.shipmentService.GetAvailableShipments(c.Request.Context(), page, size)
 	if err != nil {
 		HandleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.ToShipmentResponse(shipment))
+	c.JSON(http.StatusOK, dto.ToShipmentListResponse(shipmentPage, page, size, false))
+}
+
+// GetCourierActiveShipments lists the calling courier's shipments they still have to deliver or bring back.
+func (sc *ShipmentController) GetCourierActiveShipments(c *gin.Context) {
+	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
+	if !ok {
+		HandleError(c, auth.ErrMissingPrincipal)
+		return
+	}
+	page, err := parseIntQuery(c, "page", 0)
+	if err != nil {
+		HandleError(c, ErrInvalidPageParam)
+		return
+	}
+	size, err := parseIntQuery(c, "size", defaultPageSize)
+	if err != nil {
+		HandleError(c, ErrInvalidPageParam)
+		return
+	}
+
+	shipmentPage, err := sc.shipmentService.GetCourierActiveShipments(c.Request.Context(), principal.UserID, page, size)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.ToShipmentListResponse(shipmentPage, page, size, true))
+}
+
+// GetShipment shows any shipment to a courier, with the street only if it's assigned to them.
+func (sc *ShipmentController) GetShipment(c *gin.Context) {
+	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
+	if !ok {
+		HandleError(c, auth.ErrMissingPrincipal)
+		return
+	}
+	id, err := parseIDParam(c, "id")
+	if err != nil {
+		HandleError(c, ErrInvalidShipmentID)
+		return
+	}
+
+	shipment, err := sc.shipmentService.GetByID(c.Request.Context(), id)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.ToShipmentResponse(shipment, shipment.IsAssignedTo(principal.UserID)))
 }
 
 // Pickup moves a shipment Created -> InDelivery and assigns it to the calling
@@ -109,9 +152,11 @@ func (sc *ShipmentController) handleCourierTransition(
 	})
 }
 
+// handleTransition shows the full address: only the assigned courier (or an admin, for a cancellation) may move a
+// shipment on.
 func (sc *ShipmentController) handleTransition(c *gin.Context, transition func(ctx context.Context, id uint64) (*model.Shipment, error)) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil || id == 0 {
+	id, err := parseIDParam(c, "id")
+	if err != nil {
 		HandleError(c, ErrInvalidShipmentID)
 		return
 	}
@@ -122,5 +167,5 @@ func (sc *ShipmentController) handleTransition(c *gin.Context, transition func(c
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.ToShipmentResponse(shipment))
+	c.JSON(http.StatusOK, dto.ToShipmentResponse(shipment, true))
 }

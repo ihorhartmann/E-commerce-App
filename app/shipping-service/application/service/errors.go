@@ -3,6 +3,7 @@ package service
 import "errors"
 
 var (
-	ErrInvalidTrackingNumber = errors.New("invalid tracking number")
-	ErrNotAssignedCourier    = errors.New("shipment is not assigned to this courier")
+	ErrNotAssignedCourier = errors.New("shipment is not assigned to this courier")
+	ErrAlreadyPickedUp    = errors.New("shipment was already picked up by another courier")
+	ErrInvalidPage        = errors.New("invalid page")
 )

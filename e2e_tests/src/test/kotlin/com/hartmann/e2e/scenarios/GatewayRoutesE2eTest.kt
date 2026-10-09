@@ -59,7 +59,7 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
 
     @Test
     fun `shipments - routed to the shipping-service`() {
-        val response = ShippingApi.findByTrackingNumber(gatewayUrl, TestUser.COURIER1, "TRK-UNKNOWN")
+        val response = ShippingApi.findShipment(gatewayUrl, TestUser.COURIER1, Long.MAX_VALUE)
 
         // the shipping-service's own answer, not a gateway 404 for an unknown route
         response.statusCode(HttpURLConnection.HTTP_NOT_FOUND)

@@ -95,7 +95,7 @@ class OrderKafkaConsumer(
             when (messageType) {
                 KafkaConst.SHIPMENT_CREATED_EVENT -> {
                     val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
-                    saga.onShipmentCreated(message, event.orderId, event.trackingNumber)
+                    saga.onShipmentCreated(message, event.orderId, event.shipmentId)
                     true
                 }
 

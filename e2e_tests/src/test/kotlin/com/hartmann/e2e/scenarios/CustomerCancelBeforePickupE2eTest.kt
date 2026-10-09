@@ -21,13 +21,13 @@ class CustomerCancelBeforePickupE2eTest : E2eScenarioTest() {
         val paymentUrl = DockerComposeStack.paymentServiceUrl
         val shippingUrl = DockerComposeStack.shippingServiceUrl
 
-        val productId = 3L
         val quantity = 1
-        val product = InventoryApi.getProduct(inventoryUrl, productId)
+        val unitPrice = BigDecimal("79.99")
+        val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, unitPrice)
+        val productId = product.id
 
-        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
-        val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
+        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
+        val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
         assertThat(shipment.status).isEqualTo("Created") // not picked up yet
 
         ShippingApi.cancel(shippingUrl, shipment.id)

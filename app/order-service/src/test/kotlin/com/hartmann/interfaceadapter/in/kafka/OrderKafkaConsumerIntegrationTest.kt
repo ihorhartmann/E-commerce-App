@@ -176,18 +176,18 @@ class OrderKafkaConsumerIntegrationTest {
     @Test
     fun `onShippingEvent - dispatches a ShipmentCreated event to the saga`() {
         val orderId = 101L
-        val trackingNumber = "TRACK-1"
+        val shipmentId = 5L
         val correlationId = UUID.randomUUID().toString()
 
         send(
             eventRecord(
                 KafkaConst.SHIPPING_EVENTS_TOPIC, KafkaConst.SHIPMENT_CREATED_EVENT, correlationId,
-                "{\"orderId\":$orderId,\"trackingNumber\":\"$trackingNumber\"}",
+                "{\"orderId\":$orderId,\"shipmentId\":$shipmentId}",
             )
         )
 
         await().atMost(MESSAGE_WAIT_TIMEOUT)
-            .untilAsserted { verify(saga, times(1)).onShipmentCreated(any(), eq(orderId), eq(trackingNumber)) }
+            .untilAsserted { verify(saga, times(1)).onShipmentCreated(any(), eq(orderId), eq(shipmentId)) }
     }
 
     @Test

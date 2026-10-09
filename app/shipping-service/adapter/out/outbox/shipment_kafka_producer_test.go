@@ -18,14 +18,14 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func testShipment(t *testing.T, orderID uint64, trackingNumber string, status model.ShipmentStatus) *model.Shipment {
+func testShipment(t *testing.T, orderID uint64, status model.ShipmentStatus) *model.Shipment {
 	t.Helper()
 	address, err := value.NewAddress("Kyiv", "01001", "Khreshchatyk 1", "")
 	if err != nil {
 		t.Fatalf("failed to build test address: %v", err)
 	}
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(1, orderID, uuid.New(), uuid.New(), trackingNumber, address, status, model.HolderCourier, now, now, 0)
+	shipment, err := model.NewExistingShipment(1, orderID, uuid.New(), address, status, model.HolderCourier, now, now, 0)
 	if err != nil {
 		t.Fatalf("failed to build test shipment: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 	t.Run("inserts the mapped event for an InDelivery shipment", func(t *testing.T) {
 		correlationID := "corr-1"
 		orderID := uint64(42)
-		shipment := testShipment(t, orderID, "TRACK-1", model.InDelivery)
+		shipment := testShipment(t, orderID, model.InDelivery)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentInDeliveryEvent, correlationID, shipment)
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
@@ -63,7 +63,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 	t.Run("inserts the mapped event for a Cancelled shipment", func(t *testing.T) {
 		correlationID := "corr-2"
 		orderID := uint64(7)
-		shipment := testShipment(t, orderID, "TRACK-2", model.Cancelled)
+		shipment := testShipment(t, orderID, model.Cancelled)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentCancelledEvent, correlationID, shipment)
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
@@ -81,7 +81,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 
 	t.Run("propagates the repository's error without swallowing it", func(t *testing.T) {
 		wantErr := errors.New("db down")
-		shipment := testShipment(t, 42, "TRACK-1", model.InDelivery)
+		shipment := testShipment(t, 42, model.InDelivery)
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(wantErr).Times(1)
 		producer := NewOutboxShipmentKafkaProducer(repository)
@@ -96,7 +96,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentReturnedToInventory(t *testi
 	t.Run("inserts a ShipmentReturnedToInventoryEvent with the status payload", func(t *testing.T) {
 		correlationID := "corr-3"
 		orderID := uint64(9)
-		shipment := testShipment(t, orderID, "TRACK-3", model.Cancelled)
+		shipment := testShipment(t, orderID, model.Cancelled)
 		want := wantOutboxMessage(t, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment)
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))

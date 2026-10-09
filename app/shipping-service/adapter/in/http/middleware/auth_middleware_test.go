@@ -16,11 +16,11 @@ import (
 )
 
 const (
-	healthPath   = "/health"
-	trackingPath = "/api/v1/shipments/tracking/TRK-1"
-	pickupPath   = "/api/v1/shipments/1/pickup"
-	cancelPath   = "/api/v1/shipments/1/cancel"
-	unlistedPath = "/api/v1/unlisted"
+	healthPath    = "/health"
+	availablePath = "/api/v1/shipments/available"
+	pickupPath    = "/api/v1/shipments/1/pickup"
+	cancelPath    = "/api/v1/shipments/1/cancel"
+	unlistedPath  = "/api/v1/unlisted"
 )
 
 // newAuthTestApp registers the middleware (behind the error handler, as in main) ahead of handlers on the service's
@@ -34,7 +34,7 @@ func newAuthTestApp(verifier auth.TokenVerifier) *gin.Engine {
 		c.String(http.StatusOK, principal.UserID.String())
 	}
 	router.GET(healthPath, handler)
-	router.GET("/api/v1/shipments/tracking/:trackingNumber", handler)
+	router.GET(availablePath, handler)
 	router.POST("/api/v1/shipments/:id/pickup", handler)
 	router.POST("/api/v1/shipments/:id/cancel", handler)
 	router.GET(unlistedPath, handler)
@@ -92,17 +92,31 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		}
 	})
 
-	t.Run("lets a rule with several roles through for any of them", func(t *testing.T) {
+	t.Run("lets a courier through to the available shipments", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		verifier := mocks.NewMockTokenVerifier(ctrl)
+		token := "courier-token"
+		verifier.EXPECT().Verify(gomock.Any(), token).
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"COURIER"}}, nil).Times(1)
+
+		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, availablePath, "Bearer "+token)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+	})
+
+	t.Run("answers 403 when a customer asks for the shipments", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "client-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
 			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"CLIENT"}}, nil).Times(1)
 
-		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, trackingPath, "Bearer "+token)
+		resp := doRequest(t, newAuthTestApp(verifier), http.MethodGet, availablePath, "Bearer "+token)
 
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 		}
 	})
 

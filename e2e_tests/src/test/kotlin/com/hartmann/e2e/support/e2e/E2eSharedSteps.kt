@@ -1,5 +1,9 @@
 package com.hartmann.e2e.support.e2e
 
+import com.hartmann.e2e.support.api.inventory.CreateProductRequest
+import com.hartmann.e2e.support.api.inventory.InventoryApi
+import com.hartmann.e2e.support.api.inventory.InventoryMoneyDto
+import com.hartmann.e2e.support.api.inventory.ProductResponse
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
@@ -18,6 +22,16 @@ import java.time.Duration
 /** Steps shared by more than one scenario, so each scenario test reads as its own distinguishing steps only. */
 object E2eSharedSteps {
     private val POLL_TIMEOUT: Duration = Duration.ofSeconds(90)
+
+    /**
+     * A product only this scenario orders, for a scenario that checks stock counts: the seeded products are shared,
+     * and another scenario's reservation or fulfillment may still be landing on them over Kafka.
+     */
+    fun createScenarioProduct(inventoryBaseUrl: String, unitPrice: BigDecimal, quantity: Int = 10): ProductResponse =
+        InventoryApi.createProduct(
+            inventoryBaseUrl,
+            CreateProductRequest("E2E scenario item", "ordered by one scenario only", InventoryMoneyDto(unitPrice, "USD"), quantity),
+        )
 
     fun placeOrder(
         orderBaseUrl: String,

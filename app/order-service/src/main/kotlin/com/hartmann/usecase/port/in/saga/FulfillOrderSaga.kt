@@ -9,7 +9,7 @@ interface FulfillOrderSaga {
     fun onPaymentExpired(message: KafkaMessageMetadata, orderId: Long)
     fun onRefundCompleted(message: KafkaMessageMetadata, orderId: Long, amount: Money)
     fun onRefundFailed(message: KafkaMessageMetadata, orderId: Long)
-    fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, trackingNumber: String)
+    fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, shipmentId: Long)
     fun onShipmentInDelivery(message: KafkaMessageMetadata, orderId: Long)
     fun onShipmentDelivered(message: KafkaMessageMetadata, orderId: Long)
     fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long)

@@ -11,20 +11,20 @@ import (
 
 // Shipment is the shipments table row shape.
 type Shipment struct {
-	ID             uint64     `gorm:"primaryKey"`
-	OrderID        uint64     `gorm:"uniqueIndex:uq_shipments_order_id;not null"`
-	CustomerID     uuid.UUID  `gorm:"type:uuid;not null"`
-	CourierID      *uuid.UUID `gorm:"type:uuid"`
-	TrackingNumber string     `gorm:"uniqueIndex;not null"`
-	City           string     `gorm:"not null"`
-	PostalCode     string     `gorm:"not null"`
-	Line1          string     `gorm:"not null"`
-	Line2          string     `gorm:"not null"`
-	Status         string     `gorm:"not null"`
-	Holder         string     `gorm:"not null"`
-	CreatedAt      time.Time  `gorm:"not null"`
-	UpdatedAt      *time.Time
-	Version        uint64 `gorm:"not null;default:0"`
+	ID      uint64 `gorm:"primaryKey"`
+	OrderID uint64 `gorm:"uniqueIndex:uq_shipments_order_id;not null"`
+	// the two composite indexes serve the courier lists: available (status, created_at) and in progress (courier_id,
+	// status, created_at)
+	CourierID  *uuid.UUID `gorm:"type:uuid;index:idx_shipments_courier_id_status_created_at,priority:1"`
+	City       string     `gorm:"not null"`
+	PostalCode string     `gorm:"not null"`
+	Line1      string     `gorm:"not null"`
+	Line2      string     `gorm:"not null"`
+	Status     string     `gorm:"not null;index:idx_shipments_status_created_at,priority:1;index:idx_shipments_courier_id_status_created_at,priority:2"`
+	Holder     string     `gorm:"not null"`
+	CreatedAt  time.Time  `gorm:"not null;index:idx_shipments_status_created_at,priority:2;index:idx_shipments_courier_id_status_created_at,priority:3"`
+	UpdatedAt  *time.Time
+	Version    uint64 `gorm:"not null;default:0"`
 }
 
 func (Shipment) TableName() string {
@@ -35,20 +35,18 @@ func ToShipmentEntity(shipment *model.Shipment) *Shipment {
 	address := shipment.Address()
 
 	return &Shipment{
-		ID:             shipment.Id(),
-		OrderID:        shipment.OrderId(),
-		CustomerID:     shipment.CustomerID(),
-		CourierID:      toNillableUUID(shipment.CourierID()),
-		TrackingNumber: shipment.TrackingNumber(),
-		City:           address.City(),
-		PostalCode:     address.PostalCode(),
-		Line1:          address.Line1(),
-		Line2:          address.Line2(),
-		Status:         string(shipment.Status()),
-		Holder:         string(shipment.Holder()),
-		CreatedAt:      shipment.CreatedAt(),
-		UpdatedAt:      toNillableTime(shipment.UpdatedAt()),
-		Version:        shipment.Version(),
+		ID:         shipment.Id(),
+		OrderID:    shipment.OrderId(),
+		CourierID:  toNillableUUID(shipment.CourierID()),
+		City:       address.City(),
+		PostalCode: address.PostalCode(),
+		Line1:      address.Line1(),
+		Line2:      address.Line2(),
+		Status:     string(shipment.Status()),
+		Holder:     string(shipment.Holder()),
+		CreatedAt:  shipment.CreatedAt(),
+		UpdatedAt:  toNillableTime(shipment.UpdatedAt()),
+		Version:    shipment.Version(),
 	}
 }
 
@@ -61,9 +59,7 @@ func FromShipmentEntity(shipment *Shipment) (*model.Shipment, error) {
 	return model.NewExistingShipment(
 		shipment.ID,
 		shipment.OrderID,
-		shipment.CustomerID,
 		fromNillableUUID(shipment.CourierID),
-		shipment.TrackingNumber,
 		address,
 		model.ShipmentStatus(shipment.Status),
 		model.ShipmentHolder(shipment.Holder),
@@ -71,6 +67,19 @@ func FromShipmentEntity(shipment *Shipment) (*model.Shipment, error) {
 		fromNillableTime(shipment.UpdatedAt),
 		shipment.Version,
 	)
+}
+
+func FromShipmentEntities(shipments []*Shipment) ([]*model.Shipment, error) {
+	result := make([]*model.Shipment, 0, len(shipments))
+	for _, shipment := range shipments {
+		converted, err := FromShipmentEntity(shipment)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, converted)
+	}
+
+	return result, nil
 }
 
 // toNillableTime converts the domain's zero-value-means-unset time.Time into a nullable *time.Time

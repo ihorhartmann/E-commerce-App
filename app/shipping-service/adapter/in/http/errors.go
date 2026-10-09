@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	ErrEmptyTrackingNumber = errors.New("tracking number is required")
-	ErrInvalidShipmentID   = errors.New("invalid shipment id")
+	ErrInvalidShipmentID = errors.New("invalid shipment id")
+	ErrInvalidPageParam  = errors.New("page and size must be integers")
 )
 
 func ErrorResponse(message string) gin.H {
@@ -26,13 +26,10 @@ func ErrorResponse(message string) gin.H {
 // by the middleware.
 func HandleError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrEmptyTrackingNumber):
+	case errors.Is(err, ErrInvalidShipmentID), errors.Is(err, ErrInvalidPageParam), errors.Is(err, service.ErrInvalidPage):
 		_ = c.Error(WithStatus(http.StatusBadRequest, err))
-	case errors.Is(err, ErrInvalidShipmentID):
-		_ = c.Error(WithStatus(http.StatusBadRequest, err))
-	case errors.Is(err, service.ErrInvalidTrackingNumber):
-		_ = c.Error(WithStatus(http.StatusBadRequest, err))
-	case errors.Is(err, model.ErrInvalidStatusTransition):
+	// a courier lost the race to pick the shipment up: a retry would only find it taken
+	case errors.Is(err, model.ErrInvalidStatusTransition), errors.Is(err, service.ErrAlreadyPickedUp):
 		_ = c.Error(WithStatus(http.StatusConflict, err))
 	case errors.Is(err, service.ErrNotAssignedCourier):
 		// 403, not 404: couriers may look any shipment up, so its existence is no secret to them

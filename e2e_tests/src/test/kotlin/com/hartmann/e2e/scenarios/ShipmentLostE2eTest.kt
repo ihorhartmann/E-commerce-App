@@ -21,14 +21,14 @@ class ShipmentLostE2eTest : E2eScenarioTest() {
         val paymentUrl = DockerComposeStack.paymentServiceUrl
         val shippingUrl = DockerComposeStack.shippingServiceUrl
 
-        val productId = 3L
         val quantity = 1
-        val product = InventoryApi.getProduct(inventoryUrl, productId)
+        val unitPrice = BigDecimal("79.99")
+        val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, unitPrice)
+        val productId = product.id
 
         val processingOrder =
-            E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, BigDecimal("79.99"))
-        val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
+            E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
+        val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
 
         ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold
 

@@ -7,9 +7,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// defaultPageSize is the page size of a list request that doesn't ask for one.
-const defaultPageSize = 20
-
 func parseIDParam(c *fiber.Ctx, name string) (uint64, error) {
 	value, err := strconv.ParseUint(c.Params(name), 10, 64)
 	if err != nil || value <= 0 {

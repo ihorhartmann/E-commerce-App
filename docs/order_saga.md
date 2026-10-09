@@ -111,7 +111,7 @@ sequenceDiagram
                 Note over Sh: on failure, retried by Shipping's own consumer<br/>(no event back to Order yet - DLQ handling is TODO)
 
                 Sh--)O: Kafka: ShipmentCreated
-                Note over O: Order.createShipment(trackingNumber)<br/>(stays PROCESSING)
+                Note over O: Order.createShipment(shipmentId)<br/>(stays PROCESSING)
                 O--)I: Kafka: HoldReservation
                 Note over I: reservation holder -> Courier
             end

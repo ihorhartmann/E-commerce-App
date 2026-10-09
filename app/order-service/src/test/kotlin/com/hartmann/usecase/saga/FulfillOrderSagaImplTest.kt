@@ -40,7 +40,7 @@ private fun placedOrder() =
 
 private fun processingOrder() = placedOrder().apply { confirmPayment() }
 
-private fun orderWithShipment() = processingOrder().apply { createShipment("TRACK-1") }
+private fun orderWithShipment() = processingOrder().apply { createShipment(5L) }
 
 private fun orderInDelivery() = orderWithShipment().apply { startDelivery() }
 
@@ -83,7 +83,7 @@ class FulfillOrderSagaImplTest {
 
         assertEquals(OrderStatus.PROCESSING, savedOrder?.status)
         verify(exactly = 1) { processedKafkaMessageStore.markProcessed(message) }
-        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.customerId, order.address) }
+        verify(exactly = 1) { orderKafkaProducer.publishCreateShipment(correlationId, orderId, order.address) }
     }
 
     @Test
@@ -100,7 +100,7 @@ class FulfillOrderSagaImplTest {
         assertNull(savedOrder)
         verify(exactly = 0) { orderRepository.getOrder(any()) }
         verify(exactly = 0) { orderRepository.save(any()) }
-        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any(), any()) }
+        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
     }
 
     @Test
@@ -138,20 +138,20 @@ class FulfillOrderSagaImplTest {
     }
 
     @Test
-    fun `onShipmentCreated - attaches the tracking number and holds the reservation for the courier`() {
+    fun `onShipmentCreated - attaches the shipment and holds the reservation for the courier`() {
         val orderId = 1L
         val messageId = UUID.randomUUID()
         val correlationId = "corr-1"
         val messageType = "ShipmentCreated"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val trackingNumber = "TRACK-1"
+        val shipmentId = 5L
         val order = processingOrder()
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCreated(message, orderId, trackingNumber)
+        saga.onShipmentCreated(message, orderId, shipmentId)
 
-        assertEquals(trackingNumber, savedOrder?.shipment?.trackingNumber)
+        assertEquals(shipmentId, savedOrder?.shipment?.shipmentId)
         verify(exactly = 1) { orderKafkaProducer.publishHoldReservation(correlationId, orderId) }
     }
 
@@ -185,7 +185,7 @@ class FulfillOrderSagaImplTest {
         saga.onShipmentDelivered(message, 1)
 
         assertEquals(OrderStatus.FULFILLED, savedOrder?.status)
-        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any(), any()) }
+        verify(exactly = 0) { orderKafkaProducer.publishCreateShipment(any(), any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishHoldReservation(any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishFulfillReservation(any(), any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }

@@ -3,7 +3,7 @@ package com.hartmann.entities.value
 import java.time.Instant
 
 data class ShipmentInfo(
-    val trackingNumber: String,
+    val shipmentId: Long,
     val pickedUpAt: Instant? = null,
     val deliveredAt: Instant? = null,
     val returnedAt: Instant? = null,
@@ -24,6 +24,6 @@ data class ShipmentInfo(
     }
 
     companion object {
-        fun create(trackingNumber: String) = ShipmentInfo(trackingNumber)
+        fun create(shipmentId: Long) = ShipmentInfo(shipmentId)
     }
 }

@@ -1,10 +1,6 @@
 package dto
 
-import (
-	"shippingservice/domain/value"
-
-	"github.com/google/uuid"
-)
+import "shippingservice/domain/value"
 
 type AddressDTO struct {
 	City       string `json:"city"`
@@ -14,9 +10,8 @@ type AddressDTO struct {
 }
 
 type CreateShipmentCommand struct {
-	OrderID    uint64     `json:"orderId"`
-	CustomerID uuid.UUID  `json:"customerId"`
-	Address    AddressDTO `json:"address"`
+	OrderID uint64     `json:"orderId"`
+	Address AddressDTO `json:"address"`
 }
 
 func FromAddressDTO(message AddressDTO) (value.Address, error) {

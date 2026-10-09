@@ -24,7 +24,7 @@ class FulfillOrderSagaImpl(
             order.confirmPayment()
 
             orderRepository.save(order)
-            orderKafkaProducer.publishCreateShipment(message.correlationId, order.id, order.customerId, order.address)
+            orderKafkaProducer.publishCreateShipment(message.correlationId, order.id, order.address)
         }
 
     @Transactional
@@ -48,10 +48,10 @@ class FulfillOrderSagaImpl(
         }
 
     @Transactional
-    override fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, trackingNumber: String) =
+    override fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, shipmentId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
-            order.createShipment(trackingNumber)
+            order.createShipment(shipmentId)
 
             orderRepository.save(order)
             orderKafkaProducer.publishHoldReservation(message.correlationId, order.id)

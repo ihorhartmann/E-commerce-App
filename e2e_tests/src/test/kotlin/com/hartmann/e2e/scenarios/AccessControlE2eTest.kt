@@ -1,6 +1,5 @@
 package com.hartmann.e2e.scenarios
 
-import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
@@ -14,7 +13,6 @@ import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import org.assertj.core.api.Assertions.assertThat
-import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.net.HttpURLConnection
@@ -63,49 +61,51 @@ class AccessControlE2eTest : E2eScenarioTest() {
     }
 
     @Test
-    fun `shipment - seen by its customer and couriers only, moved on by the assigned courier only`() {
+    fun `shipment - open to every courier without its street until pickup, then the picking courier's only`() {
         val shippingUrl = DockerComposeStack.shippingServiceUrl
-        val orderUrl = DockerComposeStack.orderServiceUrl
-        val inventoryUrl = DockerComposeStack.inventoryServiceUrl
-        val productId = 3L
-        val quantity = 1
-        val product = InventoryApi.getProduct(inventoryUrl, productId)
+        val unitPrice = BigDecimal("79.99")
+        val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, unitPrice)
+        val firstPage = 0
+        val pageSize = 100
         val order = E2eSharedSteps.placeOrderUntilShipmentCreated(
-            orderUrl,
+            DockerComposeStack.orderServiceUrl,
             DockerComposeStack.paymentServiceUrl,
-            productId,
-            quantity,
-            BigDecimal("79.99"),
+            product.id,
+            1,
+            unitPrice,
             customer = TestUser.CLIENT1,
         )
-        val trackingNumber = requireNotNull(order.shipment).trackingNumber
+        val shipmentId = requireNotNull(order.shipment).id
 
-        val ownerStatusCode = ShippingApi.findByTrackingNumber(shippingUrl, TestUser.CLIENT1, trackingNumber)
+        // customers see the shipment in their order, never in the shipping-service
+        val customerStatusCode = ShippingApi.findShipment(shippingUrl, TestUser.CLIENT1, shipmentId).extract().statusCode()
+        assertThat(customerStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+
+        // before pickup every courier sees it - city and postal code only - and finds it among the available ones
+        val beforePickup = ShippingApi.getShipment(shippingUrl, TestUser.COURIER2, shipmentId)
+        assertThat(beforePickup.address.city).isEqualTo("Kyiv")
+        assertThat(beforePickup.address.line1).isNull()
+        val availableIds = ShippingApi.getAvailableShipments(shippingUrl, TestUser.COURIER2, firstPage, pageSize).items.map { it.id }
+        assertThat(availableIds).contains(shipmentId)
+
+        // the pickup makes it courier1's: only they see the street and have it in their own list
+        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipmentId)
+        assertThat(ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, shipmentId).address.line1).isEqualTo("Khreshchatyk 1")
+        assertThat(ShippingApi.getShipment(shippingUrl, TestUser.COURIER2, shipmentId).address.line1).isNull()
+        assertThat(ShippingApi.getCourierActiveShipments(shippingUrl, TestUser.COURIER1, firstPage, pageSize).items.map { it.id }).contains(shipmentId)
+        assertThat(ShippingApi.getCourierActiveShipments(shippingUrl, TestUser.COURIER2, firstPage, pageSize).items.map { it.id }).doesNotContain(shipmentId)
+
+        val secondPickupStatusCode = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "pickup")
             .extract().statusCode()
-        val otherCustomerStatusCode = ShippingApi.findByTrackingNumber(shippingUrl, TestUser.CLIENT2, trackingNumber)
+        val otherCourierDeliverStatusCode = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "deliver")
             .extract().statusCode()
-        assertThat(ownerStatusCode).isEqualTo(HttpURLConnection.HTTP_OK)
-        assertThat(otherCustomerStatusCode).isEqualTo(HttpURLConnection.HTTP_NOT_FOUND)
+        assertThat(secondPickupStatusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
+        assertThat(otherCourierDeliverStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
 
-        // any courier finds it - that's how they pick one up; the pickup makes it courier1's
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER2, trackingNumber)
-        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id)
-
-        val otherCourierStatusCode = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipment.id, "deliver")
-            .extract().statusCode()
-        assertThat(otherCourierStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
-        assertThat(ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber).status)
-            .isEqualTo("In Delivery")
-
-        val delivered = ShippingApi.deliver(shippingUrl, TestUser.COURIER1, shipment.id)
+        // a delivered shipment needs nothing more from the courier, so it leaves their list
+        val delivered = ShippingApi.deliver(shippingUrl, TestUser.COURIER1, shipmentId)
         assertThat(delivered.status).isEqualTo("Delivered")
-
-        // the pickup sells the stock and the delivery fulfils the order asynchronously - wait for both, so they can't
-        // land in the middle of a later scenario that counts the same product's stock
-        await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            assertThat(InventoryApi.getProduct(inventoryUrl, productId).quantity).isEqualTo(product.quantity - quantity)
-            assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("FULFILLED")
-        }
+        assertThat(ShippingApi.getCourierActiveShipments(shippingUrl, TestUser.COURIER1, firstPage, pageSize).items.map { it.id }).doesNotContain(shipmentId)
     }
 
     @Test

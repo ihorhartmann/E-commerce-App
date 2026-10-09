@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 	model "shippingservice/domain/model"
 
+	uuid "github.com/google/uuid"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -56,6 +57,38 @@ func (mr *MockShipmentRepositoryMockRecorder) Create(ctx, shipment any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockShipmentRepository)(nil).Create), ctx, shipment)
 }
 
+// GetActiveShipmentsByCourier mocks base method.
+func (m *MockShipmentRepository) GetActiveShipmentsByCourier(ctx context.Context, courierID uuid.UUID, offset, limit int) ([]*model.Shipment, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetActiveShipmentsByCourier", ctx, courierID, offset, limit)
+	ret0, _ := ret[0].([]*model.Shipment)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetActiveShipmentsByCourier indicates an expected call of GetActiveShipmentsByCourier.
+func (mr *MockShipmentRepositoryMockRecorder) GetActiveShipmentsByCourier(ctx, courierID, offset, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveShipmentsByCourier", reflect.TypeOf((*MockShipmentRepository)(nil).GetActiveShipmentsByCourier), ctx, courierID, offset, limit)
+}
+
+// GetAvailableShipments mocks base method.
+func (m *MockShipmentRepository) GetAvailableShipments(ctx context.Context, offset, limit int) ([]*model.Shipment, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAvailableShipments", ctx, offset, limit)
+	ret0, _ := ret[0].([]*model.Shipment)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetAvailableShipments indicates an expected call of GetAvailableShipments.
+func (mr *MockShipmentRepositoryMockRecorder) GetAvailableShipments(ctx, offset, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAvailableShipments", reflect.TypeOf((*MockShipmentRepository)(nil).GetAvailableShipments), ctx, offset, limit)
+}
+
 // GetByID mocks base method.
 func (m *MockShipmentRepository) GetByID(ctx context.Context, id uint64) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
@@ -69,21 +102,6 @@ func (m *MockShipmentRepository) GetByID(ctx context.Context, id uint64) (*model
 func (mr *MockShipmentRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockShipmentRepository)(nil).GetByID), ctx, id)
-}
-
-// GetByTrackingNumber mocks base method.
-func (m *MockShipmentRepository) GetByTrackingNumber(ctx context.Context, trackingNumber string) (*model.Shipment, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByTrackingNumber", ctx, trackingNumber)
-	ret0, _ := ret[0].(*model.Shipment)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetByTrackingNumber indicates an expected call of GetByTrackingNumber.
-func (mr *MockShipmentRepositoryMockRecorder) GetByTrackingNumber(ctx, trackingNumber any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTrackingNumber", reflect.TypeOf((*MockShipmentRepository)(nil).GetByTrackingNumber), ctx, trackingNumber)
 }
 
 // Update mocks base method.

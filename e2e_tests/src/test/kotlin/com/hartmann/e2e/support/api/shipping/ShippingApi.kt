@@ -6,17 +6,26 @@ import io.restassured.response.ValidatableResponse
 import java.net.HttpURLConnection
 import java.util.UUID
 
+/** Couriers only: customers see their shipment in their order instead. */
 object ShippingApi {
-    /** A customer finds only their own shipment; a courier finds any. */
-    fun findByTrackingNumber(baseUrl: String, user: TestUser, trackingNumber: String): ValidatableResponse =
+    /** Any shipment; its street only to the courier it's assigned to. */
+    fun findShipment(baseUrl: String, user: TestUser, shipmentId: Long): ValidatableResponse =
         givenAs(user)
-            .get("$baseUrl/api/v1/shipments/tracking/$trackingNumber")
+            .get("$baseUrl/api/v1/shipments/$shipmentId")
             .then()
 
-    fun getByTrackingNumber(baseUrl: String, user: TestUser, trackingNumber: String): ShipmentResponse =
-        findByTrackingNumber(baseUrl, user, trackingNumber)
+    fun getShipment(baseUrl: String, courier: TestUser, shipmentId: Long): ShipmentResponse =
+        findShipment(baseUrl, courier, shipmentId)
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(ShipmentResponse::class.java)
+
+    /** Shipments no courier has picked up yet, oldest first, without their streets. */
+    fun getAvailableShipments(baseUrl: String, courier: TestUser, page: Int, size: Int): ShipmentListResponse =
+        getShipmentList(baseUrl, courier, "available", page, size)
+
+    /** The courier's shipments still to deliver or bring back, oldest first. */
+    fun getCourierActiveShipments(baseUrl: String, courier: TestUser, page: Int, size: Int): ShipmentListResponse =
+        getShipmentList(baseUrl, courier, "mine", page, size)
 
     /** Assigns the shipment to the courier; only they may deliver, lose or return it afterwards. */
     fun pickup(baseUrl: String, courier: TestUser, shipmentId: Long): ShipmentResponse =
@@ -45,4 +54,13 @@ object ShippingApi {
         transition(baseUrl, user, shipmentId, action)
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(ShipmentResponse::class.java)
+
+    private fun getShipmentList(baseUrl: String, courier: TestUser, list: String, page: Int, size: Int): ShipmentListResponse =
+        givenAs(courier)
+            .queryParam("page", page)
+            .queryParam("size", size)
+            .get("$baseUrl/api/v1/shipments/$list")
+            .then()
+            .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().`as`(ShipmentListResponse::class.java)
 }

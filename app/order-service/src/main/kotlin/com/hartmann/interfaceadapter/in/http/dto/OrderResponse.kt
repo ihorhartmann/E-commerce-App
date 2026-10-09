@@ -43,14 +43,14 @@ fun toOrderResponse(order: Order, clientSecret: String? = null): OrderResponse =
 )
 
 data class ShipmentResponseDto(
-    val trackingNumber: String,
+    val id: Long,
     val pickedUpAt: Instant?,
     val deliveredAt: Instant?,
     val returnedAt: Instant?,
 )
 
 private fun toShipmentResponseDto(shipment: ShipmentInfo): ShipmentResponseDto = ShipmentResponseDto(
-    trackingNumber = shipment.trackingNumber,
+    id = shipment.shipmentId,
     pickedUpAt = shipment.pickedUpAt,
     deliveredAt = shipment.deliveredAt,
     returnedAt = shipment.returnedAt,

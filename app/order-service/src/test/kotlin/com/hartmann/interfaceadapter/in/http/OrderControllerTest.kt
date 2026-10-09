@@ -146,6 +146,21 @@ class OrderControllerTest {
     }
 
     @Test
+    fun `placeOrder - returns 400 when the body lacks a required field`() {
+        mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-11")
+            content = "{}"
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("Malformed request body") }
+        }
+
+        verify(placeOrderUseCase, never()).execute(any())
+    }
+
+    @Test
     fun `placeOrder - returns 400 when the request fails validation`() {
         val invalidRequestJson = """
             {
