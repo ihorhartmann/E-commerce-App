@@ -42,7 +42,7 @@ class HttpIdempotencyServiceTest {
     }
 
     private RequestFingerprint testRequest() {
-        return new RequestFingerprint("POST", "/api/v1/refunds", "{\"amount\":\"40.00\"}".getBytes(StandardCharsets.UTF_8));
+        return new RequestFingerprint("POST", "/api/v1/payments", "{\"amount\":\"40.00\"}".getBytes(StandardCharsets.UTF_8));
     }
 
     private HttpRequestRecord testRecord(String requestHash, Instant claimedAt, Instant completedAt) {
