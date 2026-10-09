@@ -5,19 +5,17 @@ import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Money;
 import java.util.List;
 import java.util.UUID;
-import org.jspecify.annotations.Nullable;
 
 public interface RefundService {
     List<Refund> getByOrderId(long orderId);
 
     /**
-     * Creates and submits a refund, idempotently per idempotencyKey (the Kafka messageId or the HTTP
-     * Idempotency-Key): a retried request resumes the refund its key already created instead of
-     * creating another one, and a refund that was already submitted is returned as it is.
-     * correlationId is propagated to the published events; pass null when there's none to propagate
-     * (the HTTP path), and the order id is used instead.
+     * Creates and submits a refund, idempotently per idempotencyKey (the Kafka messageId): a retried
+     * request resumes the refund its key already created instead of creating another one, and a
+     * refund that was already submitted is returned as it is. correlationId is propagated to the
+     * published events.
      */
-    Refund submitRefund(UUID idempotencyKey, @Nullable String correlationId, long paymentId, Money amount);
+    Refund submitRefund(UUID idempotencyKey, String correlationId, long paymentId, Money amount);
 
     Refund updateStatusByExternalId(String externalId, RefundStatus status);
 }

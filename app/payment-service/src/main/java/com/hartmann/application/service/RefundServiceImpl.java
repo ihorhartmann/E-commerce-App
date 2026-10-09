@@ -17,7 +17,6 @@ import com.hartmann.domain.value.Money;
 import java.util.List;
 import java.util.UUID;
 
-import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,15 +54,13 @@ public class RefundServiceImpl implements RefundService {
     // call: the INITIATED row is committed first, so a retry of the same request finds it and resumes
     // it. The refund stays INITIATED until the gateway gives a definitive answer.
     @Override
-    public Refund submitRefund(UUID idempotencyKey, @Nullable String correlationId, long paymentId, Money amount) {
+    public Refund submitRefund(UUID idempotencyKey, String correlationId, long paymentId, Money amount) {
         var payment = paymentRepository.getById(paymentId);
 
         var refund = resolveRefund(paymentId, idempotencyKey, amount);
         if (refund.isSubmitted()) {
             return refund;
         }
-
-        var eventCorrelationId = correlationId != null ? correlationId : KafkaUtils.formatKafkaId(payment.orderId());
 
         // A PaymentGatewayUnavailableException is left to propagate with the refund still INITIATED:
         // the retry resumes it and resubmits with the same idempotency key, which the gateway answers
@@ -79,7 +76,7 @@ public class RefundServiceImpl implements RefundService {
                 var currentPayment = paymentRepository.getById(refund.paymentId());
                 currentPayment.releaseRefund(refund);
                 paymentRepository.updateRefundedAmount(currentPayment);
-                paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
+                paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
             });
             throw e;
         }
@@ -89,13 +86,13 @@ public class RefundServiceImpl implements RefundService {
         refund.submit(result.externalId(), result.status());
         return transactionTemplate.execute(_ -> {
             if (refund.status() == RefundStatus.SUCCEEDED) {
-                paymentKafkaProducer.publishRefundCompleted(eventCorrelationId, payment.orderId(), refund.amount());
+                paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), refund.amount());
             } else if (refund.status() == RefundStatus.FAILED) {
                 // reloaded: creating the refund already bumped the version of the payment loaded above
                 var currentPayment = paymentRepository.getById(refund.paymentId());
                 currentPayment.releaseRefund(refund);
                 paymentRepository.updateRefundedAmount(currentPayment);
-                paymentKafkaProducer.publishRefundFailed(eventCorrelationId, payment.orderId());
+                paymentKafkaProducer.publishRefundFailed(correlationId, payment.orderId());
             }
             // stored last, so the refund as the database now holds it is what's returned
             return refundRepository.markPending(refund.id(), refund.version(), refund.externalId(), refund.status());

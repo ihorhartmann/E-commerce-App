@@ -43,8 +43,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, PAYMENTS_PATH).hasRole(PAYMENT_SUBMIT_ROLE)
                         .requestMatchers(HttpMethod.GET, PAYMENTS_PATH + "/**").hasRole(ADMIN_ROLE)
                         .requestMatchers(HttpMethod.GET, REFUNDS_PATH + "/**").hasRole(ADMIN_ROLE)
-                        // nothing calls it - refunds are requested over Kafka; admin-only until it is removed
-                        .requestMatchers(HttpMethod.POST, REFUNDS_PATH).hasRole(ADMIN_ROLE)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
