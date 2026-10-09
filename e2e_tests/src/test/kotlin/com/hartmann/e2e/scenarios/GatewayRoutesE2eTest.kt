@@ -31,6 +31,22 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
     }
 
     @Test
+    fun `products - the catalog list is public through the gateway`() {
+        val products = InventoryApi.getProducts(gatewayUrl, 0, 1)
+
+        assertThat(products.items.map { it.name }).containsExactly("Laptop")
+    }
+
+    @Test
+    fun `orders - the customer's own orders listed through the gateway`() {
+        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, BigDecimal("79.99"), customer = TestUser.CLIENT1)
+
+        val orders = OrderApi.findCustomerOrders(gatewayUrl, TestUser.CLIENT1, 0, 1)
+
+        assertThat(orders.items.map { it.id }).containsExactly(placedOrder.id)
+    }
+
+    @Test
     fun `orders - placed and read through the gateway`() {
         // a Bearer request needs no CSRF token - only one riding on the browser's session cookie does
         val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, BigDecimal("79.99"), customer = TestUser.CLIENT1)

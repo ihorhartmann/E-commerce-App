@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -54,6 +55,11 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(DomainException::class, IllegalArgumentException::class)
     fun invalid(exception: Exception) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")
+
+    // e.g. a page or an order id that isn't a number
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun invalidParameter(exception: MethodArgumentTypeMismatchException) =
+        error(HttpStatus.BAD_REQUEST, "Invalid value for ${exception.name}")
 
     @ExceptionHandler(IllegalStateException::class)
     fun conflict(exception: IllegalStateException) =

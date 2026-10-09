@@ -62,3 +62,19 @@ data class OrderItemDto(val id: Long, val productId: Long, val quantity: Int, va
 data class MoneyDto(val amount: BigDecimal, val currency: String)
 
 data class AddressDto(val city: String, val postalCode: String, val line1: String, val line2: String)
+
+data class ListOrdersResponse(
+    val items: List<OrderSummaryDto>,
+    val page: Int,
+    val size: Int,
+    val totalElements: Long,
+    val totalPages: Long,
+)
+
+data class OrderSummaryDto(
+    val id: Long,
+    val status: String,
+    val totalPrice: MoneyDto,
+    val itemCount: Int,
+    val createdAt: LocalDateTime,
+)

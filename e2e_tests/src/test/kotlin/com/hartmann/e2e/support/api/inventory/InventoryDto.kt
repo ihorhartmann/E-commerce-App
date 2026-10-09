@@ -20,3 +20,19 @@ data class ProductResponse(
     val reserved: Int,
     val available: Int,
 )
+
+data class ListProductsResponse(
+    val items: List<CatalogProductResponse>,
+    val page: Int,
+    val size: Int,
+    val totalElements: Long,
+    val totalPages: Long,
+)
+
+data class CatalogProductResponse(
+    val id: Long,
+    val name: String,
+    val description: String,
+    val price: InventoryMoneyDto,
+    val available: Int,
+)
