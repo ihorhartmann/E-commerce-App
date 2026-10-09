@@ -31,7 +31,7 @@ class PostgresOrderRepository(private val jpaRepository: OrderJpaRepository) : O
 
     override fun findCustomerOrders(customerId: UUID, page: Int, size: Int): OrderPage {
         val pageRequest = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))
-        val entities = jpaRepository.findCustomerOrders(customerId, pageRequest)
+        val entities = jpaRepository.findByCustomerId(customerId, pageRequest)
         return OrderPage(entities.content.map(::fromOrderEntity), entities.totalElements)
     }
 }

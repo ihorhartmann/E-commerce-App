@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface OrderJpaRepository : JpaRepository<OrderEntity, Long> {
-    fun findCustomerOrders(customerId: UUID, pageable: Pageable): Page<OrderEntity>
+    fun findByCustomerId(customerId: UUID, pageable: Pageable): Page<OrderEntity>
 }
