@@ -9,7 +9,7 @@ CREATE TABLE orders.orders (
     payment_confirmed_at      TIMESTAMPTZ,
     cancellation_reason       VARCHAR(30),
     awaiting_return           BOOLEAN NOT NULL,
-    shipment_tracking_number  VARCHAR(255),
+    shipment_id               BIGINT,
     shipment_picked_up_at     TIMESTAMPTZ,
     shipment_delivered_at     TIMESTAMPTZ,
     shipment_returned_at      TIMESTAMPTZ,

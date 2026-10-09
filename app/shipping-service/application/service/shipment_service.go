@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
+	"math"
 
 	commonkafka "shippingservice/application/port/common/kafka"
 	portin "shippingservice/application/port/in"
+	"shippingservice/application/port/in/dto"
 	"shippingservice/application/port/out/idempotency"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	portoutkafka "shippingservice/application/port/out/kafka"
@@ -17,6 +19,9 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// maxPageSize is the most shipments a list returns at once.
+const maxPageSize = 100
 
 type ShipmentServiceImpl struct {
 	portin.ShipmentService
@@ -40,40 +45,52 @@ func NewShipmentServiceImpl(
 	}
 }
 
-func (s *ShipmentServiceImpl) GetByTrackingNumber(ctx context.Context, trackingNumber string) (*model.Shipment, error) {
-	if strings.TrimSpace(trackingNumber) == "" {
-		return nil, ErrInvalidTrackingNumber
-	}
-
-	return s.shipmentRepository.GetByTrackingNumber(ctx, trackingNumber)
+func (s *ShipmentServiceImpl) GetByID(ctx context.Context, id uint64) (*model.Shipment, error) {
+	return s.shipmentRepository.GetByID(ctx, id)
 }
 
-func (s *ShipmentServiceImpl) GetCustomerShipmentByTrackingNumber(
-	ctx context.Context,
-	trackingNumber string,
-	customerID uuid.UUID,
-) (*model.Shipment, error) {
-	shipment, err := s.GetByTrackingNumber(ctx, trackingNumber)
+func (s *ShipmentServiceImpl) GetAvailableShipments(ctx context.Context, page, size int) (*dto.ShipmentPageDTO, error) {
+	if err := validatePage(page, size); err != nil {
+		return nil, err
+	}
+
+	shipments, totalElements, err := s.shipmentRepository.GetAvailableShipments(ctx, page*size, size)
 	if err != nil {
 		return nil, err
 	}
 
-	// "not found" rather than "forbidden": another customer's shipment must not even be confirmed to exist
-	if !shipment.IsOwnedBy(customerID) {
-		return nil, repository.ErrShipmentNotFound
-	}
-
-	return shipment, nil
+	return &dto.ShipmentPageDTO{Shipments: shipments, TotalElements: totalElements}, nil
 }
 
-func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, customerID uuid.UUID, address value.Address) (*model.Shipment, error) {
+func (s *ShipmentServiceImpl) GetCourierActiveShipments(ctx context.Context, courierID uuid.UUID, page, size int) (*dto.ShipmentPageDTO, error) {
+	if err := validatePage(page, size); err != nil {
+		return nil, err
+	}
+
+	shipments, totalElements, err := s.shipmentRepository.GetActiveShipmentsByCourier(ctx, courierID, page*size, size)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.ShipmentPageDTO{Shipments: shipments, TotalElements: totalElements}, nil
+}
+
+func validatePage(page, size int) error {
+	if page < 0 || size < 1 || size > maxPageSize || page > math.MaxInt32 {
+		return fmt.Errorf("%w: page must not be negative and size must be between 1 and %d", ErrInvalidPage, maxPageSize)
+	}
+
+	return nil
+}
+
+func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64, address value.Address) (*model.Shipment, error) {
 	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
 		alreadyProcessed, err := s.processedMessageStore.MarkProcessed(ctx, msg)
 		if alreadyProcessed || err != nil {
 			return nil, err
 		}
 
-		shipment, err := model.NewShipment(orderID, customerID, address)
+		shipment, err := model.NewShipment(orderID, address)
 		if err != nil {
 			return nil, err
 		}
@@ -91,8 +108,16 @@ func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotenc
 	})
 }
 
+// StartDelivery assigns the shipment to the courier. When two couriers pick the same shipment up at once, only one
+// of them gets it: the other's update fails the version check, and since a retry could only find the shipment taken,
+// it's reported as such right away rather than as a transient conflict.
 func (s *ShipmentServiceImpl) StartDelivery(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error { return shipment.StartDelivery(courierID) })
+	shipment, err := s.applyTransition(ctx, id, func(shipment *model.Shipment) error { return shipment.StartDelivery(courierID) })
+	if errors.Is(err, repository.ErrConcurrentUpdate) {
+		return nil, fmt.Errorf("%w: shipment %d", ErrAlreadyPickedUp, id)
+	}
+
+	return shipment, err
 }
 
 func (s *ShipmentServiceImpl) Deliver(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {

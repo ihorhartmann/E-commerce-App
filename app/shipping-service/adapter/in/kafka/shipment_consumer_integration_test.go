@@ -200,11 +200,9 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		correlationID := uuid.New().String()
 		orderID := uint64(42)
-		customerID := uuid.New()
 		command := dto.CreateShipmentCommand{
-			OrderID:    orderID,
-			CustomerID: customerID,
-			Address:    dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
 		}
 		sendMessage(t, producer, commonkafka.CreateShipmentCommand, correlationID, "42", command)
 
@@ -216,8 +214,8 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		done := make(chan struct{})
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), gomock.Any(), orderID, customerID, wantAddress).
-			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, uuid.UUID, value.Address) (*model.Shipment, error) {
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, value.Address) (*model.Shipment, error) {
 				close(done)
 				return nil, nil
 			}).
@@ -251,11 +249,9 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		correlationID := uuid.New().String()
 		orderID := uint64(7)
-		customerID := uuid.New()
 		command := dto.CreateShipmentCommand{
-			OrderID:    orderID,
-			CustomerID: customerID,
-			Address:    dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
 		}
 		sendMessage(t, producer, commonkafka.CreateShipmentCommand, correlationID, "7", command)
 
@@ -267,8 +263,8 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		done := make(chan struct{})
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), gomock.Any(), orderID, customerID, wantAddress).
-			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, uuid.UUID, value.Address) (*model.Shipment, error) {
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
+			DoAndReturn(func(context.Context, idempotencydto.KafkaMessageMetadata, uint64, value.Address) (*model.Shipment, error) {
 				close(done)
 				return nil, nil
 			}).
@@ -302,11 +298,9 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		key := "8"
 		orderID := uint64(8)
-		customerID := uuid.New()
 		command := dto.CreateShipmentCommand{
-			OrderID:    orderID,
-			CustomerID: customerID,
-			Address:    dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Kyiv", PostalCode: "01001", Line1: "Khreshchatyk 1"},
 		}
 		sendMessage(t, producer, commonkafka.CreateShipmentCommand, uuid.New().String(), key, command)
 
@@ -317,7 +311,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), gomock.Any(), orderID, customerID, wantAddress).
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
 			Return(nil, fmt.Errorf("create shipment: %w", domain.ErrInvalidInput)).
 			Times(1)
 
@@ -342,11 +336,9 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		key := "9"
 		orderID := uint64(9)
-		customerID := uuid.New()
 		command := dto.CreateShipmentCommand{
-			OrderID:    orderID,
-			CustomerID: customerID,
-			Address:    dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
+			OrderID: orderID,
+			Address: dto.AddressDTO{City: "Lviv", PostalCode: "79000", Line1: "Rynok 1"},
 		}
 		sendMessage(t, producer, commonkafka.CreateShipmentCommand, uuid.New().String(), key, command)
 
@@ -357,7 +349,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), gomock.Any(), orderID, customerID, wantAddress).
+			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
 			Return(nil, errors.New("database unavailable")).
 			Times(maxAttempts)
 

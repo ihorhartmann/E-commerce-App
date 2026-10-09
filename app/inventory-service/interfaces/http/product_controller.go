@@ -9,6 +9,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// defaultPageSize is the page size of a list request that doesn't ask for one.
+const defaultPageSize = 20
+
 type ProductController struct {
 	productService in.ProductService
 }

@@ -177,15 +177,15 @@ class OrderKafkaConsumerTest {
         val correlationId = "corr-8"
         val messageType = KafkaConst.SHIPMENT_CREATED_EVENT
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val trackingNumber = "TRACK-1"
-        every { saga.onShipmentCreated(message, orderId, trackingNumber) } returns Unit
+        val shipmentId = 5L
+        every { saga.onShipmentCreated(message, orderId, shipmentId) } returns Unit
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"$trackingNumber\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":$shipmentId}",
         )
 
-        verify(exactly = 1) { saga.onShipmentCreated(message, orderId, trackingNumber) }
+        verify(exactly = 1) { saga.onShipmentCreated(message, orderId, shipmentId) }
         confirmVerified(saga)
     }
 
@@ -200,7 +200,7 @@ class OrderKafkaConsumerTest {
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"TRACK-1\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":5}",
         )
 
         verify(exactly = 1) { saga.onShipmentInDelivery(message, orderId) }
@@ -218,7 +218,7 @@ class OrderKafkaConsumerTest {
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"TRACK-1\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":5}",
         )
 
         verify(exactly = 1) { saga.onShipmentDelivered(message, orderId) }
@@ -236,7 +236,7 @@ class OrderKafkaConsumerTest {
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"TRACK-1\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":5}",
         )
 
         verify(exactly = 1) { saga.onShipmentCancelled(message, orderId) }
@@ -254,7 +254,7 @@ class OrderKafkaConsumerTest {
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"TRACK-1\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":5}",
         )
 
         verify(exactly = 1) { saga.onShipmentLost(message, orderId) }
@@ -272,7 +272,7 @@ class OrderKafkaConsumerTest {
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"trackingNumber\":\"TRACK-1\"}",
+            "{\"orderId\":$orderId,\"shipmentId\":5}",
         )
 
         verify(exactly = 1) { saga.onShipmentReturnedToInventory(message, orderId) }

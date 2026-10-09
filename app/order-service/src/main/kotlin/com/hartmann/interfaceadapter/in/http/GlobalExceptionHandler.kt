@@ -12,6 +12,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
@@ -55,6 +56,11 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(DomainException::class, IllegalArgumentException::class)
     fun invalid(exception: Exception) = error(HttpStatus.BAD_REQUEST, exception.message ?: "Invalid request")
+
+    // a body that isn't JSON, or lacks a required field (e.g. `{}`) - Jackson can't build the request DTO at all
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun unreadableBody(exception: HttpMessageNotReadableException) =
+        error(HttpStatus.BAD_REQUEST, "Malformed request body")
 
     // e.g. a page or an order id that isn't a number
     @ExceptionHandler(MethodArgumentTypeMismatchException::class)

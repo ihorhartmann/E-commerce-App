@@ -33,6 +33,10 @@ Examples:
 * `Product`
 * `Order`
 
+A private type that holds part of one entity's state (e.g. `shipmentState` of `Shipment`) lives here, next to that
+entity, not in `domain/value` - that one holds standalone, reusable value objects such as `Address`. Such a type is
+part of the entity, not a value object, so it changes in place like the entity itself.
+
 ##### domain/value
 
 Value objects used by domain models.

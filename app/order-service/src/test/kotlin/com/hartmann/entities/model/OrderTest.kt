@@ -44,7 +44,7 @@ private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 
 
 private fun processingOrder(id: Long = 0) = placedOrder(id = id).apply { confirmPayment() }
 
-private fun orderWithShipment(trackingNumber: String = "TRACK-1") = processingOrder().apply { createShipment(trackingNumber) }
+private fun orderWithShipment(shipmentId: Long = 5L) = processingOrder().apply { createShipment(shipmentId) }
 
 private fun orderInDelivery() = orderWithShipment().apply { startDelivery() }
 
@@ -244,16 +244,16 @@ class OrderTest {
 
     @Test
     fun `createShipment - attaches shipment info to a processing order`() {
-        val trackingNumber = "TRACK-1"
-        val order = orderWithShipment(trackingNumber)
+        val shipmentId = 5L
+        val order = orderWithShipment(shipmentId)
 
-        assertEquals(trackingNumber, order.shipment?.trackingNumber)
+        assertEquals(shipmentId, order.shipment?.shipmentId)
         assertNull(order.shipment?.pickedUpAt)
     }
 
     @Test
     fun `createShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().apply { createShipment("TRACK-1") } }
+        assertThrows<DomainException> { placedOrder().apply { createShipment(5L) } }
     }
 
     @Test

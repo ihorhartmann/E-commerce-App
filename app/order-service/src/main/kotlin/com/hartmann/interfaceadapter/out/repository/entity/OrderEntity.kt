@@ -55,7 +55,7 @@ class OrderEntity(
 
     var awaitingReturn: Boolean = false,
 
-    var shipmentTrackingNumber: String? = null,
+    var shipmentId: Long? = null,
     var shipmentPickedUpAt: Instant? = null,
     var shipmentDeliveredAt: Instant? = null,
     var shipmentReturnedAt: Instant? = null,
@@ -87,7 +87,7 @@ fun toOrderEntity(order: Order): OrderEntity {
         paymentConfirmedAt = order.paymentConfirmedAt,
         cancellationReason = order.cancellationReason,
         awaitingReturn = order.awaitingReturn,
-        shipmentTrackingNumber = order.shipment?.trackingNumber,
+        shipmentId = order.shipment?.shipmentId,
         shipmentPickedUpAt = order.shipment?.pickedUpAt,
         shipmentDeliveredAt = order.shipment?.deliveredAt,
         shipmentReturnedAt = order.shipment?.returnedAt,
@@ -105,9 +105,9 @@ fun toOrderEntity(order: Order): OrderEntity {
 }
 
 fun fromOrderEntity(entity: OrderEntity): Order {
-    val shipment = entity.shipmentTrackingNumber?.let {
+    val shipment = entity.shipmentId?.let {
         ShipmentInfo(
-            trackingNumber = it,
+            shipmentId = it,
             pickedUpAt = entity.shipmentPickedUpAt,
             deliveredAt = entity.shipmentDeliveredAt,
             returnedAt = entity.shipmentReturnedAt,

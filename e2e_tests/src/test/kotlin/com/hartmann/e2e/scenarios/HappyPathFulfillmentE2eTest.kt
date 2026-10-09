@@ -21,10 +21,10 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
         val paymentUrl = DockerComposeStack.paymentServiceUrl
         val shippingUrl = DockerComposeStack.shippingServiceUrl
 
-        val productId = 3L // seeded "Mouse", 40 available
         val quantity = 2
         val unitPrice = BigDecimal("79.99")
-        val product = InventoryApi.getProduct(inventoryUrl, productId)
+        val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, unitPrice)
+        val productId = product.id
 
         val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
         // the order belongs to whoever placed it - taken from the token, not from the request
@@ -36,8 +36,7 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
             assertThat(productAfterConfirmation.available).isEqualTo(product.available - quantity)
         }
 
-        val trackingNumber = requireNotNull(processingOrder.shipment).trackingNumber
-        val shipment = ShippingApi.getByTrackingNumber(shippingUrl, TestUser.COURIER1, trackingNumber)
+        val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
         assertThat(shipment.status).isEqualTo("Created")
 
         ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery: FulfillReservationCommand sells the stock

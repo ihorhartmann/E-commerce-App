@@ -44,7 +44,7 @@ data class OrderResponse(
 )
 
 data class ShipmentInfoDto(
-    val trackingNumber: String,
+    val id: Long,
     val pickedUpAt: LocalDateTime?,
     val deliveredAt: LocalDateTime?,
     val returnedAt: LocalDateTime?,
