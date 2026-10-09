@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
@@ -13,6 +14,7 @@ import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import org.assertj.core.api.Assertions.assertThat
+import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.net.HttpURLConnection
@@ -63,11 +65,16 @@ class AccessControlE2eTest : E2eScenarioTest() {
     @Test
     fun `shipment - seen by its customer and couriers only, moved on by the assigned courier only`() {
         val shippingUrl = DockerComposeStack.shippingServiceUrl
+        val orderUrl = DockerComposeStack.orderServiceUrl
+        val inventoryUrl = DockerComposeStack.inventoryServiceUrl
+        val productId = 3L
+        val quantity = 1
+        val product = InventoryApi.getProduct(inventoryUrl, productId)
         val order = E2eSharedSteps.placeOrderUntilShipmentCreated(
-            DockerComposeStack.orderServiceUrl,
+            orderUrl,
             DockerComposeStack.paymentServiceUrl,
-            3L,
-            1,
+            productId,
+            quantity,
             BigDecimal("79.99"),
             customer = TestUser.CLIENT1,
         )
@@ -92,6 +99,13 @@ class AccessControlE2eTest : E2eScenarioTest() {
 
         val delivered = ShippingApi.deliver(shippingUrl, TestUser.COURIER1, shipment.id)
         assertThat(delivered.status).isEqualTo("Delivered")
+
+        // the pickup sells the stock and the delivery fulfils the order asynchronously - wait for both, so they can't
+        // land in the middle of a later scenario that counts the same product's stock
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            assertThat(InventoryApi.getProduct(inventoryUrl, productId).quantity).isEqualTo(product.quantity - quantity)
+            assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("FULFILLED")
+        }
     }
 
     @Test
