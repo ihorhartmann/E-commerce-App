@@ -1,36 +1,30 @@
 package com.hartmann.interfaceadapter.`in`.http
 
 import com.hartmann.entities.exception.DomainException
-import com.hartmann.frameworks.config.SecurityConfig
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
 import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
+import com.hartmann.entities.value.RequestedItem
+import com.hartmann.frameworks.config.SecurityConfig
+import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
+import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
 import com.hartmann.usecase.port.`in`.usecase.FindCustomerOrdersUseCase
+import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailableException
-import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
 import com.hartmann.usecase.port.out.repository.dto.OrderPage
+import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
-import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
-import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import org.mockito.kotlin.any
-import org.mockito.kotlin.argumentCaptor
-import org.mockito.kotlin.eq
-import org.mockito.kotlin.never
-import org.mockito.kotlin.times
-import org.mockito.kotlin.verify
-import org.mockito.kotlin.whenever
+import org.mockito.kotlin.*
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
@@ -45,7 +39,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import java.math.BigDecimal
 import java.time.Instant
-import java.util.UUID
+import java.util.*
 
 @WebMvcTest(OrderController::class, properties = ["oidc.roles-claim=realm_access.roles"])
 @Import(SecurityConfig::class)
@@ -86,7 +80,7 @@ class OrderControllerTest {
 
     private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-    private fun testItem() = OrderItem.createExisting(1, 1, 1, 2, Money(BigDecimal("10.00"), Currency.USD))
+    private fun testItem() = OrderItem.createExisting(1, 1, 1, 2, Money(BigDecimal("10.00"), Currency.EUR))
 
     private fun testOrder(id: Long = 1, customerId: UUID = UUID.randomUUID()) = Order.createExisting(
         id = id,
@@ -99,7 +93,7 @@ class OrderControllerTest {
 
     private val validPlaceOrderRequestJson: String = """
         {
-          "items": [{"productId": 1, "quantity": 2, "price": {"amount": 10.00, "currency": "USD"}}],
+          "items": [{"productId": 1, "quantity": 2}],
           "address": {"city": "Kyiv", "postalCode": "01001", "line1": "Khreshchatyk 1"}
         }
     """.trimIndent()
@@ -108,7 +102,7 @@ class OrderControllerTest {
     fun `placeOrder - returns 201 with the created order`() {
         val clientSecret = "secret_123"
         val order = testOrder()
-        whenever(placeOrderUseCase.execute(any())).thenReturn(CheckoutResult(order, clientSecret))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenReturn(CheckoutResult(order, clientSecret))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -121,14 +115,15 @@ class OrderControllerTest {
             jsonPath("$.clientSecret") { value(clientSecret) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
-    fun `placeOrder - places the order for the customer from the token`() {
+    fun `placeOrder - places the order for the customer from the token, with the requested items and the address from the body`() {
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
-        val captor = argumentCaptor<Order>()
-        whenever(placeOrderUseCase.execute(captor.capture()))
+        val requestedItems = listOf(RequestedItem(productId = 1, quantity = 2))
+        val address = testAddress()
+        whenever(placeOrderUseCase.execute(customerId, requestedItems, address))
             .thenReturn(CheckoutResult(testOrder(customerId = customerId), "secret_123"))
 
         mockMvc.post("/api/v1/orders") {
@@ -141,8 +136,7 @@ class OrderControllerTest {
             jsonPath("$.customerId") { value(customerId.toString()) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
-        assertEquals(customerId, captor.firstValue.customerId)
+        verify(placeOrderUseCase, times(1)).execute(customerId, requestedItems, address)
     }
 
     @Test
@@ -157,7 +151,7 @@ class OrderControllerTest {
             jsonPath("$.error") { value("Malformed request body") }
         }
 
-        verify(placeOrderUseCase, never()).execute(any())
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
     }
 
     @Test
@@ -181,13 +175,13 @@ class OrderControllerTest {
             jsonPath("$.details['address.city']") { exists() }
         }
 
-        verify(placeOrderUseCase, never()).execute(any())
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 409 when reservation reports insufficient stock`() {
         val message = "no stock"
-        whenever(placeOrderUseCase.execute(any())).thenThrow(InsufficientStockException(message))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(InsufficientStockException(message))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -199,13 +193,13 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 503 when the inventory service is unavailable`() {
         val message = "inventory down"
-        whenever(placeOrderUseCase.execute(any())).thenThrow(InventoryUnavailableException(message))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(InventoryUnavailableException(message))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -217,13 +211,13 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 503 when the payment service is unavailable`() {
         val message = "payment service down"
-        whenever(placeOrderUseCase.execute(any())).thenThrow(PaymentServiceUnavailableException(message))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(PaymentServiceUnavailableException(message))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -235,13 +229,13 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 503 when the order was changed concurrently`() {
         val message = "order changed concurrently"
-        whenever(placeOrderUseCase.execute(any())).thenThrow(ConcurrentUpdateException(message, RuntimeException()))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(ConcurrentUpdateException(message, RuntimeException()))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -253,13 +247,13 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 400 when a domain rule is violated`() {
         val message = "invalid order"
-        whenever(placeOrderUseCase.execute(any())).thenAnswer { throw DomainException(message) }
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenAnswer { throw DomainException(message) }
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -271,13 +265,13 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 409 when the order is in an unexpected state`() {
         val message = "cannot place order"
-        whenever(placeOrderUseCase.execute(any())).thenThrow(IllegalStateException(message))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(IllegalStateException(message))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -289,12 +283,12 @@ class OrderControllerTest {
             jsonPath("$.error") { value(message) }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - returns 500 when an unexpected error occurs`() {
-        whenever(placeOrderUseCase.execute(any())).thenThrow(RuntimeException("unexpected error"))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenThrow(RuntimeException("unexpected error"))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -306,7 +300,7 @@ class OrderControllerTest {
             jsonPath("$.error") { value("Internal server error") }
         }
 
-        verify(placeOrderUseCase, times(1)).execute(any())
+        verify(placeOrderUseCase, times(1)).execute(any(), any(), any())
     }
 
     @Test
@@ -354,14 +348,14 @@ class OrderControllerTest {
             status { isBadRequest() }
         }
 
-        verify(placeOrderUseCase, never()).execute(any())
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
     }
 
     @Test
     fun `placeOrder - records the response against the Idempotency-Key on success`() {
         val clientSecret = "secret_123"
         val order = testOrder()
-        whenever(placeOrderUseCase.execute(any())).thenReturn(CheckoutResult(order, clientSecret))
+        whenever(placeOrderUseCase.execute(any(), any(), any())).thenReturn(CheckoutResult(order, clientSecret))
 
         mockMvc.post("/api/v1/orders") {
             with(clientJwt())
@@ -386,7 +380,7 @@ class OrderControllerTest {
         }
 
         verify(httpIdempotencyService, never()).claim(any(), any(), any())
-        verify(placeOrderUseCase, never()).execute(any())
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
     }
 
     @Test
@@ -401,7 +395,7 @@ class OrderControllerTest {
         }
 
         verify(httpIdempotencyService, never()).claim(any(), any(), any())
-        verify(placeOrderUseCase, never()).execute(any())
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
     }
 
     @Test
@@ -446,7 +440,7 @@ class OrderControllerTest {
             jsonPath("$.items[0].id") { value(orderId) }
             jsonPath("$.items[0].status") { value(order.status.name) }
             jsonPath("$.items[0].totalPrice.amount") { value(20.0) }
-            jsonPath("$.items[0].totalPrice.currency") { value("USD") }
+            jsonPath("$.items[0].totalPrice.currency") { value("EUR") }
             jsonPath("$.items[0].itemCount") { value(order.items.size) }
             jsonPath("$.items[0].createdAt") { exists() }
         }

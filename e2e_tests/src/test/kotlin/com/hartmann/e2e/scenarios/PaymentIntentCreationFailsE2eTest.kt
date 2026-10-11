@@ -6,7 +6,6 @@ import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.inventory.CreateProductRequest
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.inventory.InventoryMoneyDto
-import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderItemRequest
 import com.hartmann.e2e.support.api.order.PlaceOrderRequest
@@ -23,8 +22,8 @@ class PaymentIntentCreationFailsE2eTest : E2eScenarioTest() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
 
-        // Stripe synchronously rejects PaymentIntent creation for amounts below its USD minimum
-        // charge ($0.50) - a real, deterministic trigger for submitPayment's synchronous failure
+        // Stripe synchronously rejects PaymentIntent creation for amounts below its EUR minimum
+        // charge (0.50 EUR) - a real, deterministic trigger for submitPayment's synchronous failure
         // path that needs no container/network manipulation.
         val belowStripeMinimum = BigDecimal("0.10")
         val product = InventoryApi.createProduct(
@@ -32,7 +31,7 @@ class PaymentIntentCreationFailsE2eTest : E2eScenarioTest() {
             CreateProductRequest(
                 name = "E2E cheap item",
                 description = "priced below Stripe's minimum charge on purpose",
-                price = InventoryMoneyDto(belowStripeMinimum, "USD"),
+                price = InventoryMoneyDto(belowStripeMinimum, "EUR"),
                 quantity = 5,
             ),
         )
@@ -41,7 +40,7 @@ class PaymentIntentCreationFailsE2eTest : E2eScenarioTest() {
             orderUrl,
             TestUser.CLIENT1,
             PlaceOrderRequest(
-                items = listOf(OrderItemRequest(product.id, 1, MoneyRequest(belowStripeMinimum, "USD"))),
+                items = listOf(OrderItemRequest(product.id, 1)),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),
         ).extract().statusCode()

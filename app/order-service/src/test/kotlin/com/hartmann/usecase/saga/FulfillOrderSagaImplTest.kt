@@ -32,7 +32,7 @@ private fun testItem() = OrderItem.createExisting(
     orderId = 1,
     productId = 1,
     quantity = 2,
-    price = Money(BigDecimal("10.00"), Currency.USD),
+    price = Money(BigDecimal("10.00"), Currency.EUR),
 )
 
 private fun placedOrder() =
@@ -210,7 +210,7 @@ class FulfillOrderSagaImplTest {
         assertEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 0) { orderKafkaProducer.publishCancelReservation(any(), any()) }
         verify(exactly = 1) {
-            orderKafkaProducer.publishRefundRequested(correlationId, orderId, BigDecimal("20.00"), Currency.USD.name)
+            orderKafkaProducer.publishRefundRequested(correlationId, orderId, BigDecimal("20.00"), Currency.EUR.name)
         }
     }
 
@@ -278,7 +278,7 @@ class FulfillOrderSagaImplTest {
 
         val message = KafkaMessageMetadata(UUID.randomUUID(), "corr-1", "RefundCompleted")
 
-        saga.onRefundCompleted(message, 1, Money(amount, Currency.USD))
+        saga.onRefundCompleted(message, 1, Money(amount, Currency.EUR))
 
         assertEquals(amount, savedOrder?.refund?.amount?.amount)
         assertEquals(true, savedOrder?.refund?.isConfirmed)

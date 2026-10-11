@@ -5,7 +5,6 @@ import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.inventory.InventoryMoneyDto
 import com.hartmann.e2e.support.api.inventory.ProductResponse
 import com.hartmann.e2e.support.api.order.AddressRequest
-import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderItemRequest
 import com.hartmann.e2e.support.api.order.OrderResponse
@@ -30,22 +29,20 @@ object E2eSharedSteps {
     fun createScenarioProduct(inventoryBaseUrl: String, unitPrice: BigDecimal, quantity: Int = 10): ProductResponse =
         InventoryApi.createProduct(
             inventoryBaseUrl,
-            CreateProductRequest("E2E scenario item", "ordered by one scenario only", InventoryMoneyDto(unitPrice, "USD"), quantity),
+            CreateProductRequest("E2E scenario item", "ordered by one scenario only", InventoryMoneyDto(unitPrice, "EUR"), quantity),
         )
 
     fun placeOrder(
         orderBaseUrl: String,
         productId: Long,
         quantity: Int,
-        unitPrice: BigDecimal,
-        currency: String = "USD",
         customer: TestUser = TestUser.CLIENT1,
     ): OrderResponse =
         OrderApi.placeOrderExpectingSuccess(
             orderBaseUrl,
             customer,
             PlaceOrderRequest(
-                items = listOf(OrderItemRequest(productId, quantity, MoneyRequest(unitPrice, currency))),
+                items = listOf(OrderItemRequest(productId, quantity)),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),
         )
@@ -55,10 +52,9 @@ object E2eSharedSteps {
         paymentBaseUrl: String,
         productId: Long,
         quantity: Int,
-        unitPrice: BigDecimal,
         customer: TestUser = TestUser.CLIENT1,
     ): OrderResponse {
-        val placedOrder = placeOrder(orderBaseUrl, productId, quantity, unitPrice, customer = customer)
+        val placedOrder = placeOrder(orderBaseUrl, productId, quantity, customer = customer)
         // Stripe amounts are minor units (cents) - confirms the exact amount it received matches
         // what we sent, not just that it deserialized back into the same value in our own DB.
         val expectedCents = placedOrder.totalPrice.amount.movePointRight(2).toInt()

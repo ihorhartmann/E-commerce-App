@@ -10,7 +10,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 
-private fun testAmount() = Money(BigDecimal("10.00"), Currency.USD)
+private fun testAmount() = Money(BigDecimal("10.00"), Currency.EUR)
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class RefundInfoTest {

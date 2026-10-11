@@ -1,15 +1,14 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.entities.model.OrderItem
+import com.hartmann.entities.value.Currency
+import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.retry.Retry
-import io.mockk.Runs
-import io.mockk.andThenJust
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,6 +18,7 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.ResourceAccessException
+import java.math.BigDecimal
 import java.net.ConnectException
 import java.net.http.HttpTimeoutException
 import java.time.Duration
@@ -38,22 +38,24 @@ class Resilience4jInventoryClientTest {
     )
 
     @Test
-    fun `reserve - delegates once when the call succeeds`() {
+    fun `reserve - delegates once and returns the prices when the call succeeds`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
-        every { delegate.reserve(orderId, items) } just Runs
+        val items = emptyList<RequestedItem>()
+        val expected = mapOf(5L to Money(BigDecimal("10.00"), Currency.EUR))
+        every { delegate.reserve(orderId, items) } returns expected
 
-        client.reserve(orderId, items)
+        val actual = client.reserve(orderId, items)
 
+        assertEquals(expected, actual)
         verify(exactly = 1) { delegate.reserve(orderId, items) }
     }
 
     @Test
     fun `reserve - retries a connect failure and succeeds on the next attempt`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws
-            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThenJust Runs
+            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen emptyMap()
 
         client.reserve(orderId, items)
 
@@ -63,7 +65,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - throws InventoryUnavailableException once every attempt fails to connect`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws
             ResourceAccessException("I/O error", ConnectException("Connection refused"))
 
@@ -75,7 +77,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - does not retry a read timeout and throws InventoryUnavailableException`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws
             ResourceAccessException("I/O error", HttpTimeoutException("request timed out"))
 
@@ -87,7 +89,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - does not retry a server error and rethrows it`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws
             HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
 
@@ -99,7 +101,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - does not retry insufficient stock and rethrows it`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws InsufficientStockException("no stock")
 
         assertThrows<InsufficientStockException> { client.reserve(orderId, items) }
@@ -110,7 +112,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - throws InventoryUnavailableException without calling the delegate while the circuit breaker is open`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         circuitBreaker.transitionToOpenState()
 
         assertThrows<InventoryUnavailableException> { client.reserve(orderId, items) }
@@ -121,7 +123,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - opens the circuit breaker once enough calls fail with a server error`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         val failedCalls = 10
         every { delegate.reserve(orderId, items) } throws
             HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -136,7 +138,7 @@ class Resilience4jInventoryClientTest {
     @Test
     fun `reserve - keeps the circuit breaker closed when calls are rejected for insufficient stock`() {
         val orderId = 1L
-        val items = emptyList<OrderItem>()
+        val items = emptyList<RequestedItem>()
         val rejectedCalls = 10
         every { delegate.reserve(orderId, items) } throws InsufficientStockException("no stock")
 

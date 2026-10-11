@@ -31,15 +31,15 @@ object ProductSeeder {
 
         InventoryApi.createProduct(
             inventoryUrl,
-            CreateProductRequest("Laptop", "Portable workstation", InventoryMoneyDto(BigDecimal("1299.99"), "USD"), 10),
+            CreateProductRequest("Laptop", "Portable workstation", InventoryMoneyDto(BigDecimal("1299.99"), "EUR"), 10),
         )
         InventoryApi.createProduct(
             inventoryUrl,
-            CreateProductRequest("Keyboard", "Mechanical keyboard", InventoryMoneyDto(BigDecimal("149.99"), "USD"), 25),
+            CreateProductRequest("Keyboard", "Mechanical keyboard", InventoryMoneyDto(BigDecimal("149.99"), "EUR"), 25),
         )
         InventoryApi.createProduct(
             inventoryUrl,
-            CreateProductRequest("Mouse", "Wireless mouse", InventoryMoneyDto(BigDecimal("79.99"), "USD"), 40),
+            CreateProductRequest("Mouse", "Wireless mouse", InventoryMoneyDto(BigDecimal("79.99"), "EUR"), 40),
         )
     }
 }

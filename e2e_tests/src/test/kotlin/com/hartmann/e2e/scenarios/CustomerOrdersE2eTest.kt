@@ -6,7 +6,6 @@ import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 
 class CustomerOrdersE2eTest : E2eScenarioTest() {
 
@@ -14,12 +13,11 @@ class CustomerOrdersE2eTest : E2eScenarioTest() {
     fun `findCustomerOrders - a customer sees only their own orders, newest first`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val productId = 3L // seeded "Mouse"
-        val unitPrice = BigDecimal("79.99")
         val firstPage = 0
         val pageSize = 100
-        val firstOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 1, unitPrice, customer = TestUser.CLIENT1)
-        val secondOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 2, unitPrice, customer = TestUser.CLIENT1)
-        val otherCustomerOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 1, unitPrice, customer = TestUser.CLIENT2)
+        val firstOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 1, customer = TestUser.CLIENT1)
+        val secondOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 2, customer = TestUser.CLIENT1)
+        val otherCustomerOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 1, customer = TestUser.CLIENT2)
 
         // the newest orders are on the first page, whatever other scenarios have placed before
         val client1Orders = OrderApi.findCustomerOrders(orderUrl, TestUser.CLIENT1, firstPage, pageSize)
@@ -41,10 +39,9 @@ class CustomerOrdersE2eTest : E2eScenarioTest() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val productId = 3L // seeded "Mouse"
         val quantity = 1
-        val unitPrice = BigDecimal("79.99")
         val pageSize = 1
-        val olderOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, unitPrice, customer = TestUser.CLIENT1)
-        val newerOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, unitPrice, customer = TestUser.CLIENT1)
+        val olderOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, customer = TestUser.CLIENT1)
+        val newerOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, customer = TestUser.CLIENT1)
 
         val firstPage = OrderApi.findCustomerOrders(orderUrl, TestUser.CLIENT1, 0, pageSize)
         val secondPage = OrderApi.findCustomerOrders(orderUrl, TestUser.CLIENT1, 1, pageSize)

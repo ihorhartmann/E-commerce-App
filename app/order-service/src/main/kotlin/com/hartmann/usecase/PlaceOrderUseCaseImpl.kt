@@ -1,14 +1,18 @@
 package com.hartmann.usecase
 
+import com.hartmann.entities.model.Order
+import com.hartmann.entities.value.Address
+import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
-import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
-import com.hartmann.entities.model.Order
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
+import java.util.UUID
 
 @Service
 class PlaceOrderUseCaseImpl(
@@ -16,20 +20,24 @@ class PlaceOrderUseCaseImpl(
     private val inventoryClient: InventoryClient,
     private val paymentClient: PaymentClient,
     private val kafkaProducer: OrderKafkaProducer,
+    transactionManager: PlatformTransactionManager,
 ) : PlaceOrderUseCase {
+    private val transactionTemplate = TransactionTemplate(transactionManager)
 
-    override fun execute(order: Order): CheckoutResult {
-        val order = orderRepository.save(order)
+    // Deliberately not one transaction: the calls to the inventory and the payment service must never sit inside a
+    // database transaction, and the order has to be committed before its payment is created - the payment service
+    // reports back about it on its own from then on.
+    override fun execute(customerId: UUID, requestedItems: List<RequestedItem>, address: Address): CheckoutResult {
+        // The id is taken first, because the stock is reserved for it; the order itself is stored only once the
+        // reservation succeeded, so a failed one leaves no order behind.
+        val orderId = orderRepository.nextId()
+        val prices = inventoryClient.reserve(orderId, requestedItems)
 
-        try {
-            inventoryClient.reserve(order.id, order.items)
-        } catch (e: InsufficientStockException) {
-            order.outOfStock()
-            orderRepository.save(order)
-            throw e
+        val order = try {
+            orderRepository.create(Order.createNew(orderId, customerId, requestedItems, prices, address))
         } catch (e: Exception) {
-            order.failReservation()
-            orderRepository.save(order)
+            // the stock is reserved, but there is no order to hold it for
+            kafkaProducer.publishCancelReservation(orderId.toString(), orderId)
             throw e
         }
 
@@ -37,8 +45,10 @@ class PlaceOrderUseCaseImpl(
             paymentClient.submitPayment(order.id, order.totalPrice())
         } catch (e: Exception) {
             order.failPayment()
-            orderRepository.save(order)
-            kafkaProducer.publishCancelReservation(order.id.toString(), order.id)
+            transactionTemplate.executeWithoutResult {
+                orderRepository.save(order)
+                kafkaProducer.publishCancelReservation(order.id.toString(), order.id)
+            }
             throw e
         }
 

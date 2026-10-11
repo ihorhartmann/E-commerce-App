@@ -16,11 +16,13 @@ import (
 	"inventoryservice/domain/values"
 
 	"github.com/google/uuid"
+
+	"github.com/shopspring/decimal"
 )
 
 func testMoney(t *testing.T) values.Money {
 	t.Helper()
-	money, err := values.NewMoney(10.0, values.USD)
+	money, err := values.NewMoney(decimal.NewFromInt(10), values.EUR)
 	if err != nil {
 		t.Fatalf("unexpected error building test money: %v", err)
 	}
@@ -58,39 +60,70 @@ func testReservation(t *testing.T, id, productID, orderID uint64, quantity uint,
 }
 
 func TestReservationServiceImpl_ReserveItems(t *testing.T) {
-	t.Run("counts the reservations as reserved on the product and creates them", func(t *testing.T) {
+	t.Run("counts the reservations as reserved on the product, creates them and returns the stored product", func(t *testing.T) {
 		productID := uint64(1)
 		quantity := uint(4)
 		product := testProduct(t, productID, 10, 0)
+		wantProduct := testProduct(t, productID, 10, quantity) // what the repository returns after storing it
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
-		var updated []*model.Product
+		var gotUpdatedProduct *model.Product
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-			func(ctx context.Context, p *model.Product) (*model.Product, error) {
-				updated = append(updated, p)
-				return p, nil
+			func(ctx context.Context, updatedProduct *model.Product) (*model.Product, error) {
+				gotUpdatedProduct = updatedProduct
+				return wantProduct, nil
 			},
 		)
+		var gotReservations []*model.StockReservation
 		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 			func(ctx context.Context, reservations []*model.StockReservation) ([]*model.StockReservation, error) {
+				gotReservations = reservations
 				return reservations, nil
 			},
 		)
 
 		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		reservations, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
+		gotProducts, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(reservations) != 1 || reservations[0].Quantity() != quantity || reservations[0].Holder() != model.ReservationHolderBuyer {
-			t.Errorf("unexpected reservations: %+v", reservations)
+		if len(gotProducts) != 1 || gotProducts[0] != wantProduct {
+			t.Errorf("ReserveItems() = %+v, want only the stored product %+v", gotProducts, wantProduct)
 		}
-		if updated[0].Reserved() != quantity {
-			t.Errorf("stored product Reserved() = %d, want %d", updated[0].Reserved(), quantity)
+		if len(gotReservations) != 1 || gotReservations[0].Quantity() != quantity || gotReservations[0].Holder() != model.ReservationHolderBuyer {
+			t.Errorf("reservations passed to CreateBatch = %+v, want one of %d held by the buyer", gotReservations, quantity)
+		}
+		if gotUpdatedProduct.Reserved() != quantity {
+			t.Errorf("product passed to Update has Reserved() = %d, want %d", gotUpdatedProduct.Reserved(), quantity)
+		}
+	})
+
+	t.Run("returns each product once when several lines reserve it", func(t *testing.T) {
+		productID := uint64(1)
+		product := testProduct(t, productID, 10, 0)
+		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
+		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
+
+		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID, productID}).Return([]*model.Product{product}, nil).Times(1)
+		productRepo.EXPECT().Update(gomock.Any(), product).Return(product, nil).Times(1)
+		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
+
+		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		gotProducts, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{
+			{ProductID: productID, Quantity: 2},
+			{ProductID: productID, Quantity: 3},
+		})
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(gotProducts) != 1 || gotProducts[0] != product {
+			t.Errorf("ReserveItems() = %+v, want the product %+v once", gotProducts, product)
 		}
 	})
 
@@ -193,11 +226,11 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2, r3}, nil).Times(1)
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{10, 11, 10}).Return([]*model.Product{p10, p11}, nil).Times(1)
-		var updated []*model.Product
+		var gotUpdatedProducts []*model.Product
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
-			func(ctx context.Context, p *model.Product) (*model.Product, error) {
-				updated = append(updated, p)
-				return p, nil
+			func(ctx context.Context, updatedProduct *model.Product) (*model.Product, error) {
+				gotUpdatedProducts = append(gotUpdatedProducts, updatedProduct)
+				return updatedProduct, nil
 			},
 		)
 		reservationRepo.EXPECT().DeleteAll(gomock.Any(), []*model.StockReservation{r1, r2, r3}).Return(nil).Times(1)
@@ -207,9 +240,9 @@ func TestReservationServiceImpl_Cancel(t *testing.T) {
 		if err := service.Cancel(context.Background(), msg, orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		for _, p := range updated {
-			if p.Reserved() != 0 {
-				t.Errorf("product %d Reserved() = %d, want 0", p.ID(), p.Reserved())
+		for _, gotProduct := range gotUpdatedProducts {
+			if gotProduct.Reserved() != 0 {
+				t.Errorf("product %d Reserved() = %d, want 0", gotProduct.ID(), gotProduct.Reserved())
 			}
 		}
 	})
@@ -266,10 +299,10 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1, r2}, nil).Times(1)
 
-		var updated []*model.StockReservation
+		var gotUpdatedReservations []*model.StockReservation
 		reservationRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
 			func(ctx context.Context, reservation *model.StockReservation) (*model.StockReservation, error) {
-				updated = append(updated, reservation)
+				gotUpdatedReservations = append(gotUpdatedReservations, reservation)
 				return reservation, nil
 			},
 		)
@@ -280,12 +313,12 @@ func TestReservationServiceImpl_HoldByCourier(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if len(updated) != 2 {
-			t.Fatalf("Update called %d times, want 2", len(updated))
+		if len(gotUpdatedReservations) != 2 {
+			t.Fatalf("Update called %d times, want 2", len(gotUpdatedReservations))
 		}
-		for _, r := range updated {
-			if r.Holder() != model.ReservationHolderCourier {
-				t.Errorf("Holder() = %v, want %v", r.Holder(), model.ReservationHolderCourier)
+		for _, gotReservation := range gotUpdatedReservations {
+			if gotReservation.Holder() != model.ReservationHolderCourier {
+				t.Errorf("reservation Holder() = %v, want %v", gotReservation.Holder(), model.ReservationHolderCourier)
 			}
 		}
 	})
@@ -360,11 +393,11 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 
 		reservationRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return([]*model.StockReservation{r1}, nil).Times(1)
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID}).Return([]*model.Product{product}, nil).Times(1)
-		var updated []*model.Product
+		var gotUpdatedProducts []*model.Product
 		productRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-			func(ctx context.Context, p *model.Product) (*model.Product, error) {
-				updated = append(updated, p)
-				return p, nil
+			func(ctx context.Context, updatedProduct *model.Product) (*model.Product, error) {
+				gotUpdatedProducts = append(gotUpdatedProducts, updatedProduct)
+				return updatedProduct, nil
 			},
 		)
 		reservationRepo.EXPECT().DeleteAll(gomock.Any(), []*model.StockReservation{r1}).Return(nil).Times(1)
@@ -374,8 +407,8 @@ func TestReservationServiceImpl_Fulfill(t *testing.T) {
 		if err := service.Fulfill(context.Background(), msg, orderID); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if updated[0].Quantity() != 8 || updated[0].Reserved() != 0 {
-			t.Errorf("stored product quantity = %d, reserved = %d, want 8 and 0", updated[0].Quantity(), updated[0].Reserved())
+		if gotUpdatedProducts[0].Quantity() != 8 || gotUpdatedProducts[0].Reserved() != 0 {
+			t.Errorf("product passed to Update has quantity = %d, reserved = %d, want 8 and 0", gotUpdatedProducts[0].Quantity(), gotUpdatedProducts[0].Reserved())
 		}
 	})
 

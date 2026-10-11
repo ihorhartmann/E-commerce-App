@@ -46,9 +46,14 @@ func NewExistingProduct(id uint64, name, description string, price values.Money,
 	return product, nil
 }
 
+// validateProduct lets the catalog sell in EUR only, so every price the order-service gets for an order is in one
+// currency. The other currencies Money supports are kept for later.
 func validateProduct(name string, price values.Money) error {
-	if strings.TrimSpace(name) == "" || price.Amount() <= 0 {
+	if strings.TrimSpace(name) == "" || !price.Amount().IsPositive() {
 		return domain.ErrInvalidInput
+	}
+	if price.Currency() != values.EUR {
+		return fmt.Errorf("%w: got %s", ErrUnsupportedPriceCurrency, price.Currency())
 	}
 
 	return nil

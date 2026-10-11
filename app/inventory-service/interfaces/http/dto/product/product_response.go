@@ -19,7 +19,7 @@ func ToProductResponse(product *model.Product) *ProductResponse {
 		ID:          product.ID(),
 		Name:        product.Name(),
 		Description: product.Description(),
-		Price:       toMoneyDTO(product.Price()),
+		Price:       ToMoneyDTO(product.Price()),
 		Quantity:    product.Quantity(),
 		Reserved:    product.Reserved(),
 		Available:   product.Available(),

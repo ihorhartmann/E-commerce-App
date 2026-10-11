@@ -78,12 +78,12 @@ class OrderKafkaConsumerTest {
         val correlationId = "corr-3"
         val messageType = KafkaConst.REFUND_COMPLETED_EVENT
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val amount = Money(BigDecimal("40.00"), Currency.USD)
+        val amount = Money(BigDecimal("40.00"), Currency.EUR)
         every { saga.onRefundCompleted(message, orderId, amount) } returns Unit
 
         consumer.onPaymentEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"amount\":40.00,\"currency\":\"USD\"}",
+            "{\"orderId\":$orderId,\"amount\":40.00,\"currency\":\"EUR\"}",
         )
 
         verify(exactly = 1) { saga.onRefundCompleted(message, orderId, amount) }

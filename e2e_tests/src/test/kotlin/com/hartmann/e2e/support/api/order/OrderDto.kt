@@ -12,12 +12,6 @@ data class PlaceOrderRequest(
 data class OrderItemRequest(
     val productId: Long,
     val quantity: Int,
-    val price: MoneyRequest,
-)
-
-data class MoneyRequest(
-    val amount: BigDecimal,
-    val currency: String,
 )
 
 data class AddressRequest(

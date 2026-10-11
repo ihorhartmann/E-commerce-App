@@ -12,7 +12,6 @@ import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.net.HttpURLConnection
 import java.util.UUID
 
@@ -39,7 +38,7 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
 
     @Test
     fun `orders - the customer's own orders listed through the gateway`() {
-        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, BigDecimal("79.99"), customer = TestUser.CLIENT1)
+        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, customer = TestUser.CLIENT1)
 
         val orders = OrderApi.findCustomerOrders(gatewayUrl, TestUser.CLIENT1, 0, 1)
 
@@ -49,7 +48,7 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
     @Test
     fun `orders - placed and read through the gateway`() {
         // a Bearer request needs no CSRF token - only one riding on the browser's session cookie does
-        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, BigDecimal("79.99"), customer = TestUser.CLIENT1)
+        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, customer = TestUser.CLIENT1)
 
         val order = OrderApi.getOrder(gatewayUrl, TestUser.CLIENT1, placedOrder.id)
 

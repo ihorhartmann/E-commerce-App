@@ -13,8 +13,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
@@ -28,8 +26,8 @@ import java.util.UUID
 @Entity
 @Table(name = "orders", schema = "orders")
 class OrderEntity(
+    // assigned, not generated: the order-service takes the id from the sequence before the order is stored
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long = 0,
 
     var customerId: UUID = UUID(0, 0),

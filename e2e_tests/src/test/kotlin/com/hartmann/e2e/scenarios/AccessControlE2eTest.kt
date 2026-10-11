@@ -1,7 +1,6 @@
 package com.hartmann.e2e.scenarios
 
 import com.hartmann.e2e.support.api.order.AddressRequest
-import com.hartmann.e2e.support.api.order.MoneyRequest
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderItemRequest
 import com.hartmann.e2e.support.api.order.PlaceOrderRequest
@@ -23,7 +22,7 @@ class AccessControlE2eTest : E2eScenarioTest() {
 
     private fun placeOrderRequest(productId: Long): PlaceOrderRequest =
         PlaceOrderRequest(
-            items = listOf(OrderItemRequest(productId, 1, MoneyRequest(BigDecimal("79.99"), "USD"))),
+            items = listOf(OrderItemRequest(productId, 1)),
             address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
         )
 
@@ -50,7 +49,7 @@ class AccessControlE2eTest : E2eScenarioTest() {
     @Test
     fun `get order - another customer's order is reported as not found`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
-        val order = E2eSharedSteps.placeOrder(orderUrl, 3L, 1, BigDecimal("79.99"), customer = TestUser.CLIENT1)
+        val order = E2eSharedSteps.placeOrder(orderUrl, 3L, 1, customer = TestUser.CLIENT1)
 
         val ownerStatusCode = OrderApi.findOrder(orderUrl, TestUser.CLIENT1, order.id).extract().statusCode()
         val otherCustomerStatusCode = OrderApi.findOrder(orderUrl, TestUser.CLIENT2, order.id).extract().statusCode()
@@ -63,8 +62,7 @@ class AccessControlE2eTest : E2eScenarioTest() {
     @Test
     fun `shipment - open to every courier without its street until pickup, then the picking courier's only`() {
         val shippingUrl = DockerComposeStack.shippingServiceUrl
-        val unitPrice = BigDecimal("79.99")
-        val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, unitPrice)
+        val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, BigDecimal("79.99"))
         val firstPage = 0
         val pageSize = 100
         val order = E2eSharedSteps.placeOrderUntilShipmentCreated(
@@ -72,7 +70,6 @@ class AccessControlE2eTest : E2eScenarioTest() {
             DockerComposeStack.paymentServiceUrl,
             product.id,
             1,
-            unitPrice,
             customer = TestUser.CLIENT1,
         )
         val shipmentId = requireNotNull(order.shipment).id

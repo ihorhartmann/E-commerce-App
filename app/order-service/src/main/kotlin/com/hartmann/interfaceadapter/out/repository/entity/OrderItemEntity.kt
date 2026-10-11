@@ -32,7 +32,7 @@ class OrderItemEntity(
     var priceAmount: BigDecimal = BigDecimal.ZERO,
 
     @Enumerated(EnumType.STRING)
-    var priceCurrency: Currency = Currency.USD,
+    var priceCurrency: Currency = Currency.EUR,
 )
 
 fun toOrderItemEntity(item: OrderItem, order: OrderEntity): OrderItemEntity {

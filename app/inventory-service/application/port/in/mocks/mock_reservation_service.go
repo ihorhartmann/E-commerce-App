@@ -86,10 +86,10 @@ func (mr *MockReservationServiceMockRecorder) HoldByCourier(ctx, msg, orderID an
 }
 
 // ReserveItems mocks base method.
-func (m *MockReservationService) ReserveItems(ctx context.Context, orderID uint64, reservationDTOs []dto.ReservationDTO) ([]*model.StockReservation, error) {
+func (m *MockReservationService) ReserveItems(ctx context.Context, orderID uint64, reservationDTOs []dto.ReservationDTO) ([]*model.Product, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ReserveItems", ctx, orderID, reservationDTOs)
-	ret0, _ := ret[0].([]*model.StockReservation)
+	ret0, _ := ret[0].([]*model.Product)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -3,45 +3,47 @@ package com.hartmann.usecase
 import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
+import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
-import io.mockk.Runs
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
-import com.hartmann.entities.model.OrderStatus
+import io.mockk.verifyOrder
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
+import org.springframework.transaction.PlatformTransactionManager
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-private fun testItem() = OrderItem.createExisting(
-    id = 1,
-    orderId = 1,
-    productId = 1,
-    quantity = 1,
-    price = Money(BigDecimal("10.00"), Currency.USD),
-)
+private fun testRequestedItems(productId: Long) = listOf(RequestedItem(productId = productId, quantity = 2))
 
-private fun testOrder(id: Long = 0): Order =
-    if (id == 0L) {
-        Order.createNew(customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress())
-    } else {
-        Order.createExisting(id = id, customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
-    }
+private fun testPrices(productId: Long) = mapOf(productId to Money(BigDecimal("10.00"), Currency.EUR))
+
+/** The order as the repository returns it once stored. */
+private fun storedOrder(id: Long, customerId: UUID, productId: Long): Order = Order.createExisting(
+    id = id,
+    customerId = customerId,
+    items = listOf(OrderItem.createExisting(1, id, productId, 2, Money(BigDecimal("10.00"), Currency.EUR))),
+    address = testAddress(),
+    status = OrderStatus.PLACED,
+    createdAt = Instant.now(),
+)
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class PlaceOrderUseCaseImplTest {
@@ -50,73 +52,100 @@ class PlaceOrderUseCaseImplTest {
     private val inventoryClient = mockk<InventoryClient>()
     private val paymentClient = mockk<PaymentClient>()
     private val kafkaProducer = mockk<OrderKafkaProducer>(relaxed = true)
+    private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
 
-    private val useCase = PlaceOrderUseCaseImpl(orderRepository, inventoryClient, paymentClient, kafkaProducer)
+    private val useCase =
+        PlaceOrderUseCaseImpl(orderRepository, inventoryClient, paymentClient, kafkaProducer, transactionManager)
 
     @Test
-    fun `execute - places an order when reservation and payment both succeed`() {
-        val orderId = 1L
-        val newOrder = testOrder()
-        val order = testOrder(id = orderId)
-        every { orderRepository.save(newOrder) } returns order
-        every { inventoryClient.reserve(orderId, order.items) } just Runs
-        every { paymentClient.submitPayment(orderId, order.totalPrice()) } returns
-            SubmitPaymentResult(10L, "secret_123")
+    fun `execute - reserves the stock under a fresh id, stores the order priced by the inventory and submits its payment`() {
+        val orderId = 7L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val productId = 3L
+        val requestedItems = testRequestedItems(productId)
+        val clientSecret = "secret_123"
+        val order = storedOrder(orderId, customerId, productId)
+        val newOrder = slot<Order>()
+        every { orderRepository.nextId() } returns orderId
+        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { orderRepository.create(capture(newOrder)) } returns order
+        every { paymentClient.submitPayment(orderId, order.totalPrice()) } returns SubmitPaymentResult(10L, clientSecret)
 
-        val result = useCase.execute(newOrder)
+        val result = useCase.execute(customerId, requestedItems, testAddress())
 
-        assertEquals(order, result.order)
-        assertEquals("secret_123", result.clientSecret)
-        verify(exactly = 1) { orderRepository.save(newOrder) }
+        assertSame(order, result.order)
+        assertEquals(clientSecret, result.clientSecret)
+        assertEquals(orderId, newOrder.captured.id)
+        assertEquals(customerId, newOrder.captured.customerId)
+        assertEquals(Money(BigDecimal("20.00"), Currency.EUR), newOrder.captured.totalPrice())
+        verify(exactly = 1) { orderRepository.nextId() }
+        verify(exactly = 1) { inventoryClient.reserve(orderId, requestedItems) }
+        verify(exactly = 1) { orderRepository.create(any()) }
+        verify(exactly = 0) { orderRepository.save(any()) }
+        verify(exactly = 1) { paymentClient.submitPayment(orderId, order.totalPrice()) }
+        verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
+        // nothing to compensate, so no transaction of its own is opened around the remote calls
+        verify(exactly = 0) { transactionManager.getTransaction(any()) }
+    }
+
+    @Test
+    fun `execute - stores no order when the stock can't be reserved`() {
+        val orderId = 7L
+        val requestedItems = testRequestedItems(productId = 3L)
+        every { orderRepository.nextId() } returns orderId
+        every { inventoryClient.reserve(orderId, requestedItems) } throws InsufficientStockException("no stock")
+
+        assertThrows<InsufficientStockException> { useCase.execute(UUID.randomUUID(), requestedItems, testAddress()) }
+
+        verify(exactly = 1) { inventoryClient.reserve(orderId, requestedItems) }
+        verify(exactly = 0) { orderRepository.create(any()) }
+        verify(exactly = 0) { orderRepository.save(any()) }
+        verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
         verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
     }
 
     @Test
-    fun `execute - marks the order out of stock and rethrows when reservation reports insufficient stock`() {
-        val orderId = 1L
-        val newOrder = testOrder()
-        val order = testOrder(id = orderId)
-        every { orderRepository.save(newOrder) } returns order
-        every { orderRepository.save(order) } returns order
-        every { inventoryClient.reserve(orderId, order.items) } throws InsufficientStockException("no stock")
+    fun `execute - releases the reservation and rethrows when the reserved order can't be stored`() {
+        val orderId = 7L
+        val productId = 3L
+        val requestedItems = testRequestedItems(productId)
+        val expected = RuntimeException("db down")
+        every { orderRepository.nextId() } returns orderId
+        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { orderRepository.create(any()) } throws expected
 
-        assertThrows<InsufficientStockException> { useCase.execute(newOrder) }
+        val actual = assertThrows<RuntimeException> { useCase.execute(UUID.randomUUID(), requestedItems, testAddress()) }
 
-        assertEquals(CancellationReason.OUT_OF_STOCK, order.cancellationReason)
-        verify(exactly = 1) { orderRepository.save(order) }
+        assertSame(expected, actual)
+        verify(exactly = 1) { orderRepository.create(any()) }
+        verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
     }
 
     @Test
-    fun `execute - fails the reservation and rethrows on any other reservation error`() {
-        val orderId = 1L
-        val newOrder = testOrder()
-        val order = testOrder(id = orderId)
-        every { orderRepository.save(newOrder) } returns order
+    fun `execute - fails the payment, cancels the reservation in the same transaction and rethrows when payment submission errors`() {
+        val orderId = 7L
+        val productId = 3L
+        val requestedItems = testRequestedItems(productId)
+        val order = storedOrder(orderId, UUID.randomUUID(), productId)
+        every { orderRepository.nextId() } returns orderId
+        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { orderRepository.create(any()) } returns order
         every { orderRepository.save(order) } returns order
-        every { inventoryClient.reserve(orderId, order.items) } throws Exception("inventory unreachable")
-
-        assertThrows<Exception> { useCase.execute(newOrder) }
-
-        assertEquals(CancellationReason.RESERVATION_FAILED, order.cancellationReason)
-        verify(exactly = 1) { orderRepository.save(order) }
-        verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
-    }
-
-    @Test
-    fun `execute - fails the payment, cancels the reservation and rethrows when payment submission errors`() {
-        val orderId = 1L
-        val newOrder = testOrder()
-        val order = testOrder(id = orderId)
-        every { orderRepository.save(newOrder) } returns order
-        every { orderRepository.save(order) } returns order
-        every { inventoryClient.reserve(orderId, order.items) } just Runs
         every { paymentClient.submitPayment(orderId, order.totalPrice()) } throws Exception("gateway down")
 
-        assertThrows<Exception> { useCase.execute(newOrder) }
+        assertThrows<Exception> { useCase.execute(UUID.randomUUID(), requestedItems, testAddress()) }
 
         assertEquals(CancellationReason.PAYMENT_FAILED, order.cancellationReason)
         verify(exactly = 1) { orderRepository.save(order) }
         verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }
+        // the cancelled order and the command that releases its stock are committed together
+        verifyOrder {
+            transactionManager.getTransaction(any())
+            orderRepository.save(order)
+            kafkaProducer.publishCancelReservation(orderId.toString(), orderId)
+            transactionManager.commit(any())
+        }
+        verify(exactly = 1) { transactionManager.commit(any()) }
     }
 }
