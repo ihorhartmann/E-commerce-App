@@ -22,11 +22,10 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
         val shippingUrl = DockerComposeStack.shippingServiceUrl
 
         val quantity = 1
-        val unitPrice = BigDecimal("79.99")
-        val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, unitPrice)
+        val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, BigDecimal("79.99"))
         val productId = product.id
 
-        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
+        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity)
         val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
 
         ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery, holder -> Courier: stock is sold

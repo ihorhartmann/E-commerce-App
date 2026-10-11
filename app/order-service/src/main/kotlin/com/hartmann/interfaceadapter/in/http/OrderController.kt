@@ -6,7 +6,8 @@ import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.interfaceadapter.`in`.http.dto.ListOrdersResponse
 import com.hartmann.interfaceadapter.`in`.http.dto.OrderResponse
 import com.hartmann.interfaceadapter.`in`.http.dto.PlaceOrderRequest
-import com.hartmann.interfaceadapter.`in`.http.dto.fromPlaceOrderRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.fromAddressRequest
+import com.hartmann.interfaceadapter.`in`.http.dto.fromOrderItemRequests
 import com.hartmann.interfaceadapter.`in`.http.dto.toListOrdersResponse
 import com.hartmann.interfaceadapter.`in`.http.dto.toOrderResponse
 import jakarta.validation.Valid
@@ -41,7 +42,11 @@ class OrderController(
         @Valid @RequestBody request: PlaceOrderRequest,
         @AuthenticationPrincipal jwt: Jwt,
     ): OrderResponse {
-        val result = placeOrderUseCase.execute(fromPlaceOrderRequest(request, getCustomerId(jwt)))
+        val result = placeOrderUseCase.execute(
+            getCustomerId(jwt),
+            fromOrderItemRequests(request.items),
+            fromAddressRequest(request.address),
+        )
         return toOrderResponse(result.order, result.clientSecret)
     }
 
@@ -50,7 +55,8 @@ class OrderController(
         @RequestParam(defaultValue = "0") page: Int,
         @RequestParam(defaultValue = DEFAULT_PAGE_SIZE) size: Int,
         @AuthenticationPrincipal jwt: Jwt,
-    ): ListOrdersResponse = toListOrdersResponse(findCustomerOrdersUseCase.execute(getCustomerId(jwt), page, size), page, size)
+    ): ListOrdersResponse =
+        toListOrdersResponse(findCustomerOrdersUseCase.execute(getCustomerId(jwt), page, size), page, size)
 
     @GetMapping("/{orderId}")
     fun getOrderById(@PathVariable orderId: Long, @AuthenticationPrincipal jwt: Jwt): OrderResponse =

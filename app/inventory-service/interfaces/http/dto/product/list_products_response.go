@@ -41,7 +41,7 @@ func toCatalogProductResponse(product *model.Product) CatalogProductResponse {
 		ID:          product.ID(),
 		Name:        product.Name(),
 		Description: product.Description(),
-		Price:       toMoneyDTO(product.Price()),
+		Price:       ToMoneyDTO(product.Price()),
 		Available:   product.Available(),
 	}
 }

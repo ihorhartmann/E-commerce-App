@@ -10,7 +10,6 @@ import com.hartmann.e2e.support.api.payment.StripeApi
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
-import java.math.BigDecimal
 import java.net.HttpURLConnection
 
 class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
@@ -25,7 +24,7 @@ class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
         val quantity = 1
         val product = InventoryApi.getProduct(inventoryUrl, productId)
 
-        val placedOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, BigDecimal("149.99"))
+        val placedOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity)
 
         // Stripe declines the confirm call itself synchronously, then separately fires the async
         // payment_intent.payment_failed webhook that payment-service reacts to below

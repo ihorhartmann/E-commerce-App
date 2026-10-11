@@ -4,6 +4,7 @@ import com.hartmann.entities.exception.DomainException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
 import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
 import java.time.Instant
@@ -53,18 +54,6 @@ class Order private constructor(
         }
 
         return Money(amount, currency)
-    }
-
-    /** Reservation request failed for a reason other than insufficient stock (e.g. Inventory unreachable). */
-    fun failReservation() {
-        requireStatus("fail reservation", OrderStatus.PLACED)
-        cancel(CancellationReason.RESERVATION_FAILED)
-    }
-
-    /** Reservation request failed specifically because the requested quantity is not available. */
-    fun outOfStock() {
-        requireStatus("mark out of stock", OrderStatus.PLACED)
-        cancel(CancellationReason.OUT_OF_STOCK)
     }
 
     /** No charge ever succeeded at this point, so there is nothing to refund. */
@@ -137,12 +126,9 @@ class Order private constructor(
 
     /**
      * Whether this order is cancelled while its stock is still reserved in inventory, so the reservation
-     * must be released. Stock is reserved only if the reservation succeeded, and stays reserved until pickup.
+     * must be released. An order exists only once its stock is reserved, and the stock stays reserved until pickup.
      */
-    fun requiresReservationRelease(): Boolean = when (cancellationReason) {
-        null, CancellationReason.RESERVATION_FAILED, CancellationReason.OUT_OF_STOCK -> false
-        else -> !wasPickedUp()
-    }
+    fun requiresReservationRelease(): Boolean = cancellationReason != null && !wasPickedUp()
 
     /** The courier physically returned the goods. Finalizes to CANCELLED if the refund already confirmed. */
     fun returnToStock() {
@@ -202,7 +188,7 @@ class Order private constructor(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Order) return false
-        return id != 0L && id == other.id
+        return id == other.id
     }
 
     override fun hashCode(): Int = id.hashCode()
@@ -212,9 +198,24 @@ class Order private constructor(
                 "awaitingReturn=$awaitingReturn, shipment=$shipment, refund=$refund, version=$version)"
 
     companion object {
-        fun createNew(customerId: UUID, items: List<OrderItem>, address: Address): Order {
+        /**
+         * A new order exists only once its stock is reserved: [id] is taken before the reservation, which is made
+         * for it, and [prices] - the price of every ordered product, by product id - come back from that reservation.
+         */
+        fun createNew(
+            id: Long,
+            customerId: UUID,
+            requestedItems: List<RequestedItem>,
+            prices: Map<Long, Money>,
+            address: Address,
+        ): Order {
+            require(id > 0) { "id must be positive" }
+            val items = requestedItems.map {
+                val price = prices[it.productId] ?: throw DomainException("no price for product ${it.productId}")
+                OrderItem.createNew(it.productId, it.quantity, price)
+            }
             return Order(
-                id = 0,
+                id = id,
                 customerId = customerId,
                 items = items,
                 address = address,
@@ -274,8 +275,6 @@ enum class OrderStatus {
 }
 
 enum class CancellationReason {
-    RESERVATION_FAILED,
-    OUT_OF_STOCK,
     PAYMENT_FAILED,
     PAYMENT_EXPIRED,
     SHIPMENT_LOST,

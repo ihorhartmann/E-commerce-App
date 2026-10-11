@@ -9,4 +9,5 @@ var (
 	ErrQuantityBelowReserved    = errors.New("quantity below reserved quantity")
 	ErrReservedQuantityMismatch = errors.New("reservation exceeds the product's reserved quantity")
 	ErrProductReserved          = errors.New("product has reserved stock")
+	ErrUnsupportedPriceCurrency = errors.New("product price must be in EUR")
 )

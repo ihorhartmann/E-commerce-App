@@ -111,7 +111,7 @@ class OutboxOrderKafkaProducerTest {
     fun `publishRefundRequested - inserts a RefundRequested command with the amount and currency`() {
         val orderId = 47L
         val amount = BigDecimal("40.00")
-        val currency = "USD"
+        val currency = "EUR"
 
         producer.publishRefundRequested("corr-6", orderId, amount, currency)
 

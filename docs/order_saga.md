@@ -72,19 +72,21 @@ sequenceDiagram
     participant S as Stripe
     participant Sh as Shipping Service
 
-    U->>O: HTTP: POST /api/v1/orders
+    U->>O: HTTP: POST /api/v1/orders (products and quantities, no prices)
+    Note over O: takes the next order id - nothing is stored yet
     O->>I: HTTP: POST /api/v1/reservations
 
     alt Out of stock (InsufficientStockException)
         I-->>O: HTTP: 409 insufficient stock
         O-->>U: HTTP: 409 error
-        Note over O: Order.outOfStock() -> CANCELLED, reason="Out of stock"
+        Note over O: no order is created
     else Other reservation error
         I-->>O: HTTP: error
         O-->>U: HTTP: error
-        Note over O: Order.failReservation() -> CANCELLED, reason="Reservation failed"
+        Note over O: no order is created
     else Reservation OK
-        I-->>O: HTTP: 201 reserved
+        I-->>O: HTTP: 201 reserved, with the price of every product
+        Note over O: Order.createNew(id, requestedItems, prices) -> PLACED, stored
         O->>P: HTTP: POST /api/v1/payments
 
         alt Payment service unavailable / crashed
@@ -188,9 +190,9 @@ has already completed before finalizing to `CANCELLED` - that's exactly what
 
 ## Compensation steps - quick summary
 
-**Out of stock.** The cheapest failure point - before the PaymentIntent is
-even created and before any charge. Just return an error to the frontend,
-nothing to compensate.
+**Out of stock.** The cheapest failure point - before the order is stored, before
+the PaymentIntent is created and before any charge. Just return an error to the
+frontend: no order exists, so there is nothing to compensate.
 
 **Payment service unavailable or crashed.** The reservation already exists,
 the `POST /api/v1/payments` request threw before Stripe ever responded. The

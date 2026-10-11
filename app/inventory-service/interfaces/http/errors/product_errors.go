@@ -19,7 +19,7 @@ func HandleProductError(err error) error {
 	}
 
 	switch {
-	case errors.Is(err, ErrInvalidProductID):
+	case errors.Is(err, ErrInvalidProductID), errors.Is(err, model.ErrUnsupportedPriceCurrency):
 		return WithStatus(http.StatusBadRequest, err)
 	case errors.Is(err, model.ErrInsufficientStock), errors.Is(err, model.ErrQuantityBelowReserved), errors.Is(err, model.ErrProductReserved):
 		return WithStatus(http.StatusConflict, err)

@@ -6,11 +6,13 @@ import (
 
 	"inventoryservice/domain"
 	"inventoryservice/domain/values"
+
+	"github.com/shopspring/decimal"
 )
 
 func testMoney(t *testing.T) values.Money {
 	t.Helper()
-	money, err := values.NewMoney(10.0, values.USD)
+	money, err := values.NewMoney(decimal.NewFromInt(10), values.EUR)
 	if err != nil {
 		t.Fatalf("unexpected error building test money: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestNewProduct(t *testing.T) {
 	})
 
 	t.Run("rejects a zero price", func(t *testing.T) {
-		price, err := values.NewMoney(0, values.USD)
+		price, err := values.NewMoney(decimal.Zero, values.EUR)
 		if err != nil {
 			t.Fatalf("unexpected error building zero price: %v", err)
 		}
@@ -66,6 +68,18 @@ func TestNewProduct(t *testing.T) {
 		_, err = NewProduct(1, "Widget", "a widget", price, 10)
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		}
+	})
+
+	t.Run("rejects a price in a currency other than EUR", func(t *testing.T) {
+		price, err := values.NewMoney(decimal.NewFromInt(10), values.USD)
+		if err != nil {
+			t.Fatalf("unexpected error building the price: %v", err)
+		}
+
+		_, err = NewProduct(1, "Widget", "a widget", price, 10)
+		if !errors.Is(err, ErrUnsupportedPriceCurrency) {
+			t.Errorf("err = %v, want %v", err, ErrUnsupportedPriceCurrency)
 		}
 	})
 }
@@ -177,7 +191,7 @@ func TestProduct_Update(t *testing.T) {
 	t.Run("rejects a zero price, leaving the product unchanged", func(t *testing.T) {
 		product := newTestProduct(t, 10, 4)
 		price := product.Price()
-		zeroPrice, err := values.NewMoney(0, values.USD)
+		zeroPrice, err := values.NewMoney(decimal.Zero, values.EUR)
 		if err != nil {
 			t.Fatalf("unexpected error building zero price: %v", err)
 		}
@@ -186,7 +200,24 @@ func TestProduct_Update(t *testing.T) {
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
 		}
-		if product.Price() != price {
+		if !product.Price().Equal(price) {
+			t.Errorf("Price() = %+v, want %+v (unchanged)", product.Price(), price)
+		}
+	})
+
+	t.Run("rejects a price in a currency other than EUR, leaving the product unchanged", func(t *testing.T) {
+		product := newTestProduct(t, 10, 4)
+		price := product.Price()
+		usdPrice, err := values.NewMoney(decimal.NewFromInt(15), values.USD)
+		if err != nil {
+			t.Fatalf("unexpected error building the price: %v", err)
+		}
+
+		err = product.Update("Gadget", "a gadget", usdPrice, 20)
+		if !errors.Is(err, ErrUnsupportedPriceCurrency) {
+			t.Errorf("err = %v, want %v", err, ErrUnsupportedPriceCurrency)
+		}
+		if !product.Price().Equal(price) {
 			t.Errorf("Price() = %+v, want %+v (unchanged)", product.Price(), price)
 		}
 	})

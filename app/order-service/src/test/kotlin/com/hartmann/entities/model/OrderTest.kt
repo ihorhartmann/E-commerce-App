@@ -4,6 +4,7 @@ import com.hartmann.entities.exception.DomainException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -19,7 +20,7 @@ import java.util.UUID
 
 private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Currency = Currency.USD) =
+private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Currency = Currency.EUR) =
     OrderItem.createExisting(
         id = 1,
         orderId = 1,
@@ -28,21 +29,25 @@ private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Curr
         price = Money(BigDecimal(amount), currency)
     )
 
-private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 0): Order =
-    if (id == 0L) {
-        Order.createNew(customerId = UUID.randomUUID(), items = items, address = testAddress())
-    } else {
-        Order.createExisting(
-            id = id,
-            customerId = UUID.randomUUID(),
-            items = items,
-            address = testAddress(),
-            status = OrderStatus.PLACED,
-            createdAt = Instant.now()
-        )
-    }
+private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 1): Order =
+    Order.createExisting(
+        id = id,
+        customerId = UUID.randomUUID(),
+        items = items,
+        address = testAddress(),
+        status = OrderStatus.PLACED,
+        createdAt = Instant.now()
+    )
 
-private fun processingOrder(id: Long = 0) = placedOrder(id = id).apply { confirmPayment() }
+private fun newOrder(customerId: UUID): Order = Order.createNew(
+    id = 1,
+    customerId = customerId,
+    requestedItems = listOf(RequestedItem(productId = 1, quantity = 1)),
+    prices = mapOf(1L to Money(BigDecimal("10.00"), Currency.EUR)),
+    address = testAddress(),
+)
+
+private fun processingOrder(id: Long = 1) = placedOrder(id = id).apply { confirmPayment() }
 
 private fun orderWithShipment(shipmentId: Long = 5L) = processingOrder().apply { createShipment(shipmentId) }
 
@@ -89,15 +94,55 @@ class OrderTest {
     // --- createNew ---
 
     @Test
-    fun `createNew - builds a new order in PLACED status with no id yet`() {
+    fun `createNew - builds a PLACED order under the given id, with every requested item priced from the reservation`() {
+        val orderId = 7L
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val firstProductId = 11L
+        val secondProductId = 12L
+        val firstPrice = Money(BigDecimal("10.00"), Currency.EUR)
+        val secondPrice = Money(BigDecimal("2.50"), Currency.EUR)
 
-        val order = Order.createNew(customerId = customerId, items = listOf(testItem()), address = testAddress())
+        val order = Order.createNew(
+            id = orderId,
+            customerId = customerId,
+            requestedItems = listOf(RequestedItem(firstProductId, 2), RequestedItem(secondProductId, 4)),
+            prices = mapOf(firstProductId to firstPrice, secondProductId to secondPrice),
+            address = testAddress(),
+        )
 
-        assertEquals(0L, order.id)
+        assertEquals(orderId, order.id)
         assertEquals(customerId, order.customerId)
         assertEquals(OrderStatus.PLACED, order.status)
         assertNotNull(order.createdAt)
+        assertEquals(listOf(firstProductId, secondProductId), order.items.map { it.productId })
+        assertEquals(listOf(firstPrice, secondPrice), order.items.map { it.price })
+        assertEquals(Money(BigDecimal("30.00"), Currency.EUR), order.totalPrice())
+    }
+
+    @Test
+    fun `createNew - rejects a requested item whose product the reservation gave no price for`() {
+        assertThrows<DomainException> {
+            Order.createNew(
+                id = 7,
+                customerId = UUID.randomUUID(),
+                requestedItems = listOf(RequestedItem(productId = 11, quantity = 1)),
+                prices = mapOf(12L to Money(BigDecimal("10.00"), Currency.EUR)),
+                address = testAddress(),
+            )
+        }
+    }
+
+    @Test
+    fun `createNew - rejects an order without an id`() {
+        assertThrows<IllegalArgumentException> {
+            Order.createNew(
+                id = 0,
+                customerId = UUID.randomUUID(),
+                requestedItems = listOf(RequestedItem(productId = 11, quantity = 1)),
+                prices = mapOf(11L to Money(BigDecimal("10.00"), Currency.EUR)),
+                address = testAddress(),
+            )
+        }
     }
 
     // --- createExisting ---
@@ -140,18 +185,14 @@ class OrderTest {
     @Test
     fun `isOwnedBy - true for the customer who placed the order`() {
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
-        val order = Order.createNew(customerId = customerId, items = listOf(testItem()), address = testAddress())
+        val order = newOrder(customerId)
 
         assertTrue(order.isOwnedBy(customerId))
     }
 
     @Test
     fun `isOwnedBy - false for another customer`() {
-        val order = Order.createNew(
-            customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001"),
-            items = listOf(testItem()),
-            address = testAddress(),
-        )
+        val order = newOrder(UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001"))
 
         assertFalse(order.isOwnedBy(UUID.fromString("0192f1d2-7c4b-7000-8000-000000000002")))
     }
@@ -167,37 +208,10 @@ class OrderTest {
             ),
         )
 
-        assertEquals(Money(BigDecimal("25.00"), Currency.USD), order.totalPrice())
+        assertEquals(Money(BigDecimal("25.00"), Currency.EUR), order.totalPrice())
     }
 
-    // --- failReservation / outOfStock / failPayment / expirePayment (PLACED -> CANCELLED, no refund) ---
-
-    @Test
-    fun `failReservation - cancels a placed order without a refund`() {
-        val order = placedOrder().apply { failReservation() }
-
-        assertEquals(OrderStatus.CANCELLED, order.status)
-        assertEquals(CancellationReason.RESERVATION_FAILED, order.cancellationReason)
-        assertNull(order.refund)
-    }
-
-    @Test
-    fun `failReservation - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().apply { failReservation() } }
-    }
-
-    @Test
-    fun `outOfStock - cancels a placed order`() {
-        val order = placedOrder().apply { outOfStock() }
-
-        assertEquals(OrderStatus.CANCELLED, order.status)
-        assertEquals(CancellationReason.OUT_OF_STOCK, order.cancellationReason)
-    }
-
-    @Test
-    fun `outOfStock - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().apply { outOfStock() } }
-    }
+    // --- failPayment / expirePayment (PLACED -> CANCELLED, no refund) ---
 
     @Test
     fun `failPayment - cancels a placed order`() {
@@ -362,12 +376,6 @@ class OrderTest {
     }
 
     @Test
-    fun `requiresReservationRelease - is false when stock was never reserved`() {
-        assertFalse(placedOrder().apply { failReservation() }.requiresReservationRelease())
-        assertFalse(placedOrder().apply { outOfStock() }.requiresReservationRelease())
-    }
-
-    @Test
     fun `requiresReservationRelease - is true when cancelled before the courier picked up the goods`() {
         assertTrue(placedOrder().apply { failPayment() }.requiresReservationRelease())
         assertTrue(cancelRequestedBeforePickup().requiresReservationRelease())
@@ -399,7 +407,7 @@ class OrderTest {
     @Test
     fun `returnToStock - finalizes to cancelled when the refund was already confirmed`() {
         val order = cancelRequestedAfterPickup()
-        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
 
@@ -417,7 +425,7 @@ class OrderTest {
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertFalse(order.awaitingReturn)
 
-        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
         assertEquals(OrderStatus.CANCELLED, order.status)
     }
@@ -425,14 +433,14 @@ class OrderTest {
     @Test
     fun `confirmRefund - finalizes to cancelled immediately when there is no return to wait for`() {
         val order = cancelRequestedBeforePickup()
-        order.confirmRefund(Money(BigDecimal("10.00"), Currency.USD))
+        order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
         assertEquals(OrderStatus.CANCELLED, order.status)
     }
 
     @Test
     fun `confirmRefund - accepts the requested amount at a different scale`() {
-        val order = cancelRequestedBeforePickup().apply { confirmRefund(Money(BigDecimal("10"), Currency.USD)) }
+        val order = cancelRequestedBeforePickup().apply { confirmRefund(Money(BigDecimal("10"), Currency.EUR)) }
 
         assertEquals(OrderStatus.CANCELLED, order.status)
     }
@@ -441,7 +449,7 @@ class OrderTest {
     fun `confirmRefund - throws when the refunded amount differs from the requested one, leaving the order unchanged`() {
         val order = cancelRequestedBeforePickup()
 
-        assertThrows<DomainException> { order.confirmRefund(Money(BigDecimal("9.99"), Currency.USD)) }
+        assertThrows<DomainException> { order.confirmRefund(Money(BigDecimal("9.99"), Currency.EUR)) }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertFalse(order.refund!!.isConfirmed)
@@ -450,14 +458,14 @@ class OrderTest {
     @Test
     fun `confirmRefund - throws when there is no refund request`() {
         assertThrows<IllegalArgumentException> {
-            cancelRequestedWithoutRefund().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.USD)) }
+            cancelRequestedWithoutRefund().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
         }
     }
 
     @Test
     fun `confirmRefund - throws when order is not cancel-requested`() {
         assertThrows<DomainException> {
-            placedOrder().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.USD)) }
+            placedOrder().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
         }
     }
 
@@ -501,14 +509,6 @@ class OrderTest {
     fun `equals - returns false for orders with different ids`() {
         val a = placedOrder(id = 1)
         val b = placedOrder(id = 2)
-
-        assertNotEquals(a, b)
-    }
-
-    @Test
-    fun `equals - returns false when both orders are not yet persisted`() {
-        val a = placedOrder()
-        val b = placedOrder()
 
         assertNotEquals(a, b)
     }

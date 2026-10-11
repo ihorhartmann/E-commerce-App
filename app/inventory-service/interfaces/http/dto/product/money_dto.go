@@ -1,19 +1,31 @@
 package product
 
-import "inventoryservice/domain/values"
+import (
+	"encoding/json"
+
+	"inventoryservice/domain"
+	"inventoryservice/domain/values"
+
+	"github.com/shopspring/decimal"
+)
 
 type MoneyDTO struct {
-	Amount   float64 `json:"amount"`
-	Currency string  `json:"currency"`
+	Amount   json.Number `json:"amount"`
+	Currency string      `json:"currency"`
 }
 
-func toMoneyDTO(money values.Money) MoneyDTO {
+func ToMoneyDTO(money values.Money) MoneyDTO {
 	return MoneyDTO{
-		Amount:   money.Amount(),
+		Amount:   json.Number(money.Amount().String()),
 		Currency: string(money.Currency()),
 	}
 }
 
 func fromMoneyDTO(money MoneyDTO) (values.Money, error) {
-	return values.NewMoney(money.Amount, values.Currency(money.Currency))
+	amount, err := decimal.NewFromString(money.Amount.String())
+	if err != nil {
+		return values.Money{}, domain.ErrInvalidInput
+	}
+
+	return values.NewMoney(amount, values.Currency(money.Currency))
 }

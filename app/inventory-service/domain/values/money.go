@@ -1,6 +1,10 @@
 package values
 
-import "inventoryservice/domain"
+import (
+	"inventoryservice/domain"
+
+	"github.com/shopspring/decimal"
+)
 
 type Currency string
 
@@ -19,23 +23,31 @@ func (c Currency) isValid() bool {
 	}
 }
 
+const minorUnitDigits = 2
+
 type Money struct {
-	amount   float64
+	amount   decimal.Decimal
 	currency Currency
 }
 
-func NewMoney(amount float64, currency Currency) (Money, error) {
-	if amount < 0 || !currency.isValid() {
+func NewMoney(amount decimal.Decimal, currency Currency) (Money, error) {
+	wholeCents := amount.Round(minorUnitDigits)
+	if amount.IsNegative() || !amount.Equal(wholeCents) || !currency.isValid() {
 		return Money{}, domain.ErrInvalidInput
 	}
 
-	return Money{amount: amount, currency: currency}, nil
+	return Money{amount: wholeCents, currency: currency}, nil
 }
 
-func (m Money) Amount() float64 {
+func (m Money) Amount() decimal.Decimal {
 	return m.amount
 }
 
 func (m Money) Currency() Currency {
 	return m.currency
+}
+
+// Equal compares by value: a decimal can't be compared with ==.
+func (m Money) Equal(other Money) bool {
+	return m.amount.Equal(other.amount) && m.currency == other.currency
 }

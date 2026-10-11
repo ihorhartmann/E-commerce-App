@@ -26,7 +26,9 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
         val product = E2eSharedSteps.createScenarioProduct(inventoryUrl, unitPrice)
         val productId = product.id
 
-        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity, unitPrice)
+        val processingOrder = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, paymentUrl, productId, quantity)
+        assertThat(processingOrder.totalPrice.amount).isEqualByComparingTo(unitPrice.multiply(quantity.toBigDecimal()))
+        assertThat(processingOrder.totalPrice.currency).isEqualTo("EUR")
         // the order belongs to whoever placed it - taken from the token, not from the request
         assertThat(processingOrder.customerId).isEqualTo(TokenProvider.subject(TestUser.CLIENT1))
 
@@ -36,10 +38,15 @@ class HappyPathFulfillmentE2eTest : E2eScenarioTest() {
             assertThat(productAfterConfirmation.available).isEqualTo(product.available - quantity)
         }
 
-        val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
+        val shipment =
+            ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
         assertThat(shipment.status).isEqualTo("Created")
 
-        ShippingApi.pickup(shippingUrl, TestUser.COURIER1, shipment.id) // Created -> In Delivery: FulfillReservationCommand sells the stock
+        ShippingApi.pickup(
+            shippingUrl,
+            TestUser.COURIER1,
+            shipment.id
+        ) // Created -> In Delivery: FulfillReservationCommand sells the stock
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterPickup = InventoryApi.getProduct(inventoryUrl, productId)

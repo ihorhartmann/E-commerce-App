@@ -41,7 +41,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - returns the delegate's result when the call succeeds`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val expected = SubmitPaymentResult(10L, "secret_123")
         every { delegate.submitPayment(orderId, amount) } returns expected
 
@@ -54,7 +54,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - retries a connect failure and returns the result of the next attempt`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val expected = SubmitPaymentResult(10L, "secret_123")
         every { delegate.submitPayment(orderId, amount) } throws
             ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen expected
@@ -68,7 +68,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - throws PaymentServiceUnavailableException once every attempt fails to connect`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         every { delegate.submitPayment(orderId, amount) } throws
             ResourceAccessException("I/O error", ConnectException("Connection refused"))
 
@@ -80,7 +80,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - does not retry a read timeout and throws PaymentServiceUnavailableException`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         every { delegate.submitPayment(orderId, amount) } throws
             ResourceAccessException("I/O error", HttpTimeoutException("request timed out"))
 
@@ -92,7 +92,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - does not retry a server error and rethrows it`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         every { delegate.submitPayment(orderId, amount) } throws
             HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
 
@@ -104,7 +104,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - does not retry a rejected payment and rethrows it`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         every { delegate.submitPayment(orderId, amount) } throws PaymentGatewayException("declined")
 
         assertThrows<PaymentGatewayException> { client.submitPayment(orderId, amount) }
@@ -115,7 +115,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - throws PaymentServiceUnavailableException without calling the delegate while the circuit breaker is open`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         circuitBreaker.transitionToOpenState()
 
         assertThrows<PaymentServiceUnavailableException> { client.submitPayment(orderId, amount) }
@@ -126,7 +126,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - opens the circuit breaker once enough calls fail with a server error`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val failedCalls = 10
         every { delegate.submitPayment(orderId, amount) } throws
             HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -141,7 +141,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - opens the circuit breaker once enough calls report the payment gateway unavailable`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val failedCalls = 10
         every { delegate.submitPayment(orderId, amount) } throws PaymentGatewayUnavailableException("stripe down")
 
@@ -156,7 +156,7 @@ class Resilience4jPaymentClientTest {
     @Test
     fun `submitPayment - keeps the circuit breaker closed when payments are rejected`() {
         val orderId = 1L
-        val amount = Money(BigDecimal("10.00"), Currency.USD)
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val rejectedCalls = 10
         every { delegate.submitPayment(orderId, amount) } throws PaymentGatewayException("declined")
 

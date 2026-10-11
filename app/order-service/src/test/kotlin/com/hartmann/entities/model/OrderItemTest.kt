@@ -9,7 +9,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 
-private fun testPrice() = Money(BigDecimal("10.00"), Currency.USD)
+private fun testPrice() = Money(BigDecimal("10.00"), Currency.EUR)
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderItemTest {

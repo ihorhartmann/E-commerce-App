@@ -8,6 +8,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/segmentio/kafka-go v0.4.51
+	github.com/shopspring/decimal v1.5.0
 	github.com/testcontainers/testcontainers-go/modules/redpanda v0.44.0
 	go.uber.org/mock v0.6.0
 	gorm.io/driver/postgres v1.6.2

@@ -1,13 +1,17 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.entities.model.OrderItem
+import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
+import com.hartmann.interfaceadapter.out.http.dto.CreateReservationResponse
+import com.hartmann.interfaceadapter.out.http.dto.fromCreateReservationResponse
+import com.hartmann.interfaceadapter.out.http.dto.toCreateReservationRequest
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
-import com.hartmann.interfaceadapter.out.http.dto.toCreateReservationRequest
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.toEntity
 
 /**
  * Transport-level failures (a ResourceAccessException) are deliberately left to propagate as-is:
@@ -19,8 +23,8 @@ class HttpInventoryClient(private val restClient: RestClient) : InventoryClient 
         private val LOG = LoggerFactory.getLogger(HttpInventoryClient::class.java)
     }
 
-    override fun reserve(orderId: Long, items: List<OrderItem>) {
-        val request = toCreateReservationRequest(orderId, items)
+    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): Map<Long, Money> {
+        val request = toCreateReservationRequest(orderId, requestedItems)
 
         val response = try {
             restClient.post()
@@ -28,7 +32,7 @@ class HttpInventoryClient(private val restClient: RestClient) : InventoryClient 
                 .header("Idempotency-Key", "reserve-order-$orderId")
                 .body(request)
                 .retrieve()
-                .toBodilessEntity()
+                .toEntity<CreateReservationResponse>()
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.CONFLICT) {
                 throw InsufficientStockException("Insufficient stock for order $orderId")
@@ -40,5 +44,7 @@ class HttpInventoryClient(private val restClient: RestClient) : InventoryClient 
         check(response.statusCode == HttpStatus.CREATED) {
             "Inventory service returned unexpected status ${response.statusCode} for order $orderId"
         }
+        val body = checkNotNull(response.body) { "Inventory service returned no prices for order $orderId" }
+        return fromCreateReservationResponse(body)
     }
 }

@@ -1,6 +1,7 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.entities.model.OrderItem
+import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
@@ -22,15 +23,14 @@ class Resilience4jInventoryClient(
         fun circuitBreakerConfig(): CircuitBreakerConfig = httpCircuitBreakerConfig()
     }
 
-    override fun reserve(orderId: Long, items: List<OrderItem>) {
+    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): Map<Long, Money> =
         try {
-            Retry.decorateRunnable(retry, CircuitBreaker.decorateRunnable(circuitBreaker) {
-                delegate.reserve(orderId, items)
-            }).run()
+            Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker) {
+                delegate.reserve(orderId, requestedItems)
+            }).get()
         } catch (e: CallNotPermittedException) {
             throw InventoryUnavailableException("Inventory service circuit breaker is open, rejected order $orderId", e)
         } catch (e: ResourceAccessException) {
             throw InventoryUnavailableException("Inventory service unreachable for order $orderId", e)
         }
-    }
 }

@@ -3,18 +3,20 @@ package entity
 import (
 	"inventoryservice/domain/model"
 	"inventoryservice/domain/values"
+
+	"github.com/shopspring/decimal"
 )
 
 // Product is the products table row shape.
 type Product struct {
-	ID            uint64  `gorm:"primaryKey"`
-	Name          string  `gorm:"not null"`
-	Description   string  `gorm:"not null"`
-	PriceAmount   float64 `gorm:"not null"`
-	PriceCurrency string  `gorm:"not null"`
-	Quantity      uint    `gorm:"not null"`
-	Reserved      uint    `gorm:"not null;default:0"`
-	Version       uint64  `gorm:"not null;default:0"`
+	ID            uint64          `gorm:"primaryKey"`
+	Name          string          `gorm:"not null"`
+	Description   string          `gorm:"not null"`
+	PriceAmount   decimal.Decimal `gorm:"type:numeric(19,2);not null"`
+	PriceCurrency string          `gorm:"not null"`
+	Quantity      uint            `gorm:"not null"`
+	Reserved      uint            `gorm:"not null;default:0"`
+	Version       uint64          `gorm:"not null;default:0"`
 }
 
 func (Product) TableName() string {

@@ -2,10 +2,12 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
@@ -19,11 +21,13 @@ import (
 	"inventoryservice/domain/values"
 	httperrors "inventoryservice/interfaces/http/errors"
 	"inventoryservice/interfaces/http/middleware"
+
+	"github.com/shopspring/decimal"
 )
 
 func testMoney(t *testing.T) values.Money {
 	t.Helper()
-	money, err := values.NewMoney(10.0, values.USD)
+	money, err := values.NewMoney(decimal.NewFromInt(10), values.EUR)
 	if err != nil {
 		t.Fatalf("unexpected error building test money: %v", err)
 	}
@@ -68,7 +72,7 @@ func TestProductController_CreateProduct(t *testing.T) {
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Return(createdProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 10}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 10}`
 		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -117,7 +121,86 @@ func TestProductController_CreateProduct(t *testing.T) {
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Times(0)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 10}`
+		requestBody := `{"name": "", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 10}`
+		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 400 {
+			t.Errorf("status = %d, want 400", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["error"] != domain.ErrInvalidInput.Error() {
+			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		}
+	})
+
+	t.Run("returns 400 when the price is not in EUR", func(t *testing.T) {
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Times(0)
+		app := newProductTestApp(productService)
+
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 10}`
+		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 400 {
+			t.Errorf("status = %d, want 400", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		if body["error"] != "product price must be in EUR: got USD" {
+			t.Errorf("error = %v, want the unsupported currency", body["error"])
+		}
+	})
+
+	t.Run("reads the price exactly as written and writes it back as a number", func(t *testing.T) {
+		amount := "79.99"
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		var gotProduct *model.Product
+		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, product *model.Product) (*model.Product, error) {
+				gotProduct = product
+				return model.NewExistingProduct(1, product.Name(), product.Description(), product.Price(), product.Quantity(), 0, 0)
+			},
+		)
+		app := newProductTestApp(productService)
+
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": ` + amount + `, "currency": "EUR"}, "quantity": 10}`
+		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 201 {
+			t.Fatalf("status = %d, want 201", resp.StatusCode)
+		}
+		if gotAmount := gotProduct.Price().Amount().String(); gotAmount != amount {
+			t.Errorf("price passed to the service = %s, want %s", gotAmount, amount)
+		}
+		rawBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("failed to read the response body: %v", err)
+		}
+		if wantPrice := `"amount":` + amount + `,`; !strings.Contains(string(rawBody), wantPrice) {
+			t.Errorf("body = %s, want it to contain %s", rawBody, wantPrice)
+		}
+	})
+
+	t.Run("returns 400 when the price has no amount", func(t *testing.T) {
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Times(0)
+		app := newProductTestApp(productService)
+
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"currency": "EUR"}, "quantity": 10}`
 		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -139,7 +222,7 @@ func TestProductController_CreateProduct(t *testing.T) {
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Return(nil, errors.New("db down")).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 10}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 10}`
 		req := httptest.NewRequest("POST", "/products/", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -167,7 +250,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		productService.EXPECT().Update(gomock.Any(), wantUpdate).Return(updatedProduct, nil).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 20}`
 		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -192,7 +275,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 20}`
 		req := httptest.NewRequest("PUT", "/products/abc", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -214,7 +297,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, model.ErrQuantityBelowReserved).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 1}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 1}`
 		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -236,7 +319,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, repository.ErrConcurrentUpdate).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 20}`
 		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -259,7 +342,7 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		productService.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, repository.ErrProductNotFound).Times(1)
 		app := newProductTestApp(productService)
 
-		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "USD"}, "quantity": 20}`
+		requestBody := `{"name": "Widget", "description": "a widget", "price": {"amount": 10.0, "currency": "EUR"}, "quantity": 20}`
 		req := httptest.NewRequest("PUT", "/products/1", bytes.NewBufferString(requestBody))
 		req.Header.Set("Content-Type", "application/json")
 
