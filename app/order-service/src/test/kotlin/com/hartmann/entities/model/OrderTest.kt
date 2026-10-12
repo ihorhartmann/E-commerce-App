@@ -1,10 +1,12 @@
 package com.hartmann.entities.model
 
 import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ShipmentCancellationReason
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -53,21 +55,18 @@ private fun orderWithShipment(shipmentId: Long = 5L) = processingOrder().apply {
 
 private fun orderInDelivery() = orderWithShipment().apply { startDelivery() }
 
-private fun cancelRequestedAfterPickup() = orderInDelivery().apply { cancelShipment() }
+// the courier couldn't hand the goods over
+private fun cancelRequestedAfterPickup() =
+    orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
 
-private fun cancelRequestedBeforePickup() = orderWithShipment().apply { cancelShipment() }
+// only the customer can cancel before pickup: no courier has the shipment yet
+private fun cancelRequestedBeforePickup() = orderWithShipment().apply {
+    requestCancellation()
+    cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED)
+}
 
-// A CANCEL_REQUESTED order loaded without a refund request - no transition produces one anymore,
-// but the model still has to guard against such a persisted state.
-private fun cancelRequestedWithoutRefund() = Order.createExisting(
-    id = 1,
-    customerId = UUID.randomUUID(),
-    items = listOf(testItem()),
-    address = testAddress(),
-    status = OrderStatus.CANCEL_REQUESTED,
-    cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
-    createdAt = Instant.now(),
-)
+// the customer asked to cancel, and shipping-service hasn't answered yet: nothing is refunded so far
+private fun awaitingShipmentCancellation(order: Order = orderWithShipment()) = order.apply { requestCancellation() }
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderTest {
@@ -254,6 +253,70 @@ class OrderTest {
         assertThrows<DomainException> { processingOrder().apply { confirmPayment() } }
     }
 
+    // --- requestCancellation ---
+
+    @Test
+    fun `requestCancellation - moves a processing order to cancel-requested by the customer, refunding nothing yet`() {
+        val order = orderWithShipment()
+
+        val changed = order.requestCancellation()
+
+        assertTrue(changed)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+        assertNull(order.refund)
+        assertFalse(order.awaitingReturn)
+    }
+
+    @Test
+    fun `requestCancellation - changes nothing when the cancellation was already requested`() {
+        val order = awaitingShipmentCancellation()
+
+        val changed = order.requestCancellation()
+
+        assertFalse(changed)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertNull(order.refund)
+    }
+
+    @Test
+    fun `requestCancellation - changes nothing when the order is already being cancelled for another reason`() {
+        val order = orderInDelivery().apply { loseShipment() }
+
+        val changed = order.requestCancellation()
+
+        assertFalse(changed)
+        assertEquals(CancellationReason.SHIPMENT_LOST, order.cancellationReason)
+    }
+
+    @Test
+    fun `requestCancellation - rejects an order that is not paid yet, leaving it unchanged`() {
+        val order = placedOrder()
+
+        assertThrows<OrderNotCancellableException> { order.requestCancellation() }
+
+        assertEquals(OrderStatus.PLACED, order.status)
+        assertNull(order.cancellationReason)
+    }
+
+    @Test
+    fun `requestCancellation - rejects a fulfilled order`() {
+        val order = orderInDelivery().apply { deliver() }
+
+        assertThrows<OrderNotCancellableException> { order.requestCancellation() }
+
+        assertEquals(OrderStatus.FULFILLED, order.status)
+    }
+
+    @Test
+    fun `requestCancellation - rejects a cancelled order`() {
+        val order = placedOrder().apply { failPayment() }
+
+        assertThrows<OrderNotCancellableException> { order.requestCancellation() }
+
+        assertEquals(CancellationReason.PAYMENT_FAILED, order.cancellationReason)
+    }
+
     // --- createShipment / startDelivery / deliver ---
 
     @Test
@@ -266,8 +329,24 @@ class OrderTest {
     }
 
     @Test
+    fun `createShipment - attaches shipment info while the requested cancellation awaits shipping`() {
+        val shipmentId = 5L
+        val order = awaitingShipmentCancellation(processingOrder())
+
+        order.createShipment(shipmentId)
+
+        assertEquals(shipmentId, order.shipment?.shipmentId)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+    }
+
+    @Test
     fun `createShipment - throws when order is not processing`() {
         assertThrows<DomainException> { placedOrder().apply { createShipment(5L) } }
+    }
+
+    @Test
+    fun `createShipment - throws once the cancellation is confirmed`() {
+        assertThrows<DomainException> { cancelRequestedBeforePickup().apply { createShipment(6L) } }
     }
 
     @Test
@@ -276,6 +355,14 @@ class OrderTest {
 
         assertNotNull(order.shipment?.pickedUpAt)
         assertTrue(order.wasPickedUp())
+    }
+
+    @Test
+    fun `startDelivery - marks the shipment picked up while the requested cancellation awaits shipping`() {
+        val order = awaitingShipmentCancellation().apply { startDelivery() }
+
+        assertTrue(order.wasPickedUp())
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
     }
 
     @Test
@@ -289,6 +376,11 @@ class OrderTest {
     }
 
     @Test
+    fun `startDelivery - throws once the cancellation is confirmed`() {
+        assertThrows<DomainException> { cancelRequestedBeforePickup().apply { startDelivery() } }
+    }
+
+    @Test
     fun `deliver - fulfills the order and marks the shipment delivered`() {
         val order = orderInDelivery().apply { deliver() }
 
@@ -297,11 +389,25 @@ class OrderTest {
     }
 
     @Test
+    fun `deliver - fulfills the order and drops the cancellation the customer requested too late`() {
+        val order = awaitingShipmentCancellation(orderInDelivery()).apply { deliver() }
+
+        assertEquals(OrderStatus.FULFILLED, order.status)
+        assertNull(order.cancellationReason)
+        assertNull(order.refund)
+    }
+
+    @Test
     fun `deliver - throws when the shipment was never picked up`() {
         assertThrows<IllegalStateException> { orderWithShipment().apply { deliver() } }
     }
 
-    // --- loseShipment / cancelShipment (PROCESSING -> CANCEL_REQUESTED) ---
+    @Test
+    fun `deliver - throws once the cancellation is confirmed`() {
+        assertThrows<DomainException> { cancelRequestedAfterPickup().apply { deliver() } }
+    }
+
+    // --- loseShipment / cancelShipment (-> CANCEL_REQUESTED with a refund requested) ---
 
     @Test
     fun `loseShipment - does not await a return even though the goods were already picked up`() {
@@ -313,17 +419,65 @@ class OrderTest {
     }
 
     @Test
+    fun `loseShipment - cancels the order as lost even though the customer had asked to cancel it`() {
+        val order = awaitingShipmentCancellation(orderInDelivery()).apply { loseShipment() }
+
+        assertEquals(CancellationReason.SHIPMENT_LOST, order.cancellationReason)
+        assertNotNull(order.refund)
+        assertFalse(order.awaitingReturn)
+    }
+
+    @Test
     fun `loseShipment - throws when order is not processing`() {
         assertThrows<DomainException> { placedOrder().apply { loseShipment() } }
     }
 
     @Test
-    fun `cancelShipment - awaits a return when the courier already picked up the goods`() {
-        val order = cancelRequestedAfterPickup()
+    fun `loseShipment - throws once the cancellation is confirmed`() {
+        assertThrows<DomainException> { cancelRequestedAfterPickup().apply { loseShipment() } }
+    }
+
+    @Test
+    fun `cancelShipment - cancels by the customer and awaits a return when the recipient refused the goods`() {
+        val order = orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
         assertTrue(order.awaitingReturn)
+        assertNotNull(order.refund)
+    }
+
+    @Test
+    fun `cancelShipment - cancels as a failed delivery when the recipient was unavailable`() {
+        val order = orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_UNAVAILABLE) }
+
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertEquals(CancellationReason.DELIVERY_FAILED, order.cancellationReason)
+        assertTrue(order.awaitingReturn)
+        assertNotNull(order.refund)
+    }
+
+    @Test
+    fun `cancelShipment - rejects a cancellation for the order when nobody asked to cancel it, leaving it unchanged`() {
+        val order = orderInDelivery()
+
+        assertThrows<DomainException> { order.cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED) }
+
+        assertEquals(OrderStatus.PROCESSING, order.status)
+        assertNull(order.cancellationReason)
+        assertNull(order.refund)
+    }
+
+    @Test
+    fun `cancelShipment - confirms the cancellation the customer requested, whatever the shipment was cancelled for`() {
+        val order = awaitingShipmentCancellation(orderInDelivery())
+
+        order.cancelShipment(ShipmentCancellationReason.RECIPIENT_UNAVAILABLE)
+
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+        assertTrue(order.awaitingReturn)
+        assertNotNull(order.refund)
     }
 
     @Test
@@ -335,7 +489,16 @@ class OrderTest {
 
     @Test
     fun `cancelShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().apply { cancelShipment() } }
+        assertThrows<DomainException> {
+            placedOrder().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
+        }
+    }
+
+    @Test
+    fun `cancelShipment - throws once the cancellation is confirmed`() {
+        assertThrows<DomainException> {
+            cancelRequestedAfterPickup().apply { cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED) }
+        }
     }
 
     @Test
@@ -399,7 +562,7 @@ class OrderTest {
 
     @Test
     fun `markRefundFailed - throws when there is no refund request`() {
-        assertThrows<IllegalArgumentException> { cancelRequestedWithoutRefund().apply { markRefundFailed() } }
+        assertThrows<IllegalArgumentException> { awaitingShipmentCancellation().apply { markRefundFailed() } }
     }
 
     // --- confirmRefund / returnToStock, both orderings must finalize the same way ---
@@ -458,7 +621,7 @@ class OrderTest {
     @Test
     fun `confirmRefund - throws when there is no refund request`() {
         assertThrows<IllegalArgumentException> {
-            cancelRequestedWithoutRefund().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
+            awaitingShipmentCancellation().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
         }
     }
 
@@ -471,9 +634,14 @@ class OrderTest {
 
     @Test
     fun `returnToStock - throws when order has no shipment`() {
-        val order = processingOrder().apply { cancelShipment() }
+        val order = processingOrder().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
 
         assertThrows<IllegalArgumentException> { order.returnToStock() }
+    }
+
+    @Test
+    fun `returnToStock - throws while the requested cancellation awaits shipping`() {
+        assertThrows<IllegalArgumentException> { awaitingShipmentCancellation().apply { returnToStock() } }
     }
 
     @Test

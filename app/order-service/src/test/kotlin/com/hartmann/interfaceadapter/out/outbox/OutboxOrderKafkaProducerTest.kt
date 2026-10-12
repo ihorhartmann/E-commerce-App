@@ -108,6 +108,21 @@ class OutboxOrderKafkaProducerTest {
     }
 
     @Test
+    fun `publishCancelShipment - inserts a CancelShipment command keyed by the order id, like the CreateShipment one`() {
+        val orderId = 48L
+        val correlationId = "corr-7"
+
+        producer.publishCancelShipment(correlationId, orderId)
+
+        val message = captureInsertedMessage()
+        assertEquals(KafkaConst.SHIPPING_COMMANDS_TOPIC, message.topic)
+        assertEquals(orderId.toString(), message.key)
+        assertEquals(KafkaConst.CANCEL_SHIPMENT_COMMAND, message.messageType)
+        assertEquals(correlationId, message.correlationId)
+        assertEquals("{\"orderId\":$orderId}", message.payload)
+    }
+
+    @Test
     fun `publishRefundRequested - inserts a RefundRequested command with the amount and currency`() {
         val orderId = 47L
         val amount = BigDecimal("40.00")

@@ -13,6 +13,7 @@ func (mt MessageType) String() string {
 
 const (
 	CreateShipmentCommand MessageType = "CreateShipment"
+	CancelShipmentCommand MessageType = "CancelShipment"
 
 	ShipmentCreatedEvent             MessageType = "ShipmentCreated"
 	ShipmentInDeliveryEvent          MessageType = "ShipmentInDelivery"

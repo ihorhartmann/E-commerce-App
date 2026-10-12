@@ -1,6 +1,7 @@
 package com.hartmann.usecase.port.`in`.saga
 
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
 
 interface FulfillOrderSaga {
@@ -12,7 +13,7 @@ interface FulfillOrderSaga {
     fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, shipmentId: Long)
     fun onShipmentInDelivery(message: KafkaMessageMetadata, orderId: Long)
     fun onShipmentDelivered(message: KafkaMessageMetadata, orderId: Long)
-    fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long)
+    fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long, reason: ShipmentCancellationReason)
     fun onShipmentLost(message: KafkaMessageMetadata, orderId: Long)
     fun onShipmentReturnedToInventory(message: KafkaMessageMetadata, orderId: Long)
 }

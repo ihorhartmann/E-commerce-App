@@ -125,9 +125,18 @@ func (sc *ShipmentController) Lose(c *gin.Context) {
 	sc.handleCourierTransition(c, sc.shipmentService.Lose)
 }
 
-// Cancel moves a shipment Created or InDelivery -> Cancelled.
+// Cancel moves a shipment InDelivery -> Cancelled when the courier couldn't hand the goods over, for the reason they
+// give; only the assigned courier may.
 func (sc *ShipmentController) Cancel(c *gin.Context) {
-	sc.handleTransition(c, sc.shipmentService.Cancel)
+	var request dto.CancelShipmentRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		HandleError(c, ErrInvalidRequestBody)
+		return
+	}
+
+	sc.handleCourierTransition(c, func(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
+		return sc.shipmentService.Cancel(ctx, id, courierID, model.CancellationReason(request.Reason))
+	})
 }
 
 // ConfirmReturnedToInventory records that the courier physically brought the goods back
@@ -152,8 +161,7 @@ func (sc *ShipmentController) handleCourierTransition(
 	})
 }
 
-// handleTransition shows the full address: only the assigned courier (or an admin, for a cancellation) may move a
-// shipment on.
+// handleTransition shows the full address: only the assigned courier may move a shipment on.
 func (sc *ShipmentController) handleTransition(c *gin.Context, transition func(ctx context.Context, id uint64) (*model.Shipment, error)) {
 	id, err := parseIDParam(c, "id")
 	if err != nil {

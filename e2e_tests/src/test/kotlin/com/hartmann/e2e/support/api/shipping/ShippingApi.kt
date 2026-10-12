@@ -2,6 +2,7 @@ package com.hartmann.e2e.support.api.shipping
 
 import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.auth.givenAs
+import io.restassured.http.ContentType
 import io.restassured.response.ValidatableResponse
 import java.net.HttpURLConnection
 import java.util.UUID
@@ -40,9 +41,22 @@ object ShippingApi {
     fun confirmReturnedToInventory(baseUrl: String, courier: TestUser, shipmentId: Long): ShipmentResponse =
         transitionExpectingSuccess(baseUrl, courier, shipmentId, "return")
 
-    // admin-only until customers cancel through the order-service (docs/business_tasks.md, task 3)
-    fun cancel(baseUrl: String, shipmentId: Long): ShipmentResponse =
-        transitionExpectingSuccess(baseUrl, TestUser.ADMIN, shipmentId, "cancel")
+    /**
+     * The assigned courier telling the goods couldn't be handed over, for a reason of theirs (`RecipientRefused`,
+     * `RecipientUnavailable`); customers cancel their order through the order-service instead.
+     */
+    fun cancel(baseUrl: String, courier: TestUser, shipmentId: Long, reason: String): ValidatableResponse =
+        givenAs(courier)
+            .contentType(ContentType.JSON)
+            .header("Idempotency-Key", UUID.randomUUID().toString())
+            .body(CancelShipmentRequest(reason))
+            .post("$baseUrl/api/v1/shipments/$shipmentId/cancel")
+            .then()
+
+    fun cancelExpectingSuccess(baseUrl: String, courier: TestUser, shipmentId: Long, reason: String): ShipmentResponse =
+        cancel(baseUrl, courier, shipmentId, reason)
+            .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().`as`(ShipmentResponse::class.java)
 
     fun transition(baseUrl: String, user: TestUser, shipmentId: Long, action: String): ValidatableResponse =
         givenAs(user)

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// testShipment builds a shipment a courier has; a cancelled one was refused by the recipient.
 func testShipment(t *testing.T, orderID uint64, status model.ShipmentStatus) *model.Shipment {
 	t.Helper()
 	address, err := value.NewAddress("Kyiv", "01001", "Khreshchatyk 1", "")
@@ -25,7 +26,11 @@ func testShipment(t *testing.T, orderID uint64, status model.ShipmentStatus) *mo
 		t.Fatalf("failed to build test address: %v", err)
 	}
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(1, orderID, uuid.New(), address, status, model.HolderCourier, now, now, 0)
+	cancellationReason := model.NoCancellationReason
+	if status == model.Cancelled {
+		cancellationReason = model.RecipientRefused
+	}
+	shipment, err := model.NewExistingShipment(1, orderID, uuid.New(), address, status, model.HolderCourier, cancellationReason, now, now, 0)
 	if err != nil {
 		t.Fatalf("failed to build test shipment: %v", err)
 	}
@@ -35,9 +40,9 @@ func testShipment(t *testing.T, orderID uint64, status model.ShipmentStatus) *mo
 // wantOutboxMessage builds the expected outbox message via dto.NewOutboxMessage itself, the same
 // constructor the producer uses - MessageID stays empty on both sides since the database, not this
 // code, assigns it on insert.
-func wantOutboxMessage(t *testing.T, messageType kafkaconst.MessageType, correlationID string, shipment *model.Shipment) dto.OutboxMessage {
+func wantOutboxMessage(t *testing.T, messageType kafkaconst.MessageType, correlationID string, shipment *model.Shipment, payload any) dto.OutboxMessage {
 	t.Helper()
-	want, err := dto.NewOutboxMessage(correlationID, messageType.String(), kafkautil.FormatKafkaId(shipment.OrderId()), kafkadto.ToShipmentStatusChangedEvent(shipment))
+	want, err := dto.NewOutboxMessage(correlationID, messageType.String(), kafkautil.FormatKafkaId(shipment.OrderId()), payload)
 	if err != nil {
 		t.Fatalf("failed to build expected outbox message: %v", err)
 	}
@@ -49,7 +54,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 		correlationID := "corr-1"
 		orderID := uint64(42)
 		shipment := testShipment(t, orderID, model.InDelivery)
-		want := wantOutboxMessage(t, kafkaconst.ShipmentInDeliveryEvent, correlationID, shipment)
+		want := wantOutboxMessage(t, kafkaconst.ShipmentInDeliveryEvent, correlationID, shipment, kafkadto.ToShipmentStatusChangedEvent(shipment))
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)
@@ -60,11 +65,12 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentStatusChanged(t *testing.T) 
 		}
 	})
 
-	t.Run("inserts the mapped event for a Cancelled shipment", func(t *testing.T) {
+	t.Run("inserts the event with the cancellation reason for a Cancelled shipment", func(t *testing.T) {
 		correlationID := "corr-2"
 		orderID := uint64(7)
 		shipment := testShipment(t, orderID, model.Cancelled)
-		want := wantOutboxMessage(t, kafkaconst.ShipmentCancelledEvent, correlationID, shipment)
+		want := wantOutboxMessage(t, kafkaconst.ShipmentCancelledEvent, correlationID, shipment,
+			kafkadto.ShipmentCancelledEvent{OrderID: orderID, ShipmentID: shipment.Id(), Reason: "RecipientRefused"})
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)
@@ -97,7 +103,7 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentReturnedToInventory(t *testi
 		correlationID := "corr-3"
 		orderID := uint64(9)
 		shipment := testShipment(t, orderID, model.Cancelled)
-		want := wantOutboxMessage(t, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment)
+		want := wantOutboxMessage(t, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment, kafkadto.ToShipmentStatusChangedEvent(shipment))
 
 		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
 		repository.EXPECT().Insert(gomock.Any(), want).Return(nil).Times(1)

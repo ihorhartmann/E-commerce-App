@@ -10,5 +10,6 @@ interface OrderKafkaProducer {
     fun publishHoldReservation(correlationId: String, orderId: Long)
     fun publishRestock(correlationId: String, orderId: Long, items: List<RestockItemDto>)
     fun publishCreateShipment(correlationId: String, orderId: Long, address: Address)
+    fun publishCancelShipment(correlationId: String, orderId: Long)
     fun publishRefundRequested(correlationId: String, orderId: Long, amount: BigDecimal, currency: String)
 }

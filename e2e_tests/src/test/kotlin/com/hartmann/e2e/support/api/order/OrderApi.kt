@@ -31,6 +31,18 @@ object OrderApi {
             .statusCode(HttpURLConnection.HTTP_OK)
             .extract().`as`(OrderResponse::class.java)
 
+    /** The customer asking to cancel their order; shipping decides afterwards whether its shipment still can be. */
+    fun requestOrderCancellation(baseUrl: String, customer: TestUser, orderId: Long): ValidatableResponse =
+        givenAs(customer)
+            .header("Idempotency-Key", UUID.randomUUID().toString())
+            .post("$baseUrl/api/v1/orders/$orderId/cancel")
+            .then()
+
+    fun cancelOrder(baseUrl: String, customer: TestUser, orderId: Long): OrderResponse =
+        requestOrderCancellation(baseUrl, customer, orderId)
+            .statusCode(HttpURLConnection.HTTP_OK)
+            .extract().`as`(OrderResponse::class.java)
+
     fun findCustomerOrders(baseUrl: String, customer: TestUser, page: Int, size: Int): ListOrdersResponse =
         givenAs(customer)
             .queryParam("page", page)

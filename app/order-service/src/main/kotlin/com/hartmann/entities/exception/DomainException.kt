@@ -1,3 +1,3 @@
 package com.hartmann.entities.exception
 
-class DomainException(message: String) : Exception(message)
+open class DomainException(message: String) : Exception(message)

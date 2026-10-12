@@ -5,7 +5,9 @@ import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.RefundCompletedEvent
+import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentCancelledEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
+import com.hartmann.interfaceadapter.`in`.kafka.dto.fromShipmentCancelledEvent
 import com.hartmann.interfaceadapter.`in`.kafka.exception.InvalidMessageHeaderException
 import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
@@ -112,8 +114,8 @@ class OrderKafkaConsumer(
                 }
 
                 KafkaConst.SHIPMENT_CANCELLED_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
-                    saga.onShipmentCancelled(message, event.orderId)
+                    val event = objectMapper.readValue(payload, ShipmentCancelledEvent::class.java)
+                    saga.onShipmentCancelled(message, event.orderId, fromShipmentCancelledEvent(event))
                     true
                 }
 

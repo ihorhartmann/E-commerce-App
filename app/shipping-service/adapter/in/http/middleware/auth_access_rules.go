@@ -7,7 +7,6 @@ import (
 
 const (
 	courierRole = "COURIER"
-	adminRole   = "ADMIN"
 )
 
 // accessRules lists who may call each endpoint of this service; anything not listed is denied. Roles are checked here,
@@ -22,8 +21,6 @@ func accessRules() []auth.AccessRule {
 		auth.RequireRole(http.MethodPost, "/api/v1/shipments/*/deliver", courierRole),
 		auth.RequireRole(http.MethodPost, "/api/v1/shipments/*/lose", courierRole),
 		auth.RequireRole(http.MethodPost, "/api/v1/shipments/*/return", courierRole),
-		// a customer will cancel the order through the order-service instead (docs/business_tasks.md);
-		// admin-only until then
-		auth.RequireRole(http.MethodPost, "/api/v1/shipments/*/cancel", adminRole),
+		auth.RequireRole(http.MethodPost, "/api/v1/shipments/*/cancel", courierRole),
 	}
 }

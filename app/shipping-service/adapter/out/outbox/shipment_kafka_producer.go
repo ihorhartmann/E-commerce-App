@@ -31,20 +31,26 @@ func (p *ShipmentKafkaProducer) PublishShipmentStatusChanged(ctx context.Context
 		return err
 	}
 
-	return p.insert(ctx, messageType, correlationID, shipment)
+	// a cancellation is the only status change that carries more than which shipment it is about
+	if messageType == kafkaconst.ShipmentCancelledEvent {
+		return p.insert(ctx, messageType, correlationID, shipment.OrderId(), kafkadto.ToShipmentCancelledEvent(shipment))
+	}
+
+	return p.insert(ctx, messageType, correlationID, shipment.OrderId(), kafkadto.ToShipmentStatusChangedEvent(shipment))
 }
 
 func (p *ShipmentKafkaProducer) PublishShipmentReturnedToInventory(ctx context.Context, correlationID string, shipment *model.Shipment) error {
-	return p.insert(ctx, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment)
+	return p.insert(ctx, kafkaconst.ShipmentReturnedToInventoryEvent, correlationID, shipment.OrderId(), kafkadto.ToShipmentStatusChangedEvent(shipment))
 }
 
-func (p *ShipmentKafkaProducer) insert(ctx context.Context, messageType kafkaconst.MessageType, correlationID string, shipment *model.Shipment) error {
+func (p *ShipmentKafkaProducer) insert(ctx context.Context, messageType kafkaconst.MessageType, correlationID string, orderID uint64, payload any) error {
 	message, err := dto.NewOutboxMessage(
 		correlationID,
 		messageType.String(),
-		kafkautil.FormatKafkaId(shipment.OrderId()),
-		kafkadto.ToShipmentStatusChangedEvent(shipment),
+		kafkautil.FormatKafkaId(orderID),
+		payload,
 	)
+
 	if err != nil {
 		return err
 	}

@@ -104,6 +104,21 @@ func (mr *MockShipmentRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockShipmentRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByOrderID mocks base method.
+func (m *MockShipmentRepository) GetByOrderID(ctx context.Context, orderID uint64) (*model.Shipment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByOrderID", ctx, orderID)
+	ret0, _ := ret[0].(*model.Shipment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByOrderID indicates an expected call of GetByOrderID.
+func (mr *MockShipmentRepositoryMockRecorder) GetByOrderID(ctx, orderID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByOrderID", reflect.TypeOf((*MockShipmentRepository)(nil).GetByOrderID), ctx, orderID)
+}
+
 // Update mocks base method.
 func (m *MockShipmentRepository) Update(ctx context.Context, shipment *model.Shipment) (*model.Shipment, error) {
 	m.ctrl.T.Helper()

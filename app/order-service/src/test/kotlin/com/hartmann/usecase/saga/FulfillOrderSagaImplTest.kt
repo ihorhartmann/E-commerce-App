@@ -6,6 +6,7 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.usecase.port.out.idempotency.ProcessedKafkaMessageStore
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
@@ -204,7 +205,7 @@ class FulfillOrderSagaImplTest {
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(message, orderId)
+        saga.onShipmentCancelled(message, orderId, ShipmentCancellationReason.RECIPIENT_REFUSED)
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, savedOrder?.status)
         assertEquals(true, savedOrder?.awaitingReturn)
@@ -221,11 +222,11 @@ class FulfillOrderSagaImplTest {
         val correlationId = "corr-1"
         val messageType = "ShipmentCancelled"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val order = orderWithShipment()
+        val order = orderWithShipment().apply { requestCancellation() }
         stubGetOrder(order)
         stubSave()
 
-        saga.onShipmentCancelled(message, orderId)
+        saga.onShipmentCancelled(message, orderId, ShipmentCancellationReason.ORDER_CANCELLED)
 
         assertNotEquals(true, savedOrder?.awaitingReturn)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
@@ -258,7 +259,7 @@ class FulfillOrderSagaImplTest {
         val correlationId = "corr-1"
         val messageType = "ShipmentReturnedToInventory"
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val order = orderInDelivery().apply { cancelShipment() }
+        val order = orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
         stubGetOrder(order)
         stubSave()
 
@@ -272,7 +273,7 @@ class FulfillOrderSagaImplTest {
     @Test
     fun `onRefundCompleted - confirms the refund with the reported amount and currency`() {
         val amount = BigDecimal("20.00")
-        val order = orderInDelivery().apply { cancelShipment() }
+        val order = orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
         stubGetOrder(order)
         stubSave()
 
@@ -286,7 +287,7 @@ class FulfillOrderSagaImplTest {
 
     @Test
     fun `onRefundFailed - flags the refund as failed`() {
-        val order = orderInDelivery().apply { cancelShipment() }
+        val order = orderInDelivery().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
         stubGetOrder(order)
         stubSave()
 

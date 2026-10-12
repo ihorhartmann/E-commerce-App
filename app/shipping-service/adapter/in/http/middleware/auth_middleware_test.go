@@ -164,9 +164,9 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 	t.Run("answers 403 when the token lacks the required role", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		verifier := mocks.NewMockTokenVerifier(ctrl)
-		token := "courier-token"
+		token := "client-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"COURIER"}}, nil).Times(1)
+			Return(auth.Principal{UserID: uuid.New(), Roles: []string{"CLIENT"}}, nil).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, cancelPath, "Bearer "+token)
 

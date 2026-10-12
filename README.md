@@ -35,9 +35,9 @@ the realm file, recreate the database volume: `docker compose down -v`.
 
 | User | Password | Role | Can |
 |---|---|---|---|
-| `client1`, `client2` | same as the username | `CLIENT` | place and read own orders (with their shipment) |
-| `courier1`, `courier2` | same as the username | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / return it |
-| `admin` | `admin` | `ADMIN` | create and update products, cancel shipments, read payments and refunds |
+| `client1`, `client2` | same as the username | `CLIENT` | place, read and cancel own orders (with their shipment) |
+| `courier1`, `courier2` | same as the username | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
+| `admin` | `admin` | `ADMIN` | create and update products, read payments and refunds |
 
 Self-registration is open, and a new user gets the `CLIENT` role. The `order-service` client has its own service
 account (roles `INVENTORY_RESERVE`, `PAYMENT_SUBMIT`) for its calls to the inventory- and payment-service.

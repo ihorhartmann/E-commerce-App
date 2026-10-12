@@ -40,11 +40,16 @@ func testAddress(t *testing.T) value.Address {
 	return address
 }
 
-// testShipment builds a shipment of order 100; courierID must be uuid.Nil before pickup and set after it.
+// testShipment builds a shipment of order 100; courierID must be uuid.Nil before pickup and set after it. A cancelled
+// one is cancelled with its order - the only reason that fits both before and after pickup.
 func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder, courierID uuid.UUID) *model.Shipment {
 	t.Helper()
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(id, 100, courierID, testAddress(t), status, holder, now, now, 0)
+	cancellationReason := model.NoCancellationReason
+	if status == model.Cancelled {
+		cancellationReason = model.OrderCancelled
+	}
+	shipment, err := model.NewExistingShipment(id, 100, courierID, testAddress(t), status, holder, cancellationReason, now, now, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
@@ -512,35 +517,209 @@ func TestShipmentServiceImpl_Lose(t *testing.T) {
 }
 
 func TestShipmentServiceImpl_Cancel(t *testing.T) {
-	id := uint64(1)
-	shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
-	shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
-	producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+	t.Run("cancels the shipment for the assigned courier with their reason, persists, and publishes the status change", func(t *testing.T) {
+		id := uint64(1)
+		courierID := uuid.New()
+		reason := model.RecipientUnavailable
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, courierID)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
 
-	shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
 
-	var transitioned *model.Shipment
-	shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-		func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
-			transitioned = s
-			return s, nil
-		},
-	)
-	producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
+		var transitioned *model.Shipment
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
+				transitioned = s
+				return s, nil
+			},
+		)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), "100", gomock.Any()).Return(nil).Times(1)
 
-	service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-	got, err := service.Cancel(context.Background(), id)
+		got, err := service.Cancel(context.Background(), id, courierID, reason)
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if transitioned == nil || transitioned.Status() != model.Cancelled || transitioned.Holder() != model.HolderCourier {
+			t.Fatalf("unexpected transition: %+v", transitioned)
+		}
+		if transitioned.CancellationReason() != reason {
+			t.Errorf("CancellationReason() = %q, want %q", transitioned.CancellationReason(), reason)
+		}
+		if !reflect.DeepEqual(got, transitioned) {
+			t.Errorf("Cancel() = %+v, want %+v", got, transitioned)
+		}
+	})
+
+	for _, reason := range []model.CancellationReason{model.OrderCancelled, model.NoCancellationReason, "Whatever"} {
+		t.Run("rejects the reason \""+string(reason)+"\", which a courier may not report, without loading the shipment", func(t *testing.T) {
+			shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+			producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+			shipmentRepo.EXPECT().GetByID(gomock.Any(), gomock.Any()).Times(0)
+			shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+			producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+			service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+			_, err := service.Cancel(context.Background(), 1, uuid.New(), reason)
+
+			if !errors.Is(err, ErrInvalidCancellationReason) {
+				t.Errorf("err = %v, want %v", err, ErrInvalidCancellationReason)
+			}
+		})
 	}
-	if transitioned == nil || transitioned.Status() != model.Cancelled || transitioned.Holder() != model.HolderInventory {
-		t.Fatalf("unexpected transition: %+v", transitioned)
-	}
-	if !reflect.DeepEqual(got, transitioned) {
-		t.Errorf("Cancel() = %+v, want %+v", got, transitioned)
-	}
+
+	t.Run("rejects a courier the shipment is not assigned to, without persisting or publishing", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.InDelivery, model.HolderCourier, uuid.New())
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		_, err := service.Cancel(context.Background(), id, uuid.New(), model.RecipientRefused)
+
+		if !errors.Is(err, ErrNotAssignedCourier) {
+			t.Errorf("err = %v, want %v", err, ErrNotAssignedCourier)
+		}
+		if shipment.Status() != model.InDelivery {
+			t.Errorf("Status() = %v, want %v", shipment.Status(), model.InDelivery)
+		}
+	})
+}
+
+func TestShipmentServiceImpl_CancelByOrder(t *testing.T) {
+	msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-1", MessageType: "CancelShipment"}
+
+	t.Run("cancels the order's shipment with the order, persists, and publishes the status change", func(t *testing.T) {
+		orderID := uint64(100)
+		courierID := uuid.New()
+		shipment := testShipment(t, 1, model.InDelivery, model.HolderCourier, courierID)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
+		shipmentRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(shipment, nil).Times(1)
+
+		var transitioned *model.Shipment
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) {
+				transitioned = s
+				return s, nil
+			},
+		)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), msg.CorrelationID, gomock.Any()).Return(nil).Times(1)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
+
+		got, err := service.CancelByOrder(context.Background(), msg, orderID)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !got {
+			t.Error("CancelByOrder() = false, want true")
+		}
+		if transitioned == nil || transitioned.Status() != model.Cancelled || transitioned.Holder() != model.HolderCourier {
+			t.Fatalf("unexpected transition: %+v", transitioned)
+		}
+		if transitioned.CancellationReason() != model.OrderCancelled {
+			t.Errorf("CancellationReason() = %q, want %q", transitioned.CancellationReason(), model.OrderCancelled)
+		}
+	})
+
+	t.Run("skips reprocessing an already-processed message without error", func(t *testing.T) {
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(true, nil).Times(1)
+		shipmentRepo.EXPECT().GetByOrderID(gomock.Any(), gomock.Any()).Times(0)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
+
+		got, err := service.CancelByOrder(context.Background(), msg, 100)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got {
+			t.Error("CancelByOrder() = true, want false")
+		}
+	})
+
+	t.Run("drops the request without persisting or publishing when the shipment has already ended", func(t *testing.T) {
+		orderID := uint64(100)
+		shipment := testShipment(t, 1, model.Delivered, model.HolderCourier, uuid.New())
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
+		shipmentRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
+
+		got, err := service.CancelByOrder(context.Background(), msg, orderID)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got {
+			t.Error("CancelByOrder() = true, want false")
+		}
+		if shipment.Status() != model.Delivered {
+			t.Errorf("Status() = %v, want %v", shipment.Status(), model.Delivered)
+		}
+	})
+
+	t.Run("propagates an error fetching the order's shipment", func(t *testing.T) {
+		orderID := uint64(100)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
+		shipmentRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(nil, repository.ErrShipmentNotFound).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Times(0)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
+
+		_, err := service.CancelByOrder(context.Background(), msg, orderID)
+
+		if !errors.Is(err, repository.ErrShipmentNotFound) {
+			t.Errorf("err = %v, want %v", err, repository.ErrShipmentNotFound)
+		}
+	})
+
+	t.Run("propagates an error persisting the cancelled shipment, without publishing", func(t *testing.T) {
+		orderID := uint64(100)
+		shipment := testShipment(t, 1, model.Created, model.HolderInventory, uuid.Nil)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+		processedMessageStore := idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t))
+		processedMessageStore.EXPECT().MarkProcessed(gomock.Any(), msg).Return(false, nil).Times(1)
+		shipmentRepo.EXPECT().GetByOrderID(gomock.Any(), orderID).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).Return(nil, repository.ErrConcurrentUpdate).Times(1)
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, processedMessageStore, noopTxExecutor{})
+
+		_, err := service.CancelByOrder(context.Background(), msg, orderID)
+
+		if !errors.Is(err, repository.ErrConcurrentUpdate) {
+			t.Errorf("err = %v, want %v", err, repository.ErrConcurrentUpdate)
+		}
+	})
 }
 
 func TestShipmentServiceImpl_ConfirmReturnedToInventory(t *testing.T) {

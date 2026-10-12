@@ -8,6 +8,7 @@ import com.hartmann.usecase.port.out.internal.exception.PaymentServiceUnavailabl
 import com.hartmann.usecase.port.out.repository.exception.ConcurrentUpdateException
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.exception.OrderNotCancellableException
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -33,6 +34,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(ConcurrentUpdateException::class)
     fun concurrentUpdate(exception: ConcurrentUpdateException) =
         error(HttpStatus.SERVICE_UNAVAILABLE, exception.message ?: "Order was changed concurrently")
+
+    @ExceptionHandler(OrderNotCancellableException::class)
+    fun notCancellable(exception: OrderNotCancellableException) =
+        error(HttpStatus.CONFLICT, exception.message ?: "Order can't be cancelled")
 
     @ExceptionHandler(InsufficientStockException::class)
     fun insufficientStock(exception: InsufficientStockException) =

@@ -58,6 +58,20 @@ func (r *postgresShipmentRepository) GetByID(ctx context.Context, id uint64) (*m
 	return entity.FromShipmentEntity(&row)
 }
 
+func (r *postgresShipmentRepository) GetByOrderID(ctx context.Context, orderID uint64) (*model.Shipment, error) {
+	db := transaction.FromWithDefault(ctx, r.db)
+
+	var row entity.Shipment
+	if err := db.WithContext(ctx).First(&row, "order_id = ?", orderID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("%w: order %d", repository.ErrShipmentNotFound, orderID)
+		}
+		return nil, err
+	}
+
+	return entity.FromShipmentEntity(&row)
+}
+
 func (r *postgresShipmentRepository) GetAvailableShipments(ctx context.Context, offset, limit int) ([]*model.Shipment, int64, error) {
 	query := transaction.FromWithDefault(ctx, r.db).WithContext(ctx).
 		Model(&entity.Shipment{}).
@@ -118,11 +132,12 @@ func (r *postgresShipmentRepository) Update(ctx context.Context, shipment *model
 		Clauses(clause.Returning{}).
 		Where("id = ? AND version = ?", row.ID, version).
 		Updates(map[string]any{
-			"status":     row.Status,
-			"holder":     row.Holder,
-			"courier_id": row.CourierID,
-			"updated_at": row.UpdatedAt,
-			"version":    gorm.Expr("version + 1"),
+			"status":              row.Status,
+			"holder":              row.Holder,
+			"courier_id":          row.CourierID,
+			"cancellation_reason": row.CancellationReason,
+			"updated_at":          row.UpdatedAt,
+			"version":             gorm.Expr("version + 1"),
 		})
 	if result.Error != nil {
 		return nil, result.Error

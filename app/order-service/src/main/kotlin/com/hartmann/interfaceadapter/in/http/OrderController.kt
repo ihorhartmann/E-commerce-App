@@ -1,5 +1,6 @@
 package com.hartmann.interfaceadapter.`in`.http
 
+import com.hartmann.usecase.port.`in`.usecase.CancelOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.FindCustomerOrdersUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
@@ -28,6 +29,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/orders")
 class OrderController(
     private val placeOrderUseCase: PlaceOrderUseCase,
+    private val cancelOrderUseCase: CancelOrderUseCase,
     private val getOrderUseCase: GetOrderUseCase,
     private val findCustomerOrdersUseCase: FindCustomerOrdersUseCase,
 ) {
@@ -61,6 +63,10 @@ class OrderController(
     @GetMapping("/{orderId}")
     fun getOrderById(@PathVariable orderId: Long, @AuthenticationPrincipal jwt: Jwt): OrderResponse =
         toOrderResponse(getOrderUseCase.execute(orderId, getCustomerId(jwt)))
+
+    @PostMapping("/{orderId}/cancel")
+    fun cancelOrder(@PathVariable orderId: Long, @AuthenticationPrincipal jwt: Jwt): OrderResponse =
+        toOrderResponse(cancelOrderUseCase.execute(orderId, getCustomerId(jwt)))
 
     // the token's subject is the Keycloak user id - a UUID - and is the only trusted source of who the customer is
     private fun getCustomerId(jwt: Jwt): UUID = UUID.fromString(jwt.subject)
