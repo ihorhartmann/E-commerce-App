@@ -15,7 +15,7 @@ import java.math.BigDecimal
 class CustomerCancelBeforePickupE2eTest : E2eScenarioTest() {
 
     @Test
-    fun `cancel shipment - before pickup releases the reservation immediately and requests a refund`() {
+    fun `cancel order - before pickup cancels the shipment, releases the reservation and refunds the customer`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
         val paymentUrl = DockerComposeStack.paymentServiceUrl
@@ -29,7 +29,19 @@ class CustomerCancelBeforePickupE2eTest : E2eScenarioTest() {
         val shipment = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, requireNotNull(processingOrder.shipment).id)
         assertThat(shipment.status).isEqualTo("Created") // not picked up yet
 
-        ShippingApi.cancel(shippingUrl, shipment.id)
+        // the order is only asked to be cancelled: nothing is refunded until shipping confirms
+        val orderAfterRequest = OrderApi.cancelOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
+        assertThat(orderAfterRequest.status).isEqualTo("CANCEL_REQUESTED")
+        assertThat(orderAfterRequest.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
+        // asking again changes nothing - and must not make shipping cancel, or payment refund, twice
+        OrderApi.cancelOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
+
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val shipmentAfterCancel = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, shipment.id)
+            assertThat(shipmentAfterCancel.status).isEqualTo("Cancelled")
+            assertThat(shipmentAfterCancel.cancellationReason).isEqualTo("OrderCancelled")
+            assertThat(shipmentAfterCancel.holder).isEqualTo("Inventory")
+        }
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)

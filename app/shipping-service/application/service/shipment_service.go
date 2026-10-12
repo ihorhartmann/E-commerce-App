@@ -132,8 +132,49 @@ func (s *ShipmentServiceImpl) Lose(ctx context.Context, id uint64, courierID uui
 	})
 }
 
-func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64) (*model.Shipment, error) {
-	return s.applyTransition(ctx, id, (*model.Shipment).Cancel)
+func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64, courierID uuid.UUID, reason model.CancellationReason) (*model.Shipment, error) {
+	if !reason.IsReportedByCourier() {
+		return nil, fmt.Errorf("%w: %q", ErrInvalidCancellationReason, reason)
+	}
+
+	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error {
+		return requireAssignedCourier(shipment, courierID, func(shipment *model.Shipment) error { return shipment.Cancel(reason) })
+	})
+}
+
+// CancelByOrder races with the courier: by the time the request arrives, the shipment may already be delivered, lost
+// or cancelled by them. That isn't a failure - the order finds out from the event of whatever happened first - so
+// the request is just dropped.
+func (s *ShipmentServiceImpl) CancelByOrder(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) (bool, error) {
+	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (bool, error) {
+		alreadyProcessed, err := s.processedMessageStore.MarkProcessed(ctx, msg)
+		if alreadyProcessed || err != nil {
+			return false, err
+		}
+
+		shipment, err := s.shipmentRepository.GetByOrderID(ctx, orderID)
+		if err != nil {
+			return false, err
+		}
+		if !shipment.CanBeCancelled() {
+			return false, nil
+		}
+
+		if err = shipment.Cancel(model.OrderCancelled); err != nil {
+			return false, err
+		}
+
+		shipment, err = s.shipmentRepository.Update(ctx, shipment)
+		if err != nil {
+			return false, err
+		}
+
+		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, msg.CorrelationID, shipment); err != nil {
+			return false, err
+		}
+
+		return true, nil
+	})
 }
 
 // ConfirmReturnedToInventory only changes the shipment's holder, not its status, so it publishes

@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	commonkafka "shippingservice/adapter/common/kafka"
 	"shippingservice/adapter/in/kafka/common"
 	"shippingservice/adapter/in/kafka/dto"
@@ -41,6 +42,8 @@ func (c *ShipmentKafkaConsumer) handleMessage(ctx context.Context, messageType c
 	switch messageType {
 	case commonkafka.CreateShipmentCommand:
 		return c.handleCreateShipment(ctx, msg, payload)
+	case commonkafka.CancelShipmentCommand:
+		return c.handleCancelShipment(ctx, msg, payload)
 	default:
 		return nil
 	}
@@ -58,5 +61,19 @@ func (c *ShipmentKafkaConsumer) handleCreateShipment(ctx context.Context, msg id
 	}
 
 	_, err = c.shipmentService.CreateShipment(ctx, msg, command.OrderID, address)
+	return classify(err)
+}
+
+func (c *ShipmentKafkaConsumer) handleCancelShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
+	var command dto.CancelShipmentCommand
+	if err := json.Unmarshal(payload, &command); err != nil {
+		return NonRetryable(err)
+	}
+
+	cancelled, err := c.shipmentService.CancelByOrder(ctx, msg, command.OrderID)
+	if err == nil && !cancelled {
+		slog.Info("nothing to cancel: the shipment has already ended, or the command was already handled", "orderId", command.OrderID, "correlationId", msg.CorrelationID)
+	}
+
 	return classify(err)
 }

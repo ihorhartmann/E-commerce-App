@@ -35,6 +35,7 @@ class SecurityConfig {
             authorizeHttpRequests {
                 authorize(ERROR_PATH, permitAll)
                 authorize(HttpMethod.POST, ORDERS_PATH, hasRole(CLIENT_ROLE))
+                authorize(HttpMethod.POST, "$ORDERS_PATH/*/cancel", hasRole(CLIENT_ROLE))
                 authorize(HttpMethod.GET, "$ORDERS_PATH/**", hasRole(CLIENT_ROLE))
                 authorize(anyRequest, denyAll)
             }

@@ -38,6 +38,7 @@ func NonRetryable(err error) error {
 var nonRetryableErrors = map[error]struct{}{
 	domain.ErrInvalidInput:              {},
 	repository.ErrShipmentAlreadyExists: {}, // the order already has a shipment - retrying can't change that
+	repository.ErrShipmentNotFound:      {}, // the order has no shipment to cancel
 }
 
 // classify marks err as non-retryable if it, or an error it wraps, is one of nonRetryableErrors,

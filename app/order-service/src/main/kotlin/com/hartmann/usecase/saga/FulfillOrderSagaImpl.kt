@@ -1,6 +1,7 @@
 package com.hartmann.usecase.saga
 
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.ProcessedKafkaMessageStore
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
@@ -76,10 +77,10 @@ class FulfillOrderSagaImpl(
         }
 
     @Transactional
-    override fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long) =
+    override fun onShipmentCancelled(message: KafkaMessageMetadata, orderId: Long, reason: ShipmentCancellationReason) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
-            order.cancelShipment()
+            order.cancelShipment(reason)
 
             orderRepository.save(order)
             if (order.requiresReservationRelease()) {

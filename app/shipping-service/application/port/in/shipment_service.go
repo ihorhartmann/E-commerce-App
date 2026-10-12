@@ -25,6 +25,11 @@ type ShipmentService interface {
 	StartDelivery(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error)
 	Deliver(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error)
 	Lose(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error)
-	Cancel(ctx context.Context, id uint64) (*model.Shipment, error)
+	// Cancel is the assigned courier reporting that the goods couldn't be handed over, for reason - one a courier may
+	// report.
+	Cancel(ctx context.Context, id uint64, courierID uuid.UUID, reason model.CancellationReason) (*model.Shipment, error)
+	// CancelByOrder cancels the shipment of a cancelled order. It reports false when there was nothing left to cancel:
+	// the shipment had already been delivered, lost or cancelled by the time the request arrived.
+	CancelByOrder(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, orderID uint64) (bool, error)
 	ConfirmReturnedToInventory(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error)
 }

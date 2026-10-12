@@ -29,16 +29,17 @@ separate statuses but as nullable facts on `Order` (`paymentConfirmedAt`,
 stateDiagram-v2
     [*] --> PLACED: place order
 
-    PLACED --> CANCELLED: out of stock
-    PLACED --> CANCELLED: reservation error
     PLACED --> CANCELLED: payment failed
     PLACED --> PROCESSING: payment confirmed
 
     PROCESSING --> CANCEL_REQUESTED: shipment creation failed
+    PROCESSING --> CANCEL_REQUESTED: customer asked to cancel
     PROCESSING --> CANCEL_REQUESTED: shipment lost
-    PROCESSING --> CANCEL_REQUESTED: shipment cancelled
+    PROCESSING --> CANCEL_REQUESTED: shipment cancelled by the courier
     PROCESSING --> FULFILLED: delivered
 
+    CANCEL_REQUESTED --> FULFILLED: delivered before<br/>the request reached shipping
+    CANCEL_REQUESTED --> CANCEL_REQUESTED: shipment cancelled or lost,<br/>refund requested
     CANCEL_REQUESTED --> CANCEL_REQUESTED: refund confirmed,<br/>awaiting return
     CANCEL_REQUESTED --> CANCEL_REQUESTED: returned,<br/>awaiting refund
     CANCEL_REQUESTED --> CANCEL_REQUESTED: refund failed
@@ -51,6 +52,16 @@ stateDiagram-v2
 Labels above are kept short for rendering; exact `cancellationReason` values
 for each `-> CANCELLED` / `-> CANCEL_REQUESTED` trigger are listed in
 "Compensation steps" below.
+
+`CANCEL_REQUESTED` covers two phases, told apart by whether a refund was
+requested (`refund`):
+
+1. **awaiting shipping** - the customer asked to cancel, and Shipping hasn't
+   answered yet. Nothing is refunded or released, and the shipment's events
+   are still accepted (see "Customer cancels the order" below);
+2. **cancellation confirmed** - the shipment is cancelled or lost, the refund
+   is requested, and the order waits for it and, after a pickup, for the
+   goods to come back.
 
 `RefundFailed` deliberately doesn't move the status - it's a flag for support
 (`refund.failedAt`), not a separate stage: without manual intervention
@@ -126,7 +137,11 @@ sequenceDiagram
 Continues from the point where the `Shipment` has already been created
 (status `Created`, `Order` in `PROCESSING`). Courier actions
 (`pickup`/`deliver`/`lose`/`cancel`/`return`) are HTTP calls made directly to
-the Shipping Service, not through Order.
+the Shipping Service, not through Order, and only the courier who picked the
+shipment up may make any of them after the pickup. A courier's `cancel` means
+the goods couldn't be handed over, and carries the reason: `RecipientRefused`
+or `RecipientUnavailable` (nobody there, wrong address). The customer cancels
+the order through Order instead - see the next protocol.
 
 ```mermaid
 sequenceDiagram
@@ -154,22 +169,18 @@ sequenceDiagram
         Note over O: Order.loseShipment().requestRefund()<br/>-> CANCEL_REQUESTED, reason="Shipment lost"
         O--)P: Kafka: RefundRequested
 
-    else Customer cancelled (before or after pickup)
-        C->>Sh: HTTP: POST /shipments/{id}/cancel
-        Sh--)O: Kafka: ShipmentCancelled
-        Note over O: Order.cancelShipment().requestRefund()<br/>-> CANCEL_REQUESTED, reason="Cancelled by customer"<br/>awaitingReturn = whether pickup already happened
-        opt Not picked up yet
-            O--)I: Kafka: CancelReservation
-        end
+    else Goods couldn't be handed over
+        C->>Sh: HTTP: POST /shipments/{id}/cancel {reason}
+        Note over Sh: In Delivery -> Cancelled, reason as given,<br/>goods stay with the courier
+        Sh--)O: Kafka: ShipmentCancelled {reason}
+        Note over O: Order.cancelShipment(reason)<br/>-> CANCEL_REQUESTED, awaitingReturn=true, refund requested<br/>RecipientRefused -> reason="Cancelled by customer"<br/>RecipientUnavailable -> reason="Delivery failed"
         O--)P: Kafka: RefundRequested
 
-        opt Already picked up (awaitingReturn=true) - courier physically returns the goods
-            C->>Sh: HTTP: POST /shipments/{id}/return
-            Sh--)O: Kafka: ShipmentReturnedToInventory
-            Note over O: Order.returnToStock() -- shipment.returnedAt<br/>-> CANCELLED only if refund already confirmed,<br/>otherwise stays CANCEL_REQUESTED
-            O--)I: Kafka: Restock
-            Note over I: onHand += qty (per order item)
-        end
+        C->>Sh: HTTP: POST /shipments/{id}/return
+        Sh--)O: Kafka: ShipmentReturnedToInventory
+        Note over O: Order.returnToStock() -- shipment.returnedAt<br/>-> CANCELLED only if refund already confirmed,<br/>otherwise stays CANCEL_REQUESTED
+        O--)I: Kafka: Restock
+        Note over I: onHand += qty (per order item)
     end
 
     alt Refund confirmed by Stripe
@@ -187,6 +198,71 @@ typically much faster than the courier's physical trip back).
 `Order.confirmRefund`/`Order.returnToStock` each check whether the OTHER half
 has already completed before finalizing to `CANCELLED` - that's exactly what
 `awaitingReturn` is for.
+
+## Protocol: customer cancels the order
+
+The customer cancels the **order**, through Order - never the shipment. Only a
+paid order whose shipment hasn't ended can be cancelled (`PROCESSING`); an
+unpaid one (`PLACED`) simply expires, and a `FULFILLED` or `CANCELLED` one is
+rejected with `409`. Asking again while a cancellation is under way changes
+nothing.
+
+Order only **asks**: Shipping owns the shipment and decides whether it can
+still be cancelled. So the request moves the order to `CANCEL_REQUESTED`
+without refunding anything, and the refund starts only once Shipping confirms.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Frontend
+    participant O as Order Service
+    participant Sh as Shipping Service
+    participant I as Inventory Service
+    participant P as Payment Service
+
+    U->>O: HTTP: POST /api/v1/orders/{id}/cancel
+    Note over O: Order.requestCancellation()<br/>-> CANCEL_REQUESTED, reason="Cancelled by customer"<br/>no refund yet
+    O--)Sh: Kafka: CancelShipment {orderId}
+    O-->>U: HTTP: 200 order
+
+    alt Shipment still open (Created or In Delivery)
+        Note over Sh: -> Cancelled, reason=OrderCancelled,<br/>goods stay where they are
+        Sh--)O: Kafka: ShipmentCancelled {reason}
+        Note over O: Order.cancelShipment(reason) -- refund requested<br/>awaitingReturn = whether pickup already happened
+        opt Not picked up yet
+            O--)I: Kafka: CancelReservation
+        end
+        O--)P: Kafka: RefundRequested
+        opt Already picked up - courier physically returns the goods
+            Sh--)O: Kafka: ShipmentReturnedToInventory
+            O--)I: Kafka: Restock
+        end
+    else Shipment already ended (Delivered, Lost, or Cancelled by the courier)
+        Note over Sh: nothing left to cancel: the command is logged and dropped,<br/>no error, no event
+        Note over O: the event of what happened first is already on its way
+    end
+```
+
+The refund and the return then finish as in the previous protocol.
+
+**The command can come too late.** The customer and the courier act
+independently, and messages between Order and Shipping take time, so an event
+about what the courier did *before* Shipping handled `CancelShipment` can
+reach an order that is already `CANCEL_REQUESTED`. Order accepts each of them
+while it awaits Shipping (`CreateShipment` and `CancelShipment` share the key
+`orderId`, so Shipping always sees them in order):
+
+| Event | What Order does while awaiting Shipping |
+|---|---|
+| `ShipmentCreated` | stores `shipmentId`, keeps waiting |
+| `ShipmentInDelivery` | records the pickup, `FulfillReservation`, keeps waiting |
+| `ShipmentDelivered` | `FULFILLED` - the request came too late, the cancellation reason is dropped |
+| `ShipmentLost` | reason becomes "Shipment lost", refund requested, no return awaited |
+| `ShipmentCancelled` | cancellation confirmed, refund requested; the reason stays "Cancelled by customer" even if the courier cancelled on their own first |
+
+Shipping never answers a late command with an error or a "rejected" event: a
+cancellation that lost the race is not a failure, and the order leaves the
+waiting phase through one of the events above.
 
 ## Compensation steps - quick summary
 
@@ -206,11 +282,15 @@ still held. The compensation is threefold: cancel the reservation in
 Inventory, request a refund from Payment, and wait for its confirmation - all
 through Kafka.
 
-**Shipment cancelled BEFORE pickup.** The reservation hasn't been fulfilled
-yet - the compensation mirrors the previous case: `CancelReservation` +
+**Shipment cancelled BEFORE pickup.** Only the customer can cause it, by
+cancelling the order. The reservation hasn't been fulfilled yet - the
+compensation mirrors the previous case: `CancelReservation` +
 `RefundRequested`.
 
-**Shipment cancelled AFTER pickup.** Stock has already been physically
+**Shipment cancelled AFTER pickup.** By the customer cancelling the order
+(`cancellationReason` "Cancelled by customer"), or by the courier who couldn't
+hand the goods over ("Cancelled by customer" if the recipient refused them,
+"Delivery failed" if nobody could take them). Stock has already been physically
 decremented (`FulfillReservation` already ran) - `CancelReservation` makes no
 sense here. Instead, the order waits for TWO independent events: refund
 confirmation and the courier physically returning the goods (`Restock` in
@@ -233,7 +313,7 @@ by splitting into topics.
 | Topic | Producer | Consumer | Messages |
 |---|---|---|---|
 | `inventory.commands` | Order | Inventory | `CancelReservation`, `FulfillReservation`, `HoldReservation`, `Restock` |
-| `shipping.commands` | Order | Shipping | `CreateShipment` |
+| `shipping.commands` | Order | Shipping | `CreateShipment`, `CancelShipment` |
 | `payment.commands` | Order | Payment | `RefundRequested` |
 | `payment.events` | Payment | Order | `PaymentCompleted`, `PaymentFailed`, `RefundCompleted`, `RefundFailed` |
 | `shipping.events` | Shipping | Order | `ShipmentCreated`, `ShipmentInDelivery`, `ShipmentDelivered`, `ShipmentCancelled`, `ShipmentLost`, `ShipmentReturnedToInventory` |

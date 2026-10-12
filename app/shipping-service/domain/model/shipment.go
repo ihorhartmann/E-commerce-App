@@ -28,6 +28,7 @@ func NewExistingShipment(
 	address value.Address,
 	status ShipmentStatus,
 	holder ShipmentHolder,
+	cancellationReason CancellationReason,
 	createdAt time.Time,
 	updatedAt time.Time,
 	version uint64,
@@ -36,7 +37,7 @@ func NewExistingShipment(
 		return nil, domain.ErrInvalidInput
 	}
 
-	state, err := newShipmentState(status, holder, courierID)
+	state, err := newShipmentState(status, holder, courierID, cancellationReason)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func NewShipment(orderId uint64, address value.Address) (*Shipment, error) {
 		return nil, domain.ErrInvalidInput
 	}
 
-	state, err := newShipmentState(Created, HolderInventory, uuid.Nil)
+	state, err := newShipmentState(Created, HolderInventory, uuid.Nil, NoCancellationReason)
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +88,16 @@ func (s *Shipment) Lose() error {
 	return s.apply(s.state.lose())
 }
 
-func (s *Shipment) Cancel() error {
-	return s.apply(s.state.cancel())
+// Cancel stops a shipment that hasn't ended yet, for reason. The goods stay where they are: a courier who already
+// has them brings them back.
+func (s *Shipment) Cancel(reason CancellationReason) error {
+	return s.apply(s.state.cancel(reason))
+}
+
+// CanBeCancelled reports whether the shipment hasn't ended yet: once it is delivered, lost or cancelled, there is
+// nothing left to cancel.
+func (s *Shipment) CanBeCancelled() bool {
+	return s.state.isOpen()
 }
 
 // ConfirmReturnedToInventory records that the courier physically brought the goods back. It only
@@ -130,6 +139,11 @@ func (s *Shipment) Status() ShipmentStatus {
 
 func (s *Shipment) Holder() ShipmentHolder {
 	return s.state.holder
+}
+
+// CancellationReason returns NoCancellationReason unless the shipment is cancelled.
+func (s *Shipment) CancellationReason() CancellationReason {
+	return s.state.cancellationReason
 }
 
 func (s *Shipment) CreatedAt() time.Time {

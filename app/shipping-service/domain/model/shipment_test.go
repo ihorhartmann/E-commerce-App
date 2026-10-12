@@ -41,7 +41,7 @@ func inDeliveryShipment(t *testing.T, courierID uuid.UUID) *Shipment {
 func cancelledAfterPickupShipment(t *testing.T, courierID uuid.UUID) *Shipment {
 	t.Helper()
 	shipment := inDeliveryShipment(t, courierID)
-	if err := shipment.Cancel(); err != nil {
+	if err := shipment.Cancel(RecipientRefused); err != nil {
 		t.Fatalf("unexpected error cancelling: %v", err)
 	}
 	return shipment
@@ -96,7 +96,7 @@ func TestNewExistingShipment(t *testing.T) {
 		version := uint64(7)
 		courierID := uuid.New()
 
-		shipment, err := NewExistingShipment(id, orderID, courierID, testAddress(t), InDelivery, HolderCourier, now, now, version)
+		shipment, err := NewExistingShipment(id, orderID, courierID, testAddress(t), InDelivery, HolderCourier, NoCancellationReason, now, now, version)
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -109,8 +109,21 @@ func TestNewExistingShipment(t *testing.T) {
 		}
 	})
 
+	t.Run("creates a cancelled shipment with its reason", func(t *testing.T) {
+		reason := RecipientUnavailable
+
+		shipment, err := NewExistingShipment(1, 100, uuid.New(), testAddress(t), Cancelled, HolderCourier, reason, now, now, 0)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if shipment.CancellationReason() != reason {
+			t.Errorf("CancellationReason() = %q, want %q", shipment.CancellationReason(), reason)
+		}
+	})
+
 	t.Run("rejects a zero id", func(t *testing.T) {
-		_, err := NewExistingShipment(0, 100, uuid.Nil, testAddress(t), Created, HolderInventory, now, now, 0)
+		_, err := NewExistingShipment(0, 100, uuid.Nil, testAddress(t), Created, HolderInventory, NoCancellationReason, now, now, 0)
 
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
@@ -118,7 +131,7 @@ func TestNewExistingShipment(t *testing.T) {
 	})
 
 	t.Run("rejects a zero orderId", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 0, uuid.Nil, testAddress(t), Created, HolderInventory, now, now, 0)
+		_, err := NewExistingShipment(1, 0, uuid.Nil, testAddress(t), Created, HolderInventory, NoCancellationReason, now, now, 0)
 
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
@@ -126,7 +139,7 @@ func TestNewExistingShipment(t *testing.T) {
 	})
 
 	t.Run("rejects a state a shipment can't be in", func(t *testing.T) {
-		_, err := NewExistingShipment(1, 100, uuid.Nil, testAddress(t), InDelivery, HolderCourier, now, now, 0)
+		_, err := NewExistingShipment(1, 100, uuid.Nil, testAddress(t), InDelivery, HolderCourier, NoCancellationReason, now, now, 0)
 
 		if !errors.Is(err, domain.ErrInvalidInput) {
 			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
@@ -208,23 +221,58 @@ func TestShipment_Lose(t *testing.T) {
 }
 
 func TestShipment_Cancel(t *testing.T) {
-	t.Run("moves to Cancelled", func(t *testing.T) {
+	t.Run("moves to Cancelled for the given reason", func(t *testing.T) {
+		reason := OrderCancelled
 		shipment := newTestShipment(t)
 
-		if err := shipment.Cancel(); err != nil {
+		if err := shipment.Cancel(reason); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if shipment.Status() != Cancelled {
 			t.Errorf("Status() = %v, want %v", shipment.Status(), Cancelled)
+		}
+		if shipment.CancellationReason() != reason {
+			t.Errorf("CancellationReason() = %q, want %q", shipment.CancellationReason(), reason)
+		}
+		if shipment.UpdatedAt().IsZero() {
+			t.Error("UpdatedAt() is zero, want the time of the cancellation")
 		}
 	})
 
 	t.Run("rejects a shipment that already reached a terminal status, leaving it unchanged", func(t *testing.T) {
 		shipment := cancelledAfterPickupShipment(t, uuid.New())
 
-		err := shipment.Cancel()
+		err := shipment.Cancel(OrderCancelled)
 
 		assertRejectedUnchanged(t, shipment, err, Cancelled, HolderCourier)
+		if shipment.CancellationReason() != RecipientRefused {
+			t.Errorf("CancellationReason() = %q, want %q", shipment.CancellationReason(), RecipientRefused)
+		}
+	})
+}
+
+func TestShipment_CanBeCancelled(t *testing.T) {
+	t.Run("true before pickup and while in delivery", func(t *testing.T) {
+		if !newTestShipment(t).CanBeCancelled() {
+			t.Error("CanBeCancelled() = false before pickup, want true")
+		}
+		if !inDeliveryShipment(t, uuid.New()).CanBeCancelled() {
+			t.Error("CanBeCancelled() = false in delivery, want true")
+		}
+	})
+
+	t.Run("false once the shipment has ended", func(t *testing.T) {
+		delivered := inDeliveryShipment(t, uuid.New())
+		if err := delivered.Deliver(); err != nil {
+			t.Fatalf("unexpected error delivering: %v", err)
+		}
+
+		if delivered.CanBeCancelled() {
+			t.Error("CanBeCancelled() = true for a delivered shipment, want false")
+		}
+		if cancelledAfterPickupShipment(t, uuid.New()).CanBeCancelled() {
+			t.Error("CanBeCancelled() = true for a cancelled shipment, want false")
+		}
 	})
 }
 

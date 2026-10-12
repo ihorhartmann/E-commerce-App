@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,10 +33,15 @@ func testAddress(t *testing.T) value.Address {
 	return address
 }
 
+// testShipment builds a shipment of order 100; a cancelled one is cancelled with its order.
 func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder model.ShipmentHolder, courierID uuid.UUID) *model.Shipment {
 	t.Helper()
 	now := time.Now()
-	shipment, err := model.NewExistingShipment(id, 100, courierID, testAddress(t), status, holder, now, now, 0)
+	cancellationReason := model.NoCancellationReason
+	if status == model.Cancelled {
+		cancellationReason = model.OrderCancelled
+	}
+	shipment, err := model.NewExistingShipment(id, 100, courierID, testAddress(t), status, holder, cancellationReason, now, now, 0)
 	if err != nil {
 		t.Fatalf("unexpected error building test shipment: %v", err)
 	}
@@ -596,14 +602,20 @@ func TestShipmentController_Lose(t *testing.T) {
 }
 
 func TestShipmentController_Cancel(t *testing.T) {
-	t.Run("returns 200 with the updated shipment", func(t *testing.T) {
+	t.Run("returns 200 with the shipment cancelled for the reason the courier gave", func(t *testing.T) {
 		id := uint64(1)
+		courierID := uuid.New()
+		reason := model.RecipientUnavailable
+		now := time.Now()
+		shipment, err := model.NewExistingShipment(id, 100, courierID, testAddress(t), model.Cancelled, model.HolderCourier, reason, now, now, 1)
+		if err != nil {
+			t.Fatalf("unexpected error building test shipment: %v", err)
+		}
 		shipmentService := mocks.NewMockShipmentService(gomock.NewController(t))
-		shipment := testShipment(t, id, model.Cancelled, model.HolderInventory, uuid.Nil)
-		shipmentService.EXPECT().Cancel(gomock.Any(), id).Return(shipment, nil).Times(1)
-		app := newShipmentTestApp(shipmentService, nil)
+		shipmentService.EXPECT().Cancel(gomock.Any(), id, courierID, reason).Return(shipment, nil).Times(1)
+		app := newShipmentTestApp(shipmentService, courierPrincipal(courierID))
 
-		req := httptest.NewRequest("POST", "/api/v1/shipments/1/cancel", nil)
+		req := httptest.NewRequest("POST", "/api/v1/shipments/1/cancel", strings.NewReader(`{"reason":"RecipientUnavailable"}`))
 		resp := httptest.NewRecorder()
 		app.ServeHTTP(resp, req)
 
@@ -614,8 +626,71 @@ func TestShipmentController_Cancel(t *testing.T) {
 		if body["status"] != string(model.Cancelled) {
 			t.Errorf("status = %v, want %q", body["status"], model.Cancelled)
 		}
-		if body["holder"] != string(model.HolderInventory) {
-			t.Errorf("holder = %v, want %q", body["holder"], model.HolderInventory)
+		if body["holder"] != string(model.HolderCourier) {
+			t.Errorf("holder = %v, want %q", body["holder"], model.HolderCourier)
+		}
+		if body["cancellationReason"] != string(reason) {
+			t.Errorf("cancellationReason = %v, want %q", body["cancellationReason"], reason)
+		}
+	})
+
+	t.Run("returns 400 when the service rejects the reason", func(t *testing.T) {
+		id := uint64(1)
+		courierID := uuid.New()
+		shipmentService := mocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().Cancel(gomock.Any(), id, courierID, model.OrderCancelled).
+			Return(nil, service.ErrInvalidCancellationReason).Times(1)
+		app := newShipmentTestApp(shipmentService, courierPrincipal(courierID))
+
+		req := httptest.NewRequest("POST", "/api/v1/shipments/1/cancel", strings.NewReader(`{"reason":"OrderCancelled"}`))
+		resp := httptest.NewRecorder()
+		app.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+		}
+		body := decodeShipmentBody(t, resp)
+		if body["error"] != service.ErrInvalidCancellationReason.Error() {
+			t.Errorf("error = %v, want %q", body["error"], service.ErrInvalidCancellationReason.Error())
+		}
+	})
+
+	t.Run("returns 400 without calling the service when the body is not JSON", func(t *testing.T) {
+		shipmentService := mocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().Cancel(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		app := newShipmentTestApp(shipmentService, courierPrincipal(uuid.New()))
+
+		req := httptest.NewRequest("POST", "/api/v1/shipments/1/cancel", nil)
+		resp := httptest.NewRecorder()
+		app.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+		}
+		body := decodeShipmentBody(t, resp)
+		if body["error"] != inhttp.ErrInvalidRequestBody.Error() {
+			t.Errorf("error = %v, want %q", body["error"], inhttp.ErrInvalidRequestBody.Error())
+		}
+	})
+
+	t.Run("returns 403 when the shipment is assigned to another courier", func(t *testing.T) {
+		id := uint64(1)
+		courierID := uuid.New()
+		reason := model.RecipientRefused
+		shipmentService := mocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().Cancel(gomock.Any(), id, courierID, reason).Return(nil, service.ErrNotAssignedCourier).Times(1)
+		app := newShipmentTestApp(shipmentService, courierPrincipal(courierID))
+
+		req := httptest.NewRequest("POST", "/api/v1/shipments/1/cancel", strings.NewReader(`{"reason":"RecipientRefused"}`))
+		resp := httptest.NewRecorder()
+		app.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", resp.Code, http.StatusForbidden)
+		}
+		body := decodeShipmentBody(t, resp)
+		if body["error"] != service.ErrNotAssignedCourier.Error() {
+			t.Errorf("error = %v, want %q", body["error"], service.ErrNotAssignedCourier.Error())
 		}
 	})
 }

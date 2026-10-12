@@ -6,7 +6,7 @@ const (
 	Created    ShipmentStatus = "Created"
 	InDelivery ShipmentStatus = "In Delivery"
 	Delivered  ShipmentStatus = "Delivered" // terminal
-	Cancelled  ShipmentStatus = "Cancelled" // terminal - client cancelled order or not at home
+	Cancelled  ShipmentStatus = "Cancelled" // terminal - see CancellationReason
 	Lost       ShipmentStatus = "Lost"      // terminal - shipment lost or damaged
 )
 

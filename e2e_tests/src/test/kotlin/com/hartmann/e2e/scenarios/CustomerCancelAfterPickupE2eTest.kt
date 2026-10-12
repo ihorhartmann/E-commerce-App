@@ -15,7 +15,7 @@ import java.math.BigDecimal
 class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
 
     @Test
-    fun `cancel shipment - after pickup restocks only once the courier physically returns the goods`() {
+    fun `cancel order - after pickup restocks only once the courier physically returns the goods`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
         val paymentUrl = DockerComposeStack.paymentServiceUrl
@@ -36,12 +36,20 @@ class CustomerCancelAfterPickupE2eTest : E2eScenarioTest() {
             assertThat(productAfterPickup.reserved).isEqualTo(product.reserved)
         }
 
-        val shipmentAfterCancel = ShippingApi.cancel(shippingUrl, shipment.id) // In Delivery -> Cancelled, still held by Courier
-        assertThat(shipmentAfterCancel.holder).isEqualTo("Courier")
+        OrderApi.cancelOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
+
+        // In Delivery -> Cancelled, still held by the courier, who now has to bring the goods back
+        await().atMost(AWAIT_TIMEOUT).untilAsserted {
+            val shipmentAfterCancel = ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, shipment.id)
+            assertThat(shipmentAfterCancel.status).isEqualTo("Cancelled")
+            assertThat(shipmentAfterCancel.cancellationReason).isEqualTo("OrderCancelled")
+            assertThat(shipmentAfterCancel.holder).isEqualTo("Courier")
+        }
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, processingOrder.id)
             assertThat(orderAfterCancel.status).isEqualTo("CANCEL_REQUESTED")
+            assertThat(orderAfterCancel.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
             assertThat(orderAfterCancel.refund?.requestedAt).isNotNull()
         }
 

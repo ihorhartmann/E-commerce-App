@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	ErrInvalidShipmentID = errors.New("invalid shipment id")
-	ErrInvalidPageParam  = errors.New("page and size must be integers")
+	ErrInvalidShipmentID  = errors.New("invalid shipment id")
+	ErrInvalidPageParam   = errors.New("page and size must be integers")
+	ErrInvalidRequestBody = errors.New("malformed request body")
 )
 
 func ErrorResponse(message string) gin.H {
@@ -26,7 +27,8 @@ func ErrorResponse(message string) gin.H {
 // by the middleware.
 func HandleError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidShipmentID), errors.Is(err, ErrInvalidPageParam), errors.Is(err, service.ErrInvalidPage):
+	case errors.Is(err, ErrInvalidShipmentID), errors.Is(err, ErrInvalidPageParam), errors.Is(err, ErrInvalidRequestBody),
+		errors.Is(err, service.ErrInvalidPage), errors.Is(err, service.ErrInvalidCancellationReason):
 		_ = c.Error(WithStatus(http.StatusBadRequest, err))
 	// a courier lost the race to pick the shipment up: a retry would only find it taken
 	case errors.Is(err, model.ErrInvalidStatusTransition), errors.Is(err, service.ErrAlreadyPickedUp):

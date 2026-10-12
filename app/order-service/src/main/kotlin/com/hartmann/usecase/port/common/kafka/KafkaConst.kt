@@ -21,6 +21,7 @@ object KafkaConst {
     const val HOLD_RESERVATION_COMMAND = "HoldReservation"
     const val RESTOCK_COMMAND = "Restock"
     const val CREATE_SHIPMENT_COMMAND = "CreateShipment"
+    const val CANCEL_SHIPMENT_COMMAND = "CancelShipment"
     const val REFUND_REQUESTED_COMMAND = "RefundRequested"
 
     const val PAYMENT_COMPLETED_EVENT = "PaymentCompleted"

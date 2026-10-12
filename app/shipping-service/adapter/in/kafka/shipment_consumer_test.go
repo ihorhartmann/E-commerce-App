@@ -174,9 +174,88 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		}
 	})
 
+	t.Run("dispatches CancelShipmentCommand to the shipment service", func(t *testing.T) {
+		orderID := uint64(42)
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-8", MessageType: string(commonkafka.CancelShipmentCommand)}
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), msg, orderID).Return(true, nil).Times(1)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, msg.MessageID, msg.CorrelationID, []byte(`{"orderId":42}`))
+
+		if err != nil {
+			t.Errorf("err = %v, want nil", err)
+		}
+	})
+
+	t.Run("handles a CancelShipmentCommand that found nothing left to cancel without an error", func(t *testing.T) {
+		orderID := uint64(43)
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-9", MessageType: string(commonkafka.CancelShipmentCommand)}
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), msg, orderID).Return(false, nil).Times(1)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, msg.MessageID, msg.CorrelationID, []byte(`{"orderId":43}`))
+
+		if err != nil {
+			t.Errorf("err = %v, want nil", err)
+		}
+	})
+
+	t.Run("marks a CancelShipmentCommand for an order without a shipment as non-retryable", func(t *testing.T) {
+		orderID := uint64(44)
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-10", MessageType: string(commonkafka.CancelShipmentCommand)}
+		serviceErr := fmt.Errorf("%w: order %d", repository.ErrShipmentNotFound, orderID)
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), msg, orderID).Return(false, serviceErr).Times(1)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, msg.MessageID, msg.CorrelationID, []byte(`{"orderId":44}`))
+
+		if !errors.Is(err, ErrNonRetryable) {
+			t.Errorf("err = %v, want a non-retryable error", err)
+		}
+		if !errors.Is(err, repository.ErrShipmentNotFound) {
+			t.Errorf("err = %v, want it to wrap %v", err, repository.ErrShipmentNotFound)
+		}
+	})
+
+	t.Run("returns a concurrent update of the shipment being cancelled unmarked, so it gets retried", func(t *testing.T) {
+		orderID := uint64(45)
+		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-11", MessageType: string(commonkafka.CancelShipmentCommand)}
+
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), msg, orderID).Return(false, repository.ErrConcurrentUpdate).Times(1)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, msg.MessageID, msg.CorrelationID, []byte(`{"orderId":45}`))
+
+		if !errors.Is(err, repository.ErrConcurrentUpdate) {
+			t.Errorf("err = %v, want %v", err, repository.ErrConcurrentUpdate)
+		}
+		if errors.Is(err, ErrNonRetryable) {
+			t.Errorf("err = %v, want a retryable error", err)
+		}
+	})
+
+	t.Run("returns a non-retryable error without calling the service when the CancelShipmentCommand payload is malformed JSON", func(t *testing.T) {
+		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
+
+		if err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, uuid.New(), "corr-12", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
+			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
+		}
+	})
+
 	t.Run("ignores unrecognized message types without calling the service", func(t *testing.T) {
+
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().CreateShipment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		shipmentService.EXPECT().CancelByOrder(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
 		if err := consumer.handleMessage(context.Background(), "SomeUnrelatedEvent", uuid.New(), "corr-5", []byte(`{}`)); err != nil {

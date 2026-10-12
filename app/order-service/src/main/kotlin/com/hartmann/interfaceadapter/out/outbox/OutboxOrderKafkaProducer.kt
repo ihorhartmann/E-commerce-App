@@ -2,6 +2,7 @@ package com.hartmann.interfaceadapter.out.outbox
 
 import com.hartmann.entities.value.Address
 import com.hartmann.interfaceadapter.out.kafka.dto.CancelReservationCommand
+import com.hartmann.interfaceadapter.out.kafka.dto.CancelShipmentCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.FulfillReservationCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.HoldReservationCommand
 import com.hartmann.interfaceadapter.out.kafka.dto.RefundRequestedCommand
@@ -45,6 +46,10 @@ class OutboxOrderKafkaProducer(
 
     override fun publishCreateShipment(correlationId: String, orderId: Long, address: Address) {
         insert(correlationId, KafkaConst.SHIPPING_COMMANDS_TOPIC, KafkaConst.CREATE_SHIPMENT_COMMAND, orderId.toString(), toCreateShipmentCommand(orderId, address))
+    }
+
+    override fun publishCancelShipment(correlationId: String, orderId: Long) {
+        insert(correlationId, KafkaConst.SHIPPING_COMMANDS_TOPIC, KafkaConst.CANCEL_SHIPMENT_COMMAND, orderId.toString(), CancelShipmentCommand(orderId))
     }
 
     override fun publishRefundRequested(correlationId: String, orderId: Long, amount: BigDecimal, currency: String) {

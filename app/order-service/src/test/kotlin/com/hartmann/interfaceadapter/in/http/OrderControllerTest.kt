@@ -1,6 +1,8 @@
 package com.hartmann.interfaceadapter.`in`.http
 
 import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.exception.OrderNotCancellableException
+import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
 import com.hartmann.entities.model.OrderStatus
@@ -11,6 +13,7 @@ import com.hartmann.entities.value.RequestedItem
 import com.hartmann.frameworks.config.SecurityConfig
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
+import com.hartmann.usecase.port.`in`.usecase.CancelOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.FindCustomerOrdersUseCase
 import com.hartmann.usecase.port.`in`.usecase.GetOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
@@ -51,6 +54,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private lateinit var placeOrderUseCase: PlaceOrderUseCase
+
+    @MockitoBean
+    private lateinit var cancelOrderUseCase: CancelOrderUseCase
 
     @MockitoBean
     private lateinit var getOrderUseCase: GetOrderUseCase
@@ -416,6 +422,82 @@ class OrderControllerTest {
         }
 
         verify(getOrderUseCase, never()).execute(any(), any())
+    }
+
+    @Test
+    fun `cancelOrder - returns 200 with the order of the customer from the token as it is after the request`() {
+        val orderId = 1L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val order = Order.createExisting(
+            id = orderId,
+            customerId = customerId,
+            items = listOf(testItem()),
+            address = testAddress(),
+            status = OrderStatus.CANCEL_REQUESTED,
+            cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+            createdAt = Instant.now(),
+        )
+        whenever(cancelOrderUseCase.execute(orderId, customerId)).thenReturn(order)
+
+        mockMvc.post("/api/v1/orders/{orderId}/cancel", orderId) {
+            with(clientJwt(customerId))
+            header("Idempotency-Key", "key-cancel-1")
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.id") { value(orderId) }
+            jsonPath("$.status") { value(OrderStatus.CANCEL_REQUESTED.name) }
+            jsonPath("$.cancellationReason") { value(CancellationReason.CANCELLED_BY_CUSTOMER.name) }
+        }
+
+        verify(cancelOrderUseCase, times(1)).execute(orderId, customerId)
+    }
+
+    @Test
+    fun `cancelOrder - returns 409 when the order can no longer be cancelled`() {
+        val orderId = 1L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val message = "cannot cancel order $orderId: it is FULFILLED"
+        whenever(cancelOrderUseCase.execute(orderId, customerId)).thenAnswer { throw OrderNotCancellableException(message) }
+
+        mockMvc.post("/api/v1/orders/{orderId}/cancel", orderId) {
+            with(clientJwt(customerId))
+            header("Idempotency-Key", "key-cancel-2")
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.status") { value(HttpStatus.CONFLICT.value()) }
+            jsonPath("$.error") { value(message) }
+        }
+
+        verify(cancelOrderUseCase, times(1)).execute(orderId, customerId)
+    }
+
+    @Test
+    fun `cancelOrder - returns 404 when the order does not exist`() {
+        val orderId = 99L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        whenever(cancelOrderUseCase.execute(orderId, customerId)).thenThrow(OrderNotFoundException(orderId))
+
+        mockMvc.post("/api/v1/orders/{orderId}/cancel", orderId) {
+            with(clientJwt(customerId))
+            header("Idempotency-Key", "key-cancel-3")
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error") { value("Order [ID=$orderId] was not found") }
+        }
+
+        verify(cancelOrderUseCase, times(1)).execute(orderId, customerId)
+    }
+
+    @Test
+    fun `cancelOrder - returns 403 when the caller is not a client`() {
+        mockMvc.post("/api/v1/orders/{orderId}/cancel", 1L) {
+            with(jwt().authorities(SimpleGrantedAuthority("ROLE_COURIER")))
+            header("Idempotency-Key", "key-cancel-4")
+        }.andExpect {
+            status { isForbidden() }
+        }
+
+        verifyNoInteractions(cancelOrderUseCase)
     }
 
     @Test

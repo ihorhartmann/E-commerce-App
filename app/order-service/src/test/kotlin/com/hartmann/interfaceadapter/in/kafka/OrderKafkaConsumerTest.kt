@@ -2,6 +2,7 @@ package com.hartmann.interfaceadapter.`in`.kafka
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.interfaceadapter.`in`.kafka.exception.InvalidMessageHeaderException
 import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
@@ -232,15 +233,29 @@ class OrderKafkaConsumerTest {
         val correlationId = "corr-11"
         val messageType = KafkaConst.SHIPMENT_CANCELLED_EVENT
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        every { saga.onShipmentCancelled(message, orderId) } returns Unit
+        val reason = ShipmentCancellationReason.RECIPIENT_UNAVAILABLE
+        every { saga.onShipmentCancelled(message, orderId, reason) } returns Unit
 
         consumer.onShippingEvent(
             messageType, messageId.toString(), correlationId,
-            "{\"orderId\":$orderId,\"shipmentId\":5}",
+            "{\"orderId\":$orderId,\"shipmentId\":5,\"reason\":\"RecipientUnavailable\"}",
         )
 
-        verify(exactly = 1) { saga.onShipmentCancelled(message, orderId) }
+        verify(exactly = 1) { saga.onShipmentCancelled(message, orderId, reason) }
         confirmVerified(saga)
+    }
+
+    @Test
+    fun `onShippingEvent - throws a NonRetryableException without dispatching when ShipmentCancelled names an unknown reason`() {
+        val exception = assertThrows<NonRetryableException> {
+            consumer.onShippingEvent(
+                KafkaConst.SHIPMENT_CANCELLED_EVENT, UUID.randomUUID().toString(), "corr-17",
+                "{\"orderId\":204,\"shipmentId\":5,\"reason\":\"Whatever\"}",
+            )
+        }
+
+        assertTrue(exception.cause is IllegalArgumentException)
+        verify { saga wasNot Called }
     }
 
     @Test

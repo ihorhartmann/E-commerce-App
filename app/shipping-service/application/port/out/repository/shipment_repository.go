@@ -12,6 +12,8 @@ import (
 type ShipmentRepository interface {
 	Create(ctx context.Context, shipment *model.Shipment) (*model.Shipment, error)
 	GetByID(ctx context.Context, id uint64) (*model.Shipment, error)
+	// GetByOrderID finds the order's shipment - an order has at most one.
+	GetByOrderID(ctx context.Context, orderID uint64) (*model.Shipment, error)
 	// GetAvailableShipments returns at most limit Created shipments, oldest first, skipping the first offset, and the
 	// number of all of them.
 	GetAvailableShipments(ctx context.Context, offset, limit int) ([]*model.Shipment, int64, error)

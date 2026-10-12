@@ -8,9 +8,12 @@ data class ShipmentResponse(
     val address: ShippingAddressDto,
     val status: String,
     val holder: String,
+    val cancellationReason: String?,
     val createdAt: String,
     val updatedAt: String?,
 )
+
+data class CancelShipmentRequest(val reason: String)
 
 data class ShipmentListResponse(
     val items: List<ShipmentResponse>,

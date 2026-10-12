@@ -46,18 +46,33 @@ func (m *MockShipmentService) EXPECT() *MockShipmentServiceMockRecorder {
 }
 
 // Cancel mocks base method.
-func (m *MockShipmentService) Cancel(ctx context.Context, id uint64) (*model.Shipment, error) {
+func (m *MockShipmentService) Cancel(ctx context.Context, id uint64, courierID uuid.UUID, reason model.CancellationReason) (*model.Shipment, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Cancel", ctx, id)
+	ret := m.ctrl.Call(m, "Cancel", ctx, id, courierID, reason)
 	ret0, _ := ret[0].(*model.Shipment)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Cancel indicates an expected call of Cancel.
-func (mr *MockShipmentServiceMockRecorder) Cancel(ctx, id any) *gomock.Call {
+func (mr *MockShipmentServiceMockRecorder) Cancel(ctx, id, courierID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockShipmentService)(nil).Cancel), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockShipmentService)(nil).Cancel), ctx, id, courierID, reason)
+}
+
+// CancelByOrder mocks base method.
+func (m *MockShipmentService) CancelByOrder(ctx context.Context, msg dto0.KafkaMessageMetadata, orderID uint64) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CancelByOrder", ctx, msg, orderID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CancelByOrder indicates an expected call of CancelByOrder.
+func (mr *MockShipmentServiceMockRecorder) CancelByOrder(ctx, msg, orderID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelByOrder", reflect.TypeOf((*MockShipmentService)(nil).CancelByOrder), ctx, msg, orderID)
 }
 
 // ConfirmReturnedToInventory mocks base method.

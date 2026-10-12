@@ -1,11 +1,13 @@
 package com.hartmann.entities.model
 
 import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.RequestedItem
 import com.hartmann.entities.value.RefundInfo
+import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.entities.value.ShipmentInfo
 import java.time.Instant
 import java.math.BigDecimal
@@ -74,22 +76,45 @@ class Order private constructor(
         paymentConfirmedAt = Instant.now()
     }
 
+    /**
+     * The customer asks to cancel the order. Only a paid order whose shipment is still open can be cancelled: the
+     * request moves it to CANCEL_REQUESTED, and shipping-service then answers what actually happened to the
+     * shipment - it may have been delivered or lost in the meantime. Nothing is refunded or released until then.
+     * Returns whether anything changed: asking again while a cancellation is already under way changes nothing.
+     */
+    fun requestCancellation(): Boolean {
+        if (status == OrderStatus.CANCEL_REQUESTED) {
+            return false
+        }
+        if (status != OrderStatus.PROCESSING) {
+            throw OrderNotCancellableException("cannot cancel order $id: it is $status")
+        }
+        status = OrderStatus.CANCEL_REQUESTED
+        cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER
+        return true
+    }
+
     fun createShipment(shipmentId: Long) {
-        requireStatus("create shipment", OrderStatus.PROCESSING)
+        requireOpenShipment("create shipment")
         shipment = ShipmentInfo.create(shipmentId)
     }
 
     fun startDelivery() {
-        requireStatus("start delivery", OrderStatus.PROCESSING)
+        requireOpenShipment("start delivery")
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to start delivery for" }
         shipment = currentShipment.pickUp()
     }
 
+    /**
+     * The customer got the goods. If they had asked to cancel in the meantime, the request came too late: the
+     * order is fulfilled, and no longer cancelled for any reason.
+     */
     fun deliver() {
-        requireStatus("deliver", OrderStatus.PROCESSING)
+        requireOpenShipment("deliver")
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to deliver" }
         val deliveredShipment = currentShipment.deliver()
         status = OrderStatus.FULFILLED
+        cancellationReason = null
         shipment = deliveredShipment
     }
 
@@ -98,7 +123,7 @@ class Order private constructor(
      * refund of [refundAmount] is requested right away.
      */
     fun loseShipment() {
-        requireStatus("lose shipment", OrderStatus.PROCESSING)
+        requireOpenShipment("lose shipment")
         status = OrderStatus.CANCEL_REQUESTED
         cancellationReason = CancellationReason.SHIPMENT_LOST
         awaitingReturn = false
@@ -106,6 +131,11 @@ class Order private constructor(
     }
 
     /**
+     * Shipping-service cancelled the shipment, for [shipmentCancellationReason]. If the customer had asked for it,
+     * this confirms their request, whatever the shipment was actually cancelled for - the courier may have
+     * cancelled it on their own just before. Otherwise the courier couldn't hand the goods over, and the reason
+     * tells whether the customer refused them.
+     *
      * Cancelling before the courier picked up the goods moves the order to CANCEL_REQUESTED with
      * nothing left to physically return. Cancelling once the courier already has the goods also
      * moves it to CANCEL_REQUESTED, but flags [awaitingReturn] - [returnToStock] and
@@ -113,13 +143,32 @@ class Order private constructor(
      * typically much faster than the courier's physical trip back) before finalizing to CANCELLED.
      * Either way the order was already paid, so a refund of [refundAmount] is requested right away.
      */
-    fun cancelShipment() {
-        requireStatus("cancel shipment", OrderStatus.PROCESSING)
+    fun cancelShipment(shipmentCancellationReason: ShipmentCancellationReason) {
+        requireOpenShipment("cancel shipment")
+        val reason = if (status == OrderStatus.CANCEL_REQUESTED) {
+            // the customer asked for it: shipping only confirms, whatever its own reason
+            CancellationReason.CANCELLED_BY_CUSTOMER
+        } else {
+            reasonOfCourierCancellation(shipmentCancellationReason)
+        }
         status = OrderStatus.CANCEL_REQUESTED
-        cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER
+        cancellationReason = reason
         awaitingReturn = wasPickedUp()
         refund = RefundInfo.request()
     }
+
+    /**
+     * Why the order is cancelled when nobody asked to cancel it: only the courier can have cancelled the shipment
+     * then. Shipping reports ORDER_CANCELLED only in answer to this order's own request, so getting it here means
+     * the two services disagree - the event is rejected rather than refunding an order nobody cancelled.
+     */
+    private fun reasonOfCourierCancellation(shipmentCancellationReason: ShipmentCancellationReason): CancellationReason =
+        when (shipmentCancellationReason) {
+            ShipmentCancellationReason.RECIPIENT_REFUSED -> CancellationReason.CANCELLED_BY_CUSTOMER
+            ShipmentCancellationReason.RECIPIENT_UNAVAILABLE -> CancellationReason.DELIVERY_FAILED
+            ShipmentCancellationReason.ORDER_CANCELLED ->
+                throw DomainException("shipment of order $id was cancelled for the order, which nobody asked to cancel")
+        }
 
     /** A cancelled order is refunded in full - everything the customer paid for its items. */
     fun refundAmount(): Money = totalPrice()
@@ -130,9 +179,13 @@ class Order private constructor(
      */
     fun requiresReservationRelease(): Boolean = cancellationReason != null && !wasPickedUp()
 
-    /** The courier physically returned the goods. Finalizes to CANCELLED if the refund already confirmed. */
+    /**
+     * The courier physically returned the goods, which only happens once the shipment's cancellation is confirmed.
+     * Finalizes to CANCELLED if the refund already confirmed.
+     */
     fun returnToStock() {
         requireStatus("return to stock", OrderStatus.CANCEL_REQUESTED)
+        requireNotNull(refund) { "order $id has no confirmed cancellation to return the goods of" }
         val currentShipment = requireNotNull(shipment) { "order $id has no shipment to return" }
         val returnedShipment = currentShipment.returnToInventory()
         if (refund?.isConfirmed == true) {
@@ -170,6 +223,21 @@ class Order private constructor(
 
     fun wasPickedUp(): Boolean {
         return shipment?.pickedUpAt != null
+    }
+
+    /**
+     * The shipment can still end either way: the order is being processed, or the customer asked to cancel it and
+     * shipping-service hasn't answered yet - events about what the courier did before the request reached it may
+     * still arrive. Once a refund is requested, the cancellation is confirmed and the shipment is closed.
+     */
+    private fun requireOpenShipment(action: String) {
+        val awaitingShipmentCancellation = status == OrderStatus.CANCEL_REQUESTED && refund == null
+        if (status != OrderStatus.PROCESSING && !awaitingShipmentCancellation) {
+            throw DomainException(
+                "cannot $action for order $id: expected status ${OrderStatus.PROCESSING}, or " +
+                        "${OrderStatus.CANCEL_REQUESTED} not yet confirmed by shipping, but was $status",
+            )
+        }
     }
 
     private fun cancel(reason: CancellationReason) {
@@ -279,4 +347,5 @@ enum class CancellationReason {
     PAYMENT_EXPIRED,
     SHIPMENT_LOST,
     CANCELLED_BY_CUSTOMER,
+    DELIVERY_FAILED,
 }
