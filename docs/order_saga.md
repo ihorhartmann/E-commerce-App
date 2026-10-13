@@ -96,8 +96,8 @@ sequenceDiagram
         O-->>U: HTTP: error
         Note over O: no order is created
     else Reservation OK
-        I-->>O: HTTP: 201 reserved, with the price of every product
-        Note over O: Order.createNew(id, requestedItems, prices) -> PLACED, stored
+        I-->>O: HTTP: 201 reserved, with the name, quantity and price of every line
+        Note over O: Order.createNew(id, reservedItems) -> PLACED, stored
         O->>P: HTTP: POST /api/v1/payments
 
         alt Payment service unavailable / crashed

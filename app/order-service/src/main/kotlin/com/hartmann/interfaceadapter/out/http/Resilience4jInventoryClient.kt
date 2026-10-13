@@ -1,7 +1,7 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
@@ -23,7 +23,7 @@ class Resilience4jInventoryClient(
         fun circuitBreakerConfig(): CircuitBreakerConfig = httpCircuitBreakerConfig()
     }
 
-    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): Map<Long, Money> =
+    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): List<ReservedItem> =
         try {
             Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker) {
                 delegate.reserve(orderId, requestedItems)

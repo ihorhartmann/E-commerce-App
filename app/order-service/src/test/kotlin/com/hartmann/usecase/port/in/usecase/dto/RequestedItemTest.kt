@@ -1,4 +1,4 @@
-package com.hartmann.entities.value
+package com.hartmann.usecase.port.`in`.usecase.dto
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

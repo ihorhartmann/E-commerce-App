@@ -9,7 +9,7 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.frameworks.config.SecurityConfig
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
@@ -86,7 +86,7 @@ class OrderControllerTest {
 
     private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = "")
 
-    private fun testItem() = OrderItem.createExisting(1, 1, 1, 2, Money(BigDecimal("10.00"), Currency.EUR))
+    private fun testItem() = OrderItem.createExisting(1, 1, 1, "Keyboard", 2, Money(BigDecimal("10.00"), Currency.EUR))
 
     private fun testOrder(id: Long = 1, customerId: UUID = UUID.randomUUID()) = Order.createExisting(
         id = id,
@@ -322,6 +322,8 @@ class OrderControllerTest {
             status { isOk() }
             jsonPath("$.id") { value(orderId) }
             jsonPath("$.customerId") { value(customerId.toString()) }
+            jsonPath("$.items[0].productId") { value(order.items.first().productId) }
+            jsonPath("$.items[0].productName") { value(order.items.first().productName) }
         }
 
         verify(getOrderUseCase, times(1)).execute(orderId, customerId)

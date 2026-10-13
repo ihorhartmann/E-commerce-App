@@ -5,7 +5,7 @@ import com.hartmann.entities.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
 import com.hartmann.entities.value.ShipmentCancellationReason
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -27,6 +27,7 @@ private fun testItem(quantity: Int = 1, amount: String = "10.00", currency: Curr
         id = 1,
         orderId = 1,
         productId = 1,
+        productName = "Keyboard",
         quantity = quantity,
         price = Money(BigDecimal(amount), currency)
     )
@@ -41,11 +42,12 @@ private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 
         createdAt = Instant.now()
     )
 
+private fun testReservedItem() = ReservedItem(1, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR))
+
 private fun newOrder(customerId: UUID): Order = Order.createNew(
     id = 1,
     customerId = customerId,
-    requestedItems = listOf(RequestedItem(productId = 1, quantity = 1)),
-    prices = mapOf(1L to Money(BigDecimal("10.00"), Currency.EUR)),
+    reservedItems = listOf(testReservedItem()),
     address = testAddress(),
 )
 
@@ -93,19 +95,16 @@ class OrderTest {
     // --- createNew ---
 
     @Test
-    fun `createNew - builds a PLACED order under the given id, with every requested item priced from the reservation`() {
+    fun `createNew - builds a PLACED order under the given id, with an item for every reserved line`() {
         val orderId = 7L
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
-        val firstProductId = 11L
-        val secondProductId = 12L
-        val firstPrice = Money(BigDecimal("10.00"), Currency.EUR)
-        val secondPrice = Money(BigDecimal("2.50"), Currency.EUR)
+        val firstItem = ReservedItem(11, "Keyboard", 2, Money(BigDecimal("10.00"), Currency.EUR))
+        val secondItem = ReservedItem(12, "Mouse", 4, Money(BigDecimal("2.50"), Currency.EUR))
 
         val order = Order.createNew(
             id = orderId,
             customerId = customerId,
-            requestedItems = listOf(RequestedItem(firstProductId, 2), RequestedItem(secondProductId, 4)),
-            prices = mapOf(firstProductId to firstPrice, secondProductId to secondPrice),
+            reservedItems = listOf(firstItem, secondItem),
             address = testAddress(),
         )
 
@@ -113,22 +112,11 @@ class OrderTest {
         assertEquals(customerId, order.customerId)
         assertEquals(OrderStatus.PLACED, order.status)
         assertNotNull(order.createdAt)
-        assertEquals(listOf(firstProductId, secondProductId), order.items.map { it.productId })
-        assertEquals(listOf(firstPrice, secondPrice), order.items.map { it.price })
+        assertEquals(listOf(firstItem.productId, secondItem.productId), order.items.map { it.productId })
+        assertEquals(listOf(firstItem.name, secondItem.name), order.items.map { it.productName })
+        assertEquals(listOf(firstItem.quantity, secondItem.quantity), order.items.map { it.quantity })
+        assertEquals(listOf(firstItem.price, secondItem.price), order.items.map { it.price })
         assertEquals(Money(BigDecimal("30.00"), Currency.EUR), order.totalPrice())
-    }
-
-    @Test
-    fun `createNew - rejects a requested item whose product the reservation gave no price for`() {
-        assertThrows<DomainException> {
-            Order.createNew(
-                id = 7,
-                customerId = UUID.randomUUID(),
-                requestedItems = listOf(RequestedItem(productId = 11, quantity = 1)),
-                prices = mapOf(12L to Money(BigDecimal("10.00"), Currency.EUR)),
-                address = testAddress(),
-            )
-        }
     }
 
     @Test
@@ -137,8 +125,7 @@ class OrderTest {
             Order.createNew(
                 id = 0,
                 customerId = UUID.randomUUID(),
-                requestedItems = listOf(RequestedItem(productId = 11, quantity = 1)),
-                prices = mapOf(11L to Money(BigDecimal("10.00"), Currency.EUR)),
+                reservedItems = listOf(testReservedItem()),
                 address = testAddress(),
             )
         }

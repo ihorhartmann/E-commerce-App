@@ -70,11 +70,18 @@ private fun toRefundResponseDto(refund: RefundInfo): RefundResponseDto = RefundR
     failedAt = refund.failedAt,
 )
 
-data class OrderItemResponseDto(val id: Long, val productId: Long, val quantity: Int, val price: MoneyResponseDto)
+data class OrderItemResponseDto(
+    val id: Long,
+    val productId: Long,
+    val productName: String,
+    val quantity: Int,
+    val price: MoneyResponseDto,
+)
 
 private fun toOrderItemResponseDto(item: OrderItem): OrderItemResponseDto = OrderItemResponseDto(
     id = item.id,
     productId = item.productId,
+    productName = item.productName,
     quantity = item.quantity,
     price = toMoneyResponseDto(item.price),
 )

@@ -2,7 +2,8 @@ package com.hartmann.interfaceadapter.out.http
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.internal.exception.InventoryUnavailableException
@@ -38,10 +39,10 @@ class Resilience4jInventoryClientTest {
     )
 
     @Test
-    fun `reserve - delegates once and returns the prices when the call succeeds`() {
+    fun `reserve - delegates once and returns the reserved items when the call succeeds`() {
         val orderId = 1L
         val items = emptyList<RequestedItem>()
-        val expected = mapOf(5L to Money(BigDecimal("10.00"), Currency.EUR))
+        val expected = listOf(ReservedItem(5L, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR)))
         every { delegate.reserve(orderId, items) } returns expected
 
         val actual = client.reserve(orderId, items)
@@ -55,7 +56,7 @@ class Resilience4jInventoryClientTest {
         val orderId = 1L
         val items = emptyList<RequestedItem>()
         every { delegate.reserve(orderId, items) } throws
-            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen emptyMap()
+            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen emptyList()
 
         client.reserve(orderId, items)
 

@@ -51,7 +51,13 @@ data class RefundDto(
     val failedAt: LocalDateTime?,
 )
 
-data class OrderItemDto(val id: Long, val productId: Long, val quantity: Int, val price: MoneyDto)
+data class OrderItemDto(
+    val id: Long,
+    val productId: Long,
+    val productName: String,
+    val quantity: Int,
+    val price: MoneyDto,
+)
 
 data class MoneyDto(val amount: BigDecimal, val currency: String)
 

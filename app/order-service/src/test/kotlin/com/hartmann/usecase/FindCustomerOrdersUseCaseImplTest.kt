@@ -29,7 +29,7 @@ class FindCustomerOrdersUseCaseImplTest {
     private fun orderOf(id: Long, customerId: UUID) = Order.createExisting(
         id = id,
         customerId = customerId,
-        items = listOf(OrderItem.createExisting(1, 1, 1, 1, Money(BigDecimal("10.00"), Currency.EUR))),
+        items = listOf(OrderItem.createExisting(1, 1, 1, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR))),
         address = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = ""),
         status = OrderStatus.PLACED,
         createdAt = Instant.now(),

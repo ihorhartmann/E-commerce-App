@@ -2,9 +2,9 @@ package com.hartmann.usecase
 
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.value.Address
-import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
@@ -31,10 +31,10 @@ class PlaceOrderUseCaseImpl(
         // The id is taken first, because the stock is reserved for it; the order itself is stored only once the
         // reservation succeeded, so a failed one leaves no order behind.
         val orderId = orderRepository.nextId()
-        val prices = inventoryClient.reserve(orderId, requestedItems)
+        val reservedItems = inventoryClient.reserve(orderId, requestedItems)
 
         val order = try {
-            orderRepository.create(Order.createNew(orderId, customerId, requestedItems, prices, address))
+            orderRepository.create(Order.createNew(orderId, customerId, reservedItems, address))
         } catch (e: Exception) {
             // the stock is reserved, but there is no order to hold it for
             kafkaProducer.publishCancelReservation(orderId.toString(), orderId)

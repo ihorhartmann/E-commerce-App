@@ -24,15 +24,16 @@ func newReservationTestApp(reservationService *mocks.MockReservationService) *fi
 }
 
 func TestReservationController_CreateReservation(t *testing.T) {
-	t.Run("returns 201 with the price of every reserved product", func(t *testing.T) {
+	t.Run("returns 201 with the name, quantity and price of every reserved line", func(t *testing.T) {
 		orderID := uint64(100)
 		productID := uint64(1)
 		quantity := uint(2)
+		product := testProduct(t, productID, 10, quantity)
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationDTOs := []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}}
 		reservationService.EXPECT().
 			ReserveItems(gomock.Any(), orderID, reservationDTOs).
-			Return([]*model.Product{testProduct(t, productID, 10, quantity)}, nil).
+			Return([]dto.ReservedItemDTO{{Product: product, Quantity: quantity}}, nil).
 			Times(1)
 		app := newReservationTestApp(reservationService)
 
@@ -54,6 +55,12 @@ func TestReservationController_CreateReservation(t *testing.T) {
 		item := items[0].(map[string]any)
 		if item["productId"] != float64(productID) {
 			t.Errorf("items[0].productId = %v, want %d", item["productId"], productID)
+		}
+		if item["name"] != product.Name() {
+			t.Errorf("items[0].name = %v, want %q", item["name"], product.Name())
+		}
+		if item["quantity"] != float64(quantity) {
+			t.Errorf("items[0].quantity = %v, want %d", item["quantity"], quantity)
 		}
 		price, ok := item["price"].(map[string]any)
 		if !ok || price["amount"] != 10.0 || price["currency"] != "EUR" {

@@ -1,13 +1,13 @@
 package com.hartmann.usecase.port.out.internal
 
-import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 
 interface InventoryClient {
     /**
-     * Reserves the stock of every requested item for the order, or none of it, and returns what each product costs,
-     * by product id - the only source of an order's prices. Throws an InsufficientStockException if any of them can't
-     * be covered.
+     * Reserves the stock of every requested item for the order, or none of it, and returns the lines as they were
+     * reserved - the only source of an order's items, with their product names and prices. Throws an
+     * InsufficientStockException if any of them can't be covered.
      */
-    fun reserve(orderId: Long, requestedItems: List<RequestedItem>): Map<Long, Money>
+    fun reserve(orderId: Long, requestedItems: List<RequestedItem>): List<ReservedItem>
 }

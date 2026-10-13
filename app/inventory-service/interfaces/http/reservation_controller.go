@@ -33,10 +33,10 @@ func (rc *ReservationController) CreateReservation(c *fiber.Ctx) error {
 		return errors.HandleReservationError(err)
 	}
 
-	products, err := rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDTOs)
+	reservedItems, err := rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDTOs)
 	if err != nil {
 		return errors.HandleReservationError(err)
 	}
 
-	return c.Status(http.StatusCreated).JSON(dto.ToCreateReservationResponse(products))
+	return c.Status(http.StatusCreated).JSON(dto.ToCreateReservationResponse(reservedItems))
 }
