@@ -1,7 +1,7 @@
 package com.hartmann.interfaceadapter.`in`.http.dto
 
 import com.hartmann.entities.value.Address
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty

@@ -27,6 +27,8 @@ class OrderItemEntity(
 
     var productId: Long = 0,
 
+    var productName: String = "",
+
     var quantity: Int = 0,
 
     var priceAmount: BigDecimal = BigDecimal.ZERO,
@@ -40,6 +42,7 @@ fun toOrderItemEntity(item: OrderItem, order: OrderEntity): OrderItemEntity {
         id = item.id,
         order = order,
         productId = item.productId,
+        productName = item.productName,
         quantity = item.quantity,
         priceAmount = item.price.amount,
         priceCurrency = item.price.currency,
@@ -51,6 +54,7 @@ fun fromOrderItemEntity(entity: OrderItemEntity): OrderItem {
         id = entity.id,
         orderId = requireNotNull(entity.order) { "order_items.${entity.id} has no order" }.id,
         productId = entity.productId,
+        productName = entity.productName,
         quantity = entity.quantity,
         price = Money(entity.priceAmount, entity.priceCurrency),
     )

@@ -32,6 +32,7 @@ private fun testItem() = OrderItem.createExisting(
     id = 1,
     orderId = 1,
     productId = 1,
+    productName = "Keyboard",
     quantity = 2,
     price = Money(BigDecimal("10.00"), Currency.EUR),
 )

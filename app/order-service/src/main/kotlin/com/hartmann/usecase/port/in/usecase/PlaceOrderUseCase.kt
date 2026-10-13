@@ -1,8 +1,8 @@
 package com.hartmann.usecase.port.`in`.usecase
 
 import com.hartmann.entities.value.Address
-import com.hartmann.entities.value.RequestedItem
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import java.util.UUID
 
 interface PlaceOrderUseCase {

@@ -7,7 +7,8 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
@@ -33,13 +34,14 @@ private fun testAddress() = Address(city = "Kyiv", postalCode = "01001", line1 =
 
 private fun testRequestedItems(productId: Long) = listOf(RequestedItem(productId = productId, quantity = 2))
 
-private fun testPrices(productId: Long) = mapOf(productId to Money(BigDecimal("10.00"), Currency.EUR))
+private fun testReservedItems(productId: Long) =
+    listOf(ReservedItem(productId, "Keyboard", 2, Money(BigDecimal("10.00"), Currency.EUR)))
 
 /** The order as the repository returns it once stored. */
 private fun storedOrder(id: Long, customerId: UUID, productId: Long): Order = Order.createExisting(
     id = id,
     customerId = customerId,
-    items = listOf(OrderItem.createExisting(1, id, productId, 2, Money(BigDecimal("10.00"), Currency.EUR))),
+    items = listOf(OrderItem.createExisting(1, id, productId, "Keyboard", 2, Money(BigDecimal("10.00"), Currency.EUR))),
     address = testAddress(),
     status = OrderStatus.PLACED,
     createdAt = Instant.now(),
@@ -58,7 +60,7 @@ class PlaceOrderUseCaseImplTest {
         PlaceOrderUseCaseImpl(orderRepository, inventoryClient, paymentClient, kafkaProducer, transactionManager)
 
     @Test
-    fun `execute - reserves the stock under a fresh id, stores the order priced by the inventory and submits its payment`() {
+    fun `execute - reserves the stock under a fresh id, stores the order of the reserved items and submits its payment`() {
         val orderId = 7L
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
         val productId = 3L
@@ -66,8 +68,9 @@ class PlaceOrderUseCaseImplTest {
         val clientSecret = "secret_123"
         val order = storedOrder(orderId, customerId, productId)
         val newOrder = slot<Order>()
+        val reservedItems = testReservedItems(productId)
         every { orderRepository.nextId() } returns orderId
-        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { inventoryClient.reserve(orderId, requestedItems) } returns reservedItems
         every { orderRepository.create(capture(newOrder)) } returns order
         every { paymentClient.submitPayment(orderId, order.totalPrice()) } returns SubmitPaymentResult(10L, clientSecret)
 
@@ -77,6 +80,7 @@ class PlaceOrderUseCaseImplTest {
         assertEquals(clientSecret, result.clientSecret)
         assertEquals(orderId, newOrder.captured.id)
         assertEquals(customerId, newOrder.captured.customerId)
+        assertEquals(reservedItems.single().name, newOrder.captured.items.single().productName)
         assertEquals(Money(BigDecimal("20.00"), Currency.EUR), newOrder.captured.totalPrice())
         verify(exactly = 1) { orderRepository.nextId() }
         verify(exactly = 1) { inventoryClient.reserve(orderId, requestedItems) }
@@ -111,7 +115,7 @@ class PlaceOrderUseCaseImplTest {
         val requestedItems = testRequestedItems(productId)
         val expected = RuntimeException("db down")
         every { orderRepository.nextId() } returns orderId
-        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { inventoryClient.reserve(orderId, requestedItems) } returns testReservedItems(productId)
         every { orderRepository.create(any()) } throws expected
 
         val actual = assertThrows<RuntimeException> { useCase.execute(UUID.randomUUID(), requestedItems, testAddress()) }
@@ -129,7 +133,7 @@ class PlaceOrderUseCaseImplTest {
         val requestedItems = testRequestedItems(productId)
         val order = storedOrder(orderId, UUID.randomUUID(), productId)
         every { orderRepository.nextId() } returns orderId
-        every { inventoryClient.reserve(orderId, requestedItems) } returns testPrices(productId)
+        every { inventoryClient.reserve(orderId, requestedItems) } returns testReservedItems(productId)
         every { orderRepository.create(any()) } returns order
         every { orderRepository.save(order) } returns order
         every { paymentClient.submitPayment(orderId, order.totalPrice()) } throws Exception("gateway down")

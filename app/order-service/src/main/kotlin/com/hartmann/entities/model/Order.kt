@@ -5,8 +5,8 @@ import com.hartmann.entities.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
 import com.hartmann.entities.value.RefundInfo
+import com.hartmann.entities.value.ReservedItem
 import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.entities.value.ShipmentInfo
 import java.time.Instant
@@ -268,20 +268,11 @@ class Order private constructor(
     companion object {
         /**
          * A new order exists only once its stock is reserved: [id] is taken before the reservation, which is made
-         * for it, and [prices] - the price of every ordered product, by product id - come back from that reservation.
+         * for it, and its items are exactly the [reservedItems] that come back from that reservation.
          */
-        fun createNew(
-            id: Long,
-            customerId: UUID,
-            requestedItems: List<RequestedItem>,
-            prices: Map<Long, Money>,
-            address: Address,
-        ): Order {
+        fun createNew(id: Long, customerId: UUID, reservedItems: List<ReservedItem>, address: Address): Order {
             require(id > 0) { "id must be positive" }
-            val items = requestedItems.map {
-                val price = prices[it.productId] ?: throw DomainException("no price for product ${it.productId}")
-                OrderItem.createNew(it.productId, it.quantity, price)
-            }
+            val items = reservedItems.map { OrderItem.createNew(it.productId, it.name, it.quantity, it.price) }
             return Order(
                 id = id,
                 customerId = customerId,

@@ -13,7 +13,6 @@ import (
 	context "context"
 	dto "inventoryservice/application/dto"
 	dto0 "inventoryservice/application/port/out/idempotency/dto"
-	model "inventoryservice/domain/model"
 	reflect "reflect"
 
 	gomock "go.uber.org/mock/gomock"
@@ -86,10 +85,10 @@ func (mr *MockReservationServiceMockRecorder) HoldByCourier(ctx, msg, orderID an
 }
 
 // ReserveItems mocks base method.
-func (m *MockReservationService) ReserveItems(ctx context.Context, orderID uint64, reservationDTOs []dto.ReservationDTO) ([]*model.Product, error) {
+func (m *MockReservationService) ReserveItems(ctx context.Context, orderID uint64, reservationDTOs []dto.ReservationDTO) ([]dto.ReservedItemDTO, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ReserveItems", ctx, orderID, reservationDTOs)
-	ret0, _ := ret[0].([]*model.Product)
+	ret0, _ := ret[0].([]dto.ReservedItemDTO)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

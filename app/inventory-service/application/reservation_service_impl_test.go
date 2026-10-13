@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -60,7 +61,7 @@ func testReservation(t *testing.T, id, productID, orderID uint64, quantity uint,
 }
 
 func TestReservationServiceImpl_ReserveItems(t *testing.T) {
-	t.Run("counts the reservations as reserved on the product, creates them and returns the stored product", func(t *testing.T) {
+	t.Run("counts the reservations as reserved on the product, creates them and returns the stored line", func(t *testing.T) {
 		productID := uint64(1)
 		quantity := uint(4)
 		product := testProduct(t, productID, 10, 0)
@@ -86,13 +87,13 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 
 		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		gotProducts, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
+		gotItems, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{{ProductID: productID, Quantity: quantity}})
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(gotProducts) != 1 || gotProducts[0] != wantProduct {
-			t.Errorf("ReserveItems() = %+v, want only the stored product %+v", gotProducts, wantProduct)
+		if len(gotItems) != 1 || gotItems[0].Product != wantProduct || gotItems[0].Quantity != quantity {
+			t.Errorf("ReserveItems() = %+v, want only %d of the stored product %+v", gotItems, quantity, wantProduct)
 		}
 		if len(gotReservations) != 1 || gotReservations[0].Quantity() != quantity || gotReservations[0].Holder() != model.ReservationHolderBuyer {
 			t.Errorf("reservations passed to CreateBatch = %+v, want one of %d held by the buyer", gotReservations, quantity)
@@ -102,28 +103,38 @@ func TestReservationServiceImpl_ReserveItems(t *testing.T) {
 		}
 	})
 
-	t.Run("returns each product once when several lines reserve it", func(t *testing.T) {
+	t.Run("stores the product once and returns every line when several lines reserve it", func(t *testing.T) {
 		productID := uint64(1)
+		firstQuantity := uint(2)
+		secondQuantity := uint(3)
 		product := testProduct(t, productID, 10, 0)
 		productRepo := mocks.NewMockProductRepository(gomock.NewController(t))
 		reservationRepo := mocks.NewMockReservationRepository(gomock.NewController(t))
 
 		productRepo.EXPECT().GetByIDs(gomock.Any(), []uint64{productID, productID}).Return([]*model.Product{product}, nil).Times(1)
 		productRepo.EXPECT().Update(gomock.Any(), product).Return(product, nil).Times(1)
-		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Return(nil, nil).Times(1)
+		reservationRepo.EXPECT().CreateBatch(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, reservations []*model.StockReservation) ([]*model.StockReservation, error) {
+				return reservations, nil
+			},
+		)
 
 		service := NewReservationService(reservationRepo, productRepo, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
 
-		gotProducts, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{
-			{ProductID: productID, Quantity: 2},
-			{ProductID: productID, Quantity: 3},
+		gotItems, err := service.ReserveItems(context.Background(), 100, []dto.ReservationDTO{
+			{ProductID: productID, Quantity: firstQuantity},
+			{ProductID: productID, Quantity: secondQuantity},
 		})
 
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(gotProducts) != 1 || gotProducts[0] != product {
-			t.Errorf("ReserveItems() = %+v, want the product %+v once", gotProducts, product)
+		wantItems := []dto.ReservedItemDTO{
+			{Product: product, Quantity: firstQuantity},
+			{Product: product, Quantity: secondQuantity},
+		}
+		if !slices.Equal(gotItems, wantItems) {
+			t.Errorf("ReserveItems() = %+v, want %+v", gotItems, wantItems)
 		}
 	})
 

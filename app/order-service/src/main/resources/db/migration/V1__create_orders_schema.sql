@@ -30,6 +30,7 @@ CREATE TABLE orders.order_items (
     id             BIGSERIAL PRIMARY KEY,
     order_id       BIGINT NOT NULL REFERENCES orders.orders (id),
     product_id     BIGINT NOT NULL,
+    product_name   VARCHAR(255) NOT NULL,
     quantity       INTEGER NOT NULL,
     price_amount   NUMERIC(19, 2) NOT NULL,
     price_currency VARCHAR(3) NOT NULL

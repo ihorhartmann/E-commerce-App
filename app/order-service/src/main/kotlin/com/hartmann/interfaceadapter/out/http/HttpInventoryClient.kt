@@ -1,10 +1,10 @@
 package com.hartmann.interfaceadapter.out.http
 
-import com.hartmann.entities.value.Money
-import com.hartmann.entities.value.RequestedItem
+import com.hartmann.entities.value.ReservedItem
 import com.hartmann.interfaceadapter.out.http.dto.CreateReservationResponse
 import com.hartmann.interfaceadapter.out.http.dto.fromCreateReservationResponse
 import com.hartmann.interfaceadapter.out.http.dto.toCreateReservationRequest
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import org.slf4j.LoggerFactory
@@ -23,7 +23,7 @@ class HttpInventoryClient(private val restClient: RestClient) : InventoryClient 
         private val LOG = LoggerFactory.getLogger(HttpInventoryClient::class.java)
     }
 
-    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): Map<Long, Money> {
+    override fun reserve(orderId: Long, requestedItems: List<RequestedItem>): List<ReservedItem> {
         val request = toCreateReservationRequest(orderId, requestedItems)
 
         val response = try {
@@ -44,7 +44,7 @@ class HttpInventoryClient(private val restClient: RestClient) : InventoryClient 
         check(response.statusCode == HttpStatus.CREATED) {
             "Inventory service returned unexpected status ${response.statusCode} for order $orderId"
         }
-        val body = checkNotNull(response.body) { "Inventory service returned no prices for order $orderId" }
+        val body = checkNotNull(response.body) { "Inventory service returned no reserved items for order $orderId" }
         return fromCreateReservationResponse(body)
     }
 }

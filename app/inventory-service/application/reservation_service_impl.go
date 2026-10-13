@@ -38,31 +38,31 @@ func NewReservationService(
 }
 
 // ReserveItems reserves every line in one transaction: the products' reserved quantities and the new
-// reservations are stored together, or not at all. It returns the reserved products as stored, so the caller gets
-// the prices that were current when the stock was reserved.
+// reservations are stored together, or not at all. It returns every reserved line as stored - its quantity, and its
+// product with the name and price that were current when the stock was reserved.
 func (rs *ReservationServiceImpl) ReserveItems(
 	ctx context.Context,
 	orderID uint64,
 	reservationDTOs []dto.ReservationDTO,
-) ([]*model.Product, error) {
-	var products []*model.Product
+) ([]dto.ReservedItemDTO, error) {
+	var reservedItems []dto.ReservedItemDTO
 	err := rs.txExecutor.Transaction(ctx, func(ctx context.Context) error {
 		var txErr error
-		products, txErr = rs.reserveItems(ctx, orderID, reservationDTOs)
+		reservedItems, txErr = rs.reserveItems(ctx, orderID, reservationDTOs)
 		return txErr
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return products, nil
+	return reservedItems, nil
 }
 
 func (rs *ReservationServiceImpl) reserveItems(
 	ctx context.Context,
 	orderID uint64,
 	reservationDTOs []dto.ReservationDTO,
-) ([]*model.Product, error) {
+) ([]dto.ReservedItemDTO, error) {
 	productIDs := make([]uint64, 0, len(reservationDTOs))
 	for _, reservationDTO := range reservationDTOs {
 		productIDs = append(productIDs, reservationDTO.ProductID)
@@ -83,16 +83,25 @@ func (rs *ReservationServiceImpl) reserveItems(
 		reservations = append(reservations, reservation)
 	}
 
-	products, err := rs.updateProducts(ctx, productsByID)
+	productsByID, err = rs.updateProducts(ctx, productsByID)
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err = rs.reservationRepository.CreateBatch(ctx, reservations); err != nil {
+	reservations, err = rs.reservationRepository.CreateBatch(ctx, reservations)
+	if err != nil {
 		return nil, err
 	}
 
-	return products, nil
+	reservedItems := make([]dto.ReservedItemDTO, 0, len(reservations))
+	for _, reservation := range reservations {
+		reservedItems = append(reservedItems, dto.ReservedItemDTO{
+			Product:  productsByID[reservation.ProductID()],
+			Quantity: reservation.Quantity(),
+		})
+	}
+
+	return reservedItems, nil
 }
 
 // Cancel releases and deletes every stock reservation held for the given order.
@@ -200,14 +209,15 @@ func (rs *ReservationServiceImpl) getProductsByID(ctx context.Context, productID
 	return productsByID, nil
 }
 
-func (rs *ReservationServiceImpl) updateProducts(ctx context.Context, productsByID map[uint64]*model.Product) ([]*model.Product, error) {
-	products := make([]*model.Product, 0, len(productsByID))
+// updateProducts stores every product and returns them as stored, by id.
+func (rs *ReservationServiceImpl) updateProducts(ctx context.Context, productsByID map[uint64]*model.Product) (map[uint64]*model.Product, error) {
+	products := make(map[uint64]*model.Product, len(productsByID))
 	for _, id := range slices.Sorted(maps.Keys(productsByID)) {
 		product, err := rs.productRepository.Update(ctx, productsByID[id])
 		if err != nil {
 			return nil, err
 		}
-		products = append(products, product)
+		products[id] = product
 	}
 
 	return products, nil
