@@ -1,7 +1,8 @@
 # E-commerce-App
 
 Four business services (inventory, order, payment, shipping) behind a Spring Cloud Gateway, with Keycloak as the
-identity provider. See [CLAUDE.md](CLAUDE.md) for the architecture.
+identity provider, and a web UI (Kotlin, Compose HTML) for customers, couriers and admins. See [CLAUDE.md](CLAUDE.md)
+for the architecture.
 
 * Order checkout saga architecture (REST/Kafka, compensations): [docs/order_saga.md](docs/order_saga.md)
 
@@ -12,7 +13,7 @@ identity provider. See [CLAUDE.md](CLAUDE.md) for the architecture.
 2. Forward Stripe's webhooks to the gateway and put the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`:
 
    ```bash
-   stripe listen --forward-to localhost:8080/api/v1/webhooks/stripe
+   stripe listen --all-snapshot --forward-to localhost:8080/api/v1/webhooks/stripe
    ```
 
 3. Start everything:
@@ -23,6 +24,7 @@ identity provider. See [CLAUDE.md](CLAUDE.md) for the architecture.
 
 | What | URL |
 |---|---|
+| Web UI - catalog, cart and checkout, orders, shipments | http://localhost:3000 |
 | Gateway - the entry point for clients | http://localhost:8080 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`) | http://localhost:8090/admin |
 | Kafka UI | http://localhost:9090 |
@@ -30,6 +32,9 @@ identity provider. See [CLAUDE.md](CLAUDE.md) for the architecture.
 
 Keycloak imports the realm (`docker/keycloak/realm-ecommerce.json`) only when it doesn't exist yet. After changing
 the realm file, recreate the database volume: `docker compose down -v`.
+
+The web UI pays through Stripe test mode: use the card `4242 4242 4242 4242` with any future expiry date and any CVC.
+An order moves on only once Stripe's webhook reaches the gateway, so keep `stripe listen` (step 2) running.
 
 ## Test users
 
@@ -67,9 +72,23 @@ curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/t
 Collection → Authorization → Get New Access Token. Its description explains the full flow and which user each
 request needs.
 
+## Developing the web UI
+
+With the rest of the stack running in Docker, the Gradle dev server serves the UI straight from the sources and reloads
+the page on every change; it forwards the gateway's paths just like the container's nginx. Stop the `web-ui` container
+first (`docker compose stop web-ui`), since both use the same port:
+
+```bash
+cd app/web-ui
+WEB_UI_PORT=3000 GATEWAY_URL=http://localhost:8080 STRIPE_PUBLISHABLE_KEY=pk_test_... ./gradlew jsBrowserDevelopmentRun --continuous
+```
+
+See [app/web-ui/CLAUDE.md](app/web-ui/CLAUDE.md) for its architecture.
+
 ## Tests
 
 * Unit tests: `go test ./...` (inventory, shipping), `./gradlew test` (order, gateway), `mvn test` (payment).
+* Web UI ViewModel tests: `./gradlew jsNodeTest` in `app/web-ui`.
 * Go integration tests (Testcontainers): `go test -tags integration ./...`.
 * E2E tests (`e2e_tests`, the whole stack via Testcontainers, real Stripe test mode):
     * stop the local stack first (`docker compose down`) - the tests start their own on the same ports and network;

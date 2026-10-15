@@ -41,12 +41,7 @@ public class StripePaymentGateway implements PaymentGateway {
         var params = PaymentIntentCreateParams.builder()
                 .setAmount(toMinorUnits(amount))
                 .setCurrency(amount.currency().name().toLowerCase())
-                .setAutomaticPaymentMethods(
-                        PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
-                                .setEnabled(true)
-                                .setAllowRedirects(PaymentIntentCreateParams.AutomaticPaymentMethods.AllowRedirects.NEVER)
-                                .build()
-                )
+                .addPaymentMethodType("card")
                 .putMetadata("orderId", String.valueOf(orderId))
                 .build();
 

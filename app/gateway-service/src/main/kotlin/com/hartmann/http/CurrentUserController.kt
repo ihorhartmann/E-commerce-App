@@ -3,6 +3,8 @@ package com.hartmann.http
 import com.hartmann.config.OidcProperties
 import com.hartmann.http.dto.CurrentUserResponse
 import com.hartmann.http.dto.toCurrentUserResponse
+import org.springframework.http.ResponseEntity
+import org.springframework.security.authentication.AnonymousAuthenticationToken
 import org.springframework.security.core.Authentication
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientManager
@@ -23,9 +25,14 @@ class CurrentUserController(
     private val jwtDecoder: ReactiveJwtDecoder,
     private val oidc: OidcProperties,
 ) {
+
     @GetMapping
-    fun getCurrentUser(authentication: Authentication, exchange: ServerWebExchange): Mono<CurrentUserResponse> =
-        accessToken(authentication, exchange).map { toCurrentUserResponse(it, oidc.rolesClaim) }
+    fun getCurrentUser(authentication: Authentication?, exchange: ServerWebExchange): Mono<ResponseEntity<CurrentUserResponse>> {
+        if (authentication == null || authentication is AnonymousAuthenticationToken) {
+            return Mono.just(ResponseEntity.noContent().build())
+        }
+        return accessToken(authentication, exchange).map { ResponseEntity.ok(toCurrentUserResponse(it, oidc.rolesClaim)) }
+    }
 
     private fun accessToken(authentication: Authentication, exchange: ServerWebExchange): Mono<Jwt> =
         when (authentication) {

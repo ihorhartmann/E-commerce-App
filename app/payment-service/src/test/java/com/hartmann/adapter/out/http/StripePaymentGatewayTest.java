@@ -94,6 +94,21 @@ class StripePaymentGatewayTest {
     }
 
     @Test
+    void submitPayment_allowsCardPaymentsOnly() throws Exception {
+        when(stripeClient.v1().paymentIntents().create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                .thenReturn(mock(PaymentIntent.class));
+
+        gateway.submitPayment(42L, money("79.99"));
+
+        var paramsCaptor = ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
+        verify(stripeClient.v1().paymentIntents(), times(1)).create(paramsCaptor.capture(), any(RequestOptions.class));
+        var params = paramsCaptor.getValue();
+        assertThat(params.getPaymentMethodTypes()).containsExactly("card");
+        // with automatic payment methods Stripe would offer whatever the account enables (MB WAY, Satispay, ...)
+        assertThat(params.getAutomaticPaymentMethods()).isNull();
+    }
+
+    @Test
     void submitPayment_setsAnIdempotencyKeyScopedToTheOrder() throws Exception {
         var orderId = 42L;
         when(stripeClient.v1().paymentIntents().create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))

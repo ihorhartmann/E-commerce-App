@@ -1,0 +1,164 @@
+/*
+ * Maps the web UI's glass look (glass.css, loaded just before this file) onto the PatternFly 5 markup of Keycloak's
+ * keycloak.v2 login pages: sign-in, registration, password reset and their error messages.
+ */
+
+:root {
+    --pf-v5-global--FontFamily--text: var(--font);
+    --pf-v5-global--FontFamily--heading: var(--font);
+    --pf-v5-global--Color--100: var(--text);
+    --pf-v5-global--Color--200: var(--text-muted);
+    --pf-v5-global--BackgroundColor--100: transparent;
+    --pf-v5-global--link--Color: var(--accent);
+    --pf-v5-global--link--Color--hover: var(--accent-strong);
+    --pf-v5-global--primary-color--100: var(--accent);
+    --pf-v5-global--danger-color--100: var(--danger);
+    --pf-v5-global--BorderColor--100: var(--glass-border);
+}
+
+/* only the root gets the colour: a body background would cover glass.css's coloured light (body::before) */
+html {
+    background: var(--bg);
+}
+
+body#keycloak-bg {
+    background: transparent;
+    color: var(--text);
+}
+
+.pf-v5-c-login__header {
+    margin-bottom: 20px;
+}
+
+#kc-header-wrapper {
+    color: var(--text);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-align: center;
+    text-transform: none;
+}
+
+/* the card */
+.pf-v5-c-login .pf-v5-c-login__main {
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    background: var(--glass-bg);
+    box-shadow: var(--glass-shadow);
+    color: var(--text);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+}
+
+/* keycloak.v2 draws a blue accent line along the card's top edge */
+.pf-v5-c-login__main-header {
+    border-top: none;
+}
+
+.pf-v5-c-login__main-header .pf-v5-c-title {
+    color: var(--text);
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.pf-v5-c-form__label-text {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* text fields: the field's border is drawn by PatternFly's ::before/::after, replaced here with the glass one */
+.pf-v5-c-form-control {
+    --pf-v5-c-form-control--BackgroundColor: rgba(255, 255, 255, 0.06);
+    --pf-v5-c-form-control--Color: var(--text);
+    border-radius: var(--radius-small);
+}
+
+.pf-v5-c-form-control::before {
+    border: 1px solid var(--glass-border) !important;
+    border-radius: var(--radius-small);
+}
+
+.pf-v5-c-form-control::after {
+    border: none !important;
+}
+
+.pf-v5-c-form-control:focus-within::before {
+    border-color: var(--accent) !important;
+}
+
+.pf-v5-c-form-control.pf-m-error::before,
+.pf-v5-c-form-control:has(input[aria-invalid="true"])::before {
+    border-color: var(--danger) !important;
+}
+
+.pf-v5-c-form-control > input {
+    color: var(--text);
+}
+
+/* buttons */
+.pf-v5-c-button {
+    --pf-v5-c-button--BorderRadius: var(--radius-small);
+    font-weight: 500;
+}
+
+.pf-v5-c-button.pf-m-primary {
+    --pf-v5-c-button--m-primary--BackgroundColor: var(--accent);
+    --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--accent-strong);
+    --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--accent-strong);
+    --pf-v5-c-button--m-primary--active--BackgroundColor: var(--accent-strong);
+    --pf-v5-c-button--m-primary--Color: var(--on-accent);
+    --pf-v5-c-button--m-primary--hover--Color: var(--on-accent);
+    --pf-v5-c-button--m-primary--focus--Color: var(--on-accent);
+    --pf-v5-c-button--m-primary--active--Color: var(--on-accent);
+}
+
+/* the "show password" toggle next to the password field */
+.pf-v5-c-button.pf-m-control {
+    --pf-v5-c-button--m-control--BackgroundColor: rgba(255, 255, 255, 0.06);
+    --pf-v5-c-button--m-control--hover--BackgroundColor: rgba(255, 255, 255, 0.12);
+    --pf-v5-c-button--m-control--Color: var(--text-muted);
+    --pf-v5-c-button--m-control--hover--Color: var(--text);
+}
+
+.pf-v5-c-button.pf-m-control::after {
+    border-color: var(--glass-border) !important;
+}
+
+.pf-v5-c-button.pf-m-link,
+.pf-v5-c-login a {
+    color: var(--accent);
+}
+
+/* "New user? Register", "Back to login" */
+.pf-v5-c-login__main-footer-band {
+    border-top: 1px solid var(--glass-border);
+    background: transparent;
+    color: var(--text-muted);
+}
+
+/* error and info messages */
+.pf-v5-c-alert {
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-small);
+    background: rgba(30, 27, 58, 0.6);
+    color: var(--text);
+}
+
+.pf-v5-c-alert.pf-m-danger {
+    border-left: 3px solid var(--danger);
+}
+
+.pf-v5-c-alert__title,
+.pf-v5-c-helper-text__item-text {
+    color: inherit;
+}
+
+.pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text,
+[id^="input-error"] {
+    color: var(--danger);
+}
+
+/* the language switcher, if a realm enables more than one locale */
+.pf-v5-c-menu-toggle {
+    color: var(--text-muted);
+}

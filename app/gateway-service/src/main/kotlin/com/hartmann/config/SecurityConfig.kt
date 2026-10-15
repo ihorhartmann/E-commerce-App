@@ -44,6 +44,8 @@ class SecurityConfig {
             authorize(STRIPE_WEBHOOK_PATH, permitAll)
             // the catalog is public: browsing products needs no login, ordering them does
             authorize(pathMatchers(HttpMethod.GET, PRODUCTS_PATH), permitAll)
+            // tells a guest apart from a signed-in user (204 vs 200) - see CurrentUserController
+            authorize(pathMatchers(HttpMethod.GET, CURRENT_USER_PATH), permitAll)
             authorize(anyExchange, authenticated)
         }
         // browser: Authorization Code + PKCE login, tokens kept in the server-side session, HttpOnly session cookie
@@ -130,6 +132,7 @@ class SecurityConfig {
         const val HEALTH_PATH = "/health"
         const val STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe"
         const val PRODUCTS_PATH = "/api/v1/products/**"
+        const val CURRENT_USER_PATH = "/api/v1/me"
         const val END_SESSION_ENDPOINT = "end_session_endpoint"
 
         // WebFlux's default session cookie name (CookieWebSessionIdResolver)

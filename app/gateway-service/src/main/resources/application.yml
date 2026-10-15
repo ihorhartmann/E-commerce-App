@@ -1,5 +1,8 @@
 server:
   port: ${GATEWAY_PORT}
+  # behind the web UI's nginx: build redirect URIs ({baseUrl}) from the X-Forwarded-* headers it sets, i.e. from the
+  # address the browser actually uses
+  forward-headers-strategy: framework
   reactive:
     session:
       cookie:

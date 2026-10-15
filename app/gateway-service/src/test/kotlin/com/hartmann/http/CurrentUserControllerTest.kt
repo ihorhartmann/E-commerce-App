@@ -1,6 +1,7 @@
 package com.hartmann.http
 
 import com.hartmann.config.OidcProperties
+import com.hartmann.config.SecurityConfig
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.kotlin.any
@@ -11,6 +12,7 @@ import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest
+import org.springframework.context.annotation.Import
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient
 import org.springframework.security.oauth2.client.ReactiveOAuth2AuthorizedClientManager
 import org.springframework.security.oauth2.client.registration.ClientRegistration
@@ -36,6 +38,8 @@ import java.time.Instant
         "oidc.roles-claim=realm_access.roles",
     ],
 )
+// the real security rules: /api/v1/me is open to guests
+@Import(SecurityConfig::class)
 @EnableConfigurationProperties(OidcProperties::class)
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class CurrentUserControllerTest {
@@ -132,11 +136,12 @@ class CurrentUserControllerTest {
     }
 
     @Test
-    fun `getCurrentUser - rejects an unauthenticated request`() {
+    fun `getCurrentUser - answers a guest with no content`() {
         webTestClient
             .get().uri("/api/v1/me")
             .exchange()
-            .expectStatus().isUnauthorized
+            .expectStatus().isNoContent
+            .expectBody().isEmpty
 
         verifyNoInteractions(authorizedClientManager, jwtDecoder)
     }
