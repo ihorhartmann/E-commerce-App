@@ -13,7 +13,7 @@
     --pf-v5-global--link--Color--hover: var(--accent-strong);
     --pf-v5-global--primary-color--100: var(--accent);
     --pf-v5-global--danger-color--100: var(--danger);
-    --pf-v5-global--BorderColor--100: var(--glass-border);
+    --pf-v5-global--BorderColor--100: var(--divider);
 }
 
 /* only the root gets the colour: a body background would cover glass.css's coloured light (body::before) */
@@ -68,13 +68,13 @@ body#keycloak-bg {
 
 /* text fields: the field's border is drawn by PatternFly's ::before/::after, replaced here with the glass one */
 .pf-v5-c-form-control {
-    --pf-v5-c-form-control--BackgroundColor: rgba(255, 255, 255, 0.06);
+    --pf-v5-c-form-control--BackgroundColor: var(--input-bg);
     --pf-v5-c-form-control--Color: var(--text);
     border-radius: var(--radius-small);
 }
 
 .pf-v5-c-form-control::before {
-    border: 1px solid var(--glass-border) !important;
+    border: 1px solid var(--input-border) !important;
     border-radius: var(--radius-small);
 }
 
@@ -102,26 +102,27 @@ body#keycloak-bg {
 }
 
 .pf-v5-c-button.pf-m-primary {
-    --pf-v5-c-button--m-primary--BackgroundColor: var(--accent);
-    --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--accent-strong);
-    --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--accent-strong);
-    --pf-v5-c-button--m-primary--active--BackgroundColor: var(--accent-strong);
-    --pf-v5-c-button--m-primary--Color: var(--on-accent);
-    --pf-v5-c-button--m-primary--hover--Color: var(--on-accent);
-    --pf-v5-c-button--m-primary--focus--Color: var(--on-accent);
-    --pf-v5-c-button--m-primary--active--Color: var(--on-accent);
+    --pf-v5-c-button--m-primary--BackgroundColor: var(--primary-bg);
+    --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--primary-bg-hover);
+    --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--primary-bg-hover);
+    --pf-v5-c-button--m-primary--active--BackgroundColor: var(--primary-bg-hover);
+    --pf-v5-c-button--m-primary--Color: var(--on-primary);
+    --pf-v5-c-button--m-primary--hover--Color: var(--on-primary);
+    --pf-v5-c-button--m-primary--focus--Color: var(--on-primary);
+    --pf-v5-c-button--m-primary--active--Color: var(--on-primary);
+    border: 1px solid var(--primary-border);
 }
 
 /* the "show password" toggle next to the password field */
 .pf-v5-c-button.pf-m-control {
-    --pf-v5-c-button--m-control--BackgroundColor: rgba(255, 255, 255, 0.06);
-    --pf-v5-c-button--m-control--hover--BackgroundColor: rgba(255, 255, 255, 0.12);
+    --pf-v5-c-button--m-control--BackgroundColor: var(--input-bg);
+    --pf-v5-c-button--m-control--hover--BackgroundColor: var(--input-bg-focus);
     --pf-v5-c-button--m-control--Color: var(--text-muted);
     --pf-v5-c-button--m-control--hover--Color: var(--text);
 }
 
 .pf-v5-c-button.pf-m-control::after {
-    border-color: var(--glass-border) !important;
+    border-color: var(--input-border) !important;
 }
 
 .pf-v5-c-button.pf-m-link,
@@ -131,16 +132,16 @@ body#keycloak-bg {
 
 /* "New user? Register", "Back to login" */
 .pf-v5-c-login__main-footer-band {
-    border-top: 1px solid var(--glass-border);
+    border-top: 1px solid var(--divider);
     background: transparent;
     color: var(--text-muted);
 }
 
 /* error and info messages */
 .pf-v5-c-alert {
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--divider);
     border-radius: var(--radius-small);
-    background: rgba(30, 27, 58, 0.6);
+    background: var(--surface);
     color: var(--text);
 }
 

@@ -4,22 +4,44 @@
  */
 
 :root {
-    --bg: #0d0b1f;
-    --text: #f1f0fb;
-    --text-muted: rgba(241, 240, 251, 0.62);
-    --accent: #a5b4fc;
-    --accent-strong: #818cf8;
-    --on-accent: #12102a;
-    --danger: #fca5a5;
-    --success: #86efac;
-    --warning: #fcd34d;
-    --info: #93c5fd;
+    /* "Aurora softer": very clear, strongly blurred glass over faint pastel light */
+    --bg: #f6f7fc;
+    --text: #1e1b4b;
+    --text-muted: rgba(30, 27, 75, 0.62);
+    --accent: #4f46e5;
+    --accent-strong: #4338ca;
+    --on-accent: #ffffff;
+    --danger: #dc2626;
+    --success: #15803d;
+    --warning: #b45309;
+    --info: #2563eb;
 
-    --glass-bg: rgba(255, 255, 255, 0.07);
-    --glass-bg-strong: rgba(255, 255, 255, 0.12);
-    --glass-border: rgba(255, 255, 255, 0.16);
-    --glass-blur: blur(22px) saturate(140%);
-    --glass-shadow: 0 10px 40px rgba(4, 2, 20, 0.45);
+    --glass-bg: rgba(255, 255, 255, 0.4);
+    --glass-bg-strong: rgba(255, 255, 255, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.85);
+    --glass-blur: blur(28px) saturate(180%);
+    --glass-shadow: 0 10px 30px rgba(79, 70, 229, 0.14);
+
+    /* denser surfaces on top of the page: dialogs, toasts, error messages */
+    --surface: rgba(255, 255, 255, 0.82);
+    --backdrop: rgba(30, 27, 75, 0.25);
+    --divider: rgba(30, 27, 75, 0.1);
+    /* a light wash over a transparent element on hover (nav buttons, rows) */
+    --hover: rgba(30, 27, 75, 0.06);
+    /* a glass button on hover */
+    --hover-strong: rgba(255, 255, 255, 0.95);
+
+    --input-bg: rgba(255, 255, 255, 0.7);
+    --input-bg-focus: rgba(255, 255, 255, 0.9);
+    --input-border: rgba(30, 27, 75, 0.16);
+    --input-placeholder: rgba(30, 27, 75, 0.4);
+    --danger-border: rgba(220, 38, 38, 0.45);
+
+    /* the main action of a screen: a solid indigo, a step lighter than the accent */
+    --primary-bg: #6366f1;
+    --primary-bg-hover: #4f46e5;
+    --primary-border: transparent;
+    --on-primary: #ffffff;
 
     --radius: 16px;
     --radius-small: 10px;
@@ -51,10 +73,10 @@ body::before {
     inset: 0;
     z-index: -1;
     background:
-        radial-gradient(40vmax 40vmax at 12% 18%, rgba(129, 140, 248, 0.55), transparent 70%),
-        radial-gradient(36vmax 36vmax at 88% 12%, rgba(236, 72, 153, 0.38), transparent 70%),
-        radial-gradient(44vmax 44vmax at 70% 92%, rgba(45, 212, 191, 0.32), transparent 70%),
-        radial-gradient(30vmax 30vmax at 22% 88%, rgba(251, 191, 36, 0.20), transparent 70%);
+        radial-gradient(40vmax 40vmax at 12% 18%, rgba(240, 171, 252, 0.24), transparent 70%),
+        radial-gradient(36vmax 36vmax at 88% 10%, rgba(103, 232, 249, 0.22), transparent 70%),
+        radial-gradient(44vmax 44vmax at 70% 92%, rgba(190, 242, 100, 0.17), transparent 70%),
+        radial-gradient(30vmax 30vmax at 22% 85%, rgba(253, 164, 175, 0.19), transparent 70%);
 }
 
 .glass {
@@ -80,22 +102,22 @@ label {
 .input {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid var(--glass-border);
+    border: 1px solid var(--input-border);
     border-radius: var(--radius-small);
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--input-bg);
     color: var(--text);
     font: inherit;
     transition: border-color 0.15s, background 0.15s;
 }
 
 .input::placeholder {
-    color: rgba(241, 240, 251, 0.35);
+    color: var(--input-placeholder);
 }
 
 .input:focus {
     outline: none;
     border-color: var(--accent);
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--input-bg-focus);
 }
 
 .button {
@@ -115,7 +137,7 @@ label {
 }
 
 .button:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--hover-strong);
 }
 
 .button:active:not(:disabled) {
@@ -133,16 +155,16 @@ label {
 }
 
 .button-primary {
-    border-color: transparent;
-    background: var(--accent);
-    color: var(--on-accent);
+    border-color: var(--primary-border);
+    background: var(--primary-bg);
+    color: var(--on-primary);
 }
 
 .button-primary:hover:not(:disabled) {
-    background: var(--accent-strong);
+    background: var(--primary-bg-hover);
 }
 
 .button-danger {
-    border-color: rgba(252, 165, 165, 0.45);
+    border-color: var(--danger-border);
     color: var(--danger);
 }

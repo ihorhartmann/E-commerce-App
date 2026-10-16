@@ -45,12 +45,13 @@ class StripePaymentGateway private constructor(private val publishableKey: Strin
         return PaymentResult.Failed(error.message as? String ?: "The payment didn't go through.")
     }
 
-    // matches the app's dark glass style; Stripe draws its fields itself, so they can't take the app's CSS
+    // matches the app's light glass style; Stripe draws its fields itself, so they can't take the app's CSS
     private fun appearance() = json(
-        "theme" to "night",
+        "theme" to "stripe",
         "variables" to json(
-            "colorPrimary" to "#a5b4fc",
-            "colorBackground" to "#1e1b3a",
+            "colorPrimary" to "#4f46e5",
+            "colorBackground" to "#ffffff",
+            "colorText" to "#1e1b4b",
             "borderRadius" to "10px",
             "fontFamily" to "Inter, system-ui, sans-serif",
         ),
