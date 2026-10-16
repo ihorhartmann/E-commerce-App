@@ -7,7 +7,8 @@ The system consists of four business services:
 * Payment
 * Shipping
 
-plus the **Gateway**, the single entry point for clients, and **Keycloak** as the identity provider.
+plus the **Gateway**, the single entry point for clients, **Keycloak** as the identity provider, and the **Web UI**,
+a browser client of the Gateway.
 
 Services communicate with each other through Kafka and HTTP and expose REST APIs for frontend communication.
 
@@ -22,6 +23,9 @@ The **Order Service** acts as the orchestrator for the other services.
   `INVENTORY_RESERVE`) are in the claim named by `OIDC_ROLES_CLAIM`, the user id is `sub` (a UUID).
 * The Gateway logs browser users in (Authorization Code + PKCE, tokens kept in the server-side session) and relays
   their token; Bearer clients (Postman, e2e tests) send their own. It only checks that a request is authenticated.
+* The Web UI's nginx forwards the Gateway's paths (`/api`, `/oauth2`, `/login`, `/logout`), so the browser sees one
+  origin and the session cookie works without CORS. The Gateway knows nothing about the UI: it only builds its
+  redirect URIs from the `X-Forwarded-*` headers nginx sets.
 * Every service is an OAuth2 resource server: it validates the token itself (JWKS, issuer), checks the caller's role
   per endpoint (anything not listed is denied), and its use cases check resource ownership (another customer's
   resource is reported as not found).
@@ -60,6 +64,12 @@ The **Order Service** acts as the orchestrator for the other services.
 * Language: Kotlin
 * Technologies: Spring Cloud Gateway (WebFlux), Spring Security OAuth2 Client + Resource Server
 
+6. **Web UI**
+
+* Architecture: MVVM (screen -> ViewModel -> API client), packages by feature - see `app/web-ui/CLAUDE.md`
+* Language: Kotlin/JS
+* Technologies: Compose HTML, Ktor Client, Stripe.js; served by nginx
+
 # Code principles
 
 The Domain/Entity layers for each service must follow the Information Expert principle. A class/struct in the domain
@@ -72,6 +82,10 @@ case/service must be wired against a repository/client/producer interface (not t
 implements it), and a constructor function/factory (e.g. Go's `NewXxx`) must return the interface type, not the concrete
 struct pointer. It does not apply to dependencies or return values that are inherently concrete and have no meaningful
 interface (e.g. value objects, DTOs, framework types like `KafkaTemplate`).
+
+Declare a local variable where it is first needed, not up front at the top of the function: the reader meets it next
+to the code that uses it, and its scope stays as narrow as the code allows. This applies to tests too, including the
+literals extracted into local variables under the test rules below.
 
 # Domain entities and repositories
 
@@ -278,7 +292,8 @@ database connections and other resources if there are such.
   an invalid state or amount). That validation is owned and already covered by the
   domain layer's own unit tests; duplicating it at the application layer tests the domain, not the use case.
 * Within a single test method (a Go `t.Run` closure counts as one), any literal value used 2 or more times must be
-  extracted into a local variable declared at the top of that method/closure and reused at every occurrence,
+  extracted into a local variable declared where the value is first needed in that method/closure and reused at
+  every occurrence,
   instead of repeating the literal - e.g. an id passed into a constructor call and then re-checked in an assertion,
   or a correlation id passed into the call under test and then repeated in a `verify`/`EXPECT` call. Scope the
   variable to that one method only; do not hoist it to a shared file-level constant, and do not extract a value

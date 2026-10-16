@@ -48,6 +48,7 @@ object DockerComposeStack {
         requiredEnv("KEYCLOAK_ADMIN_PASSWORD")
         requiredEnv("GATEWAY_CLIENT_SECRET")
         requiredEnv("ORDER_SERVICE_CLIENT_SECRET")
+        requiredEnv("WEB_UI_PORT")
         TestUser.entries.forEach { requiredEnv(it.passwordEnv) }
     }
 
@@ -58,6 +59,18 @@ object DockerComposeStack {
     // without repeating anything explicitly.
     private val compose: ComposeContainer =
         ComposeContainer(File("../docker-compose.yaml"))
+            // only what the scenarios need: the web UI (its image isn't even built) and Kafka UI stay down. Their env
+            // vars are still required above - compose substitutes them in the whole file, started services or not
+            .withServices(
+                "postgres",
+                "keycloak",
+                "kafka",
+                "inventory-service",
+                "order-service",
+                "payment-service",
+                "shipping-service",
+                "gateway-service",
+            )
             .withExposedService(
                 "inventory-service",
                 inventoryPort,

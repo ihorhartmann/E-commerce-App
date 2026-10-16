@@ -1,0 +1,43 @@
+# Rendered by the nginx image's envsubst step from the env vars WEB_UI_PORT, GATEWAY_ADDRESS, STRIPE_PUBLISHABLE_KEY.
+# nginx serves the app's static files and forwards everything the gateway handles to it, so that the browser sees
+# one origin: the session cookie, CSRF and the OAuth2 redirects work without CORS.
+
+upstream gateway {
+    server ${GATEWAY_ADDRESS};
+    keepalive 16;
+}
+
+server {
+    listen ${WEB_UI_PORT};
+    root /usr/share/nginx/html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # the bundle keeps the same file names across builds: always revalidate, so a new build shows up at once
+    location ~* \.(html|js|css)$ {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /config.json {
+        default_type application/json;
+        add_header Cache-Control "no-store";
+        return 200 '{"stripePublishableKey":"${STRIPE_PUBLISHABLE_KEY}"}';
+    }
+
+    location ~ ^/(api/|oauth2/|login/|logout$) {
+        proxy_pass http://gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        # the address the browser uses (host and port): the gateway builds its OAuth2 redirect URIs from it. With
+        # X-Forwarded-Proto, Spring drops the port of Host, so X-Forwarded-Host has to carry it.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}

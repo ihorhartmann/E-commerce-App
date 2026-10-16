@@ -79,6 +79,13 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
     }
 
     @Test
+    fun `me - answers a guest with no content instead of rejecting it`() {
+        val statusCode = given().get("$gatewayUrl/api/v1/me").statusCode()
+
+        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_NO_CONTENT)
+    }
+
+    @Test
     fun `orders - rejected by the gateway itself without a token`() {
         val statusCode = given().get("$gatewayUrl/api/v1/orders/1").statusCode()
 
