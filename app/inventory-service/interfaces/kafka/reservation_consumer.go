@@ -8,6 +8,7 @@ import (
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/interfaces/kafka/common"
 	"inventoryservice/interfaces/kafka/dto"
+	"log/slog"
 
 	"github.com/google/uuid"
 )
@@ -58,35 +59,42 @@ func (rc *ReservationKafkaConsumer) handleMessage(ctx context.Context, messageTy
 func (rc *ReservationKafkaConsumer) handleCancelReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.CancelReservationCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
-	return classify(rc.reservationService.Cancel(ctx, msg, command.OrderID))
+	return rc.reservationService.Cancel(ctx, msg, command.OrderID)
 }
 
 func (rc *ReservationKafkaConsumer) handleFulfillReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.FulfillReservationCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
-	return classify(rc.reservationService.Fulfill(ctx, msg, command.OrderID))
+	return rc.reservationService.Fulfill(ctx, msg, command.OrderID)
 }
 
 func (rc *ReservationKafkaConsumer) handleHoldReservation(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.HoldReservationCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
-	return classify(rc.reservationService.HoldByCourier(ctx, msg, command.OrderID))
+	return rc.reservationService.HoldByCourier(ctx, msg, command.OrderID)
 }
 
 func (rc *ReservationKafkaConsumer) handleRestock(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.RestockCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
-	return classify(rc.productService.Restock(ctx, msg, dto.ToReservationDTOs(command.Items)))
+	return rc.productService.Restock(ctx, msg, dto.ToReservationDTOs(command.Items))
+}
+
+// malformedPayloadErr reports a payload that doesn't decode - permanent, so the message is dead-lettered at once.
+func malformedPayloadErr(msg idempotencydto.KafkaMessageMetadata, err error) error {
+	return ErrMalformedMessage.
+		WithAttrs(slog.String("messageType", msg.MessageType), slog.String("messageID", msg.MessageID.String())).
+		WithCause(err)
 }

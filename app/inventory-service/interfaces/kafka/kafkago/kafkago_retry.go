@@ -2,9 +2,9 @@ package kafkago
 
 import (
 	"context"
-	"errors"
-	"inventoryservice/interfaces/kafka"
 	"time"
+
+	"inventoryservice/domain/apperror"
 )
 
 const (
@@ -26,10 +26,13 @@ func backoffDelays(retries int, initial time.Duration) []time.Duration {
 	return delays
 }
 
+// runWithRetry runs action until it succeeds, fails permanently - the category of its error's
+// sentinel says retrying can't change the outcome - or runs out of delays. An error with no sentinel
+// counts as internal, so it is retried.
 func runWithRetry(ctx context.Context, delays []time.Duration, action func() error) error {
 	for attempt := 0; ; attempt++ {
 		err := action()
-		if err == nil || errors.Is(err, kafka.ErrNonRetryable) || attempt == len(delays) {
+		if err == nil || apperror.OutermostError(err).Category().Permanent() || attempt == len(delays) {
 			return err
 		}
 

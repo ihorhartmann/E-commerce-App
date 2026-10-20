@@ -11,14 +11,16 @@ import (
 
 	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in/mocks"
-	"inventoryservice/domain"
+	"inventoryservice/domain/apperror"
 	"inventoryservice/domain/model"
-	httperrors "inventoryservice/interfaces/http/errors"
+	reservationdto "inventoryservice/interfaces/http/dto/reservation"
+	"inventoryservice/interfaces/http/httperror"
 	"inventoryservice/interfaces/http/middleware"
 )
 
 func newReservationTestApp(reservationService *mocks.MockReservationService) *fiber.App {
-	app := fiber.New(fiber.Config{ErrorHandler: middleware.HandleError})
+	app := fiber.New(fiber.Config{ErrorHandler: middleware.HandleMiddlewareError})
+	app.Use(middleware.HandleControllerError)
 	NewReservationController(reservationService).RegisterRoutes(app)
 	return app
 }
@@ -84,8 +86,8 @@ func TestReservationController_CreateReservation(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != httperrors.ErrInvalidRequestBody.Error() {
-			t.Errorf("error = %v, want %q", body["error"], httperrors.ErrInvalidRequestBody.Error())
+		if body["code"] != httperror.ErrMalformedRequestBody.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrMalformedRequestBody.Code())
 		}
 	})
 
@@ -106,8 +108,8 @@ func TestReservationController_CreateReservation(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != domain.ErrInvalidInput.Error() {
-			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		if body["code"] != reservationdto.ErrInvalidReservationRequest.Code() {
+			t.Errorf("code = %v, want %q", body["code"], reservationdto.ErrInvalidReservationRequest.Code())
 		}
 	})
 
@@ -135,8 +137,8 @@ func TestReservationController_CreateReservation(t *testing.T) {
 			t.Errorf("status = %d, want 409", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != model.ErrInsufficientStock.Error() {
-			t.Errorf("error = %v, want %q", body["error"], model.ErrInsufficientStock.Error())
+		if body["code"] != model.ErrInsufficientStock.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrInsufficientStock.Code())
 		}
 	})
 
@@ -164,8 +166,8 @@ func TestReservationController_CreateReservation(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != apperror.ErrInternal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }

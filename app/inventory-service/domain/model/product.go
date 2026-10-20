@@ -1,10 +1,10 @@
 package model
 
 import (
-	"fmt"
-	"inventoryservice/domain"
-	"inventoryservice/domain/values"
+	"log/slog"
 	"strings"
+
+	"inventoryservice/domain/values"
 )
 
 type Product struct {
@@ -31,14 +31,22 @@ func NewProduct(id uint64, name, description string, price values.Money, quantit
 	}, nil
 }
 
+// NewExistingProduct restores a stored product. Stored data that breaks the product's rules is
+// corrupted, so every rule it breaks is reported as ErrInconsistentProduct, not as a request to
+// reject.
 func NewExistingProduct(id uint64, name, description string, price values.Money, quantity, reserved uint, version uint64) (*Product, error) {
 	if id == 0 || reserved > quantity {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInconsistentProduct.
+			WithInternalMessage("stored product breaks its invariants").
+			WithAttrs(slog.Uint64("productID", id), slog.Uint64("quantity", uint64(quantity)), slog.Uint64("reserved", uint64(reserved)))
 	}
 
 	product, err := NewProduct(id, name, description, price, quantity)
 	if err != nil {
-		return nil, err
+		return nil, ErrInconsistentProduct.
+			WithInternalMessage("stored product breaks its invariants").
+			WithAttrs(slog.Uint64("productID", id)).
+			WithCause(err)
 	}
 	product.reserved = reserved
 	product.version = version
@@ -49,11 +57,14 @@ func NewExistingProduct(id uint64, name, description string, price values.Money,
 // validateProduct lets the catalog sell in EUR only, so every price the order-service gets for an order is in one
 // currency. The other currencies Money supports are kept for later.
 func validateProduct(name string, price values.Money) error {
-	if strings.TrimSpace(name) == "" || !price.Amount().IsPositive() {
-		return domain.ErrInvalidInput
+	if strings.TrimSpace(name) == "" {
+		return ErrInvalidProductName
+	}
+	if !price.Amount().IsPositive() {
+		return ErrInvalidProductPrice.WithAttrs(slog.String("amount", price.Amount().String()))
 	}
 	if price.Currency() != values.EUR {
-		return fmt.Errorf("%w: got %s", ErrUnsupportedPriceCurrency, price.Currency())
+		return ErrUnsupportedPriceCurrency.WithAttrs(slog.String("currency", string(price.Currency())))
 	}
 
 	return nil
@@ -97,7 +108,9 @@ func (p *Product) Update(name, description string, price values.Money, quantity 
 		return err
 	}
 	if quantity < p.reserved {
-		return fmt.Errorf("%w: product %d has %d reserved, can't set quantity to %d", ErrQuantityBelowReserved, p.id, p.reserved, quantity)
+		return ErrQuantityBelowReserved.
+			WithInternalMessage("cannot set quantity below the reserved quantity").
+			WithAttrs(slog.Uint64("productID", p.id), slog.Uint64("reserved", uint64(p.reserved)), slog.Uint64("quantity", uint64(quantity)))
 	}
 
 	p.name = name
@@ -111,7 +124,9 @@ func (p *Product) Update(name, description string, price values.Money, quantity 
 // reserved, since those reservations' orders still count on it.
 func (p *Product) ValidateDeletion() error {
 	if p.reserved > 0 {
-		return fmt.Errorf("%w: product %d has %d reserved", ErrProductReserved, p.id, p.reserved)
+		return ErrProductReserved.
+			WithInternalMessage("cannot delete a product with reserved stock").
+			WithAttrs(slog.Uint64("productID", p.id), slog.Uint64("reserved", uint64(p.reserved)))
 	}
 
 	return nil
@@ -123,7 +138,14 @@ func (p *Product) ValidateDeletion() error {
 // stock left after this one.
 func (p *Product) Reserve(orderID uint64, quantity uint) (*StockReservation, error) {
 	if p.Available() < quantity {
-		return nil, fmt.Errorf("%w: product %d has %d available, %d requested", ErrInsufficientStock, p.id, p.Available(), quantity)
+		return nil, ErrInsufficientStock.
+			WithInternalMessage("cannot reserve product stock").
+			WithAttrs(
+				slog.Uint64("productID", p.id),
+				slog.Uint64("orderID", orderID),
+				slog.Uint64("available", uint64(p.Available())),
+				slog.Uint64("requested", uint64(quantity)),
+			)
 	}
 
 	reservation, err := NewStockReservation(0, p.id, orderID, quantity, ReservationHolderBuyer)
@@ -154,7 +176,9 @@ func (p *Product) Fulfill(reservation *StockReservation) error {
 		return err
 	}
 	if reservation.Holder() != ReservationHolderCourier {
-		return fmt.Errorf("%w: reservation %d is held by %s", ErrReservationNotHeldByCourier, reservation.ID(), reservation.Holder())
+		return ErrReservationNotHeldByCourier.
+			WithInternalMessage("cannot fulfill a reservation not held by a courier").
+			WithAttrs(slog.Uint64("reservationID", reservation.ID()), slog.String("holder", string(reservation.Holder())))
 	}
 
 	p.quantity -= reservation.Quantity()
@@ -172,10 +196,19 @@ func (p *Product) Restock(quantity uint) {
 // quantity, which also guarantees it's covered by the on-hand quantity (reserved never exceeds it).
 func (p *Product) requireOwnReservation(reservation *StockReservation) error {
 	if reservation.ProductID() != p.id {
-		return fmt.Errorf("%w: reservation %d reserves product %d, not %d", ErrForeignReservation, reservation.ID(), reservation.ProductID(), p.id)
+		return ErrForeignReservation.
+			WithInternalMessage("reservation reserves another product").
+			WithAttrs(slog.Uint64("reservationID", reservation.ID()), slog.Uint64("reservedProductID", reservation.ProductID()), slog.Uint64("productID", p.id))
 	}
 	if reservation.Quantity() > p.reserved {
-		return fmt.Errorf("%w: reservation %d holds %d but product %d counts only %d reserved", ErrReservedQuantityMismatch, reservation.ID(), reservation.Quantity(), p.id, p.reserved)
+		return ErrReservedQuantityMismatch.
+			WithInternalMessage("reservation exceeds the product's reserved quantity").
+			WithAttrs(
+				slog.Uint64("reservationID", reservation.ID()),
+				slog.Uint64("reservationQuantity", uint64(reservation.Quantity())),
+				slog.Uint64("productID", p.id),
+				slog.Uint64("reserved", uint64(p.reserved)),
+			)
 	}
 
 	return nil

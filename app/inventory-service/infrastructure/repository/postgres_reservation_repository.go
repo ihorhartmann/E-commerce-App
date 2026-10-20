@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/domain/model"
@@ -33,7 +34,10 @@ func (r *postgresReservationRepository) CreateBatch(ctx context.Context, reserva
 	}
 
 	if err := db.WithContext(ctx).Clauses(clause.Returning{}).Create(&rows).Error; err != nil {
-		return nil, err
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("create reservations").
+			WithAttrs(slog.Int("count", len(rows))).
+			WithCause(err)
 	}
 
 	created := make([]*model.StockReservation, 0, len(rows))
@@ -62,14 +66,19 @@ func (r *postgresReservationRepository) Update(ctx context.Context, reservation 
 			"version": gorm.Expr("version + 1"),
 		})
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("update reservation").
+			WithAttrs(slog.Uint64("reservationID", row.ID)).
+			WithCause(result.Error)
 	}
 	if result.RowsAffected == 0 {
 		// Nothing matched: either the reservation is gone, or someone changed it after it was loaded.
 		if _, err := r.GetByID(ctx, row.ID); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%w: reservation %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, version)
+		return nil, repository.ErrConcurrentUpdate.
+			WithInternalMessage("reservation changed since it was loaded").
+			WithAttrs(slog.Uint64("reservationID", row.ID), slog.Uint64("version", version))
 	}
 
 	return entity.FromStockReservationEntity(row)
@@ -81,9 +90,12 @@ func (r *postgresReservationRepository) GetByID(ctx context.Context, reservation
 	var row entity.StockReservation
 	if err := db.WithContext(ctx).First(&row, "id = ?", reservationID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.ErrReservationNotFound
+			return nil, repository.ErrReservationNotFound.WithAttrs(slog.Uint64("reservationID", reservationID))
 		}
-		return nil, err
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("get reservation").
+			WithAttrs(slog.Uint64("reservationID", reservationID)).
+			WithCause(err)
 	}
 
 	return entity.FromStockReservationEntity(&row)
@@ -94,10 +106,15 @@ func (r *postgresReservationRepository) GetByOrderID(ctx context.Context, orderI
 
 	var rows []*entity.StockReservation
 	if err := db.WithContext(ctx).Find(&rows, "order_id = ?", orderID).Error; err != nil {
-		return nil, err
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("get reservations of order").
+			WithAttrs(slog.Uint64("orderID", orderID)).
+			WithCause(err)
 	}
 	if len(rows) == 0 {
-		return nil, repository.ErrReservationNotFound
+		return nil, repository.ErrReservationNotFound.
+			WithInternalMessage("order has no reservations").
+			WithAttrs(slog.Uint64("orderID", orderID))
 	}
 
 	return toReservations(rows)
@@ -115,7 +132,10 @@ func (r *postgresReservationRepository) DeleteAll(ctx context.Context, reservati
 
 	result := db.WithContext(ctx).Delete(&entity.StockReservation{}, "(id, version) IN ?", idVersions)
 	if result.Error != nil {
-		return result.Error
+		return ErrDatabaseFailure.
+			WithInternalMessage("delete reservations").
+			WithAttrs(slog.String("reservationIDs", fmt.Sprint(ids))).
+			WithCause(result.Error)
 	}
 	if int(result.RowsAffected) == len(reservations) {
 		return nil
@@ -126,12 +146,19 @@ func (r *postgresReservationRepository) DeleteAll(ctx context.Context, reservati
 	// they count as existing too.
 	var remaining int64
 	if err := db.WithContext(ctx).Model(&entity.StockReservation{}).Where("id IN ?", ids).Count(&remaining).Error; err != nil {
-		return err
+		return ErrDatabaseFailure.
+			WithInternalMessage("count remaining reservations").
+			WithAttrs(slog.String("reservationIDs", fmt.Sprint(ids))).
+			WithCause(err)
 	}
 	if int(remaining+result.RowsAffected) != len(reservations) {
-		return fmt.Errorf("%w: some of reservations %v", repository.ErrReservationNotFound, ids)
+		return repository.ErrReservationNotFound.
+			WithInternalMessage("some of the reservations are gone").
+			WithAttrs(slog.String("reservationIDs", fmt.Sprint(ids)))
 	}
-	return fmt.Errorf("%w: some of reservations %v changed since they were loaded", repository.ErrConcurrentUpdate, ids)
+	return repository.ErrConcurrentUpdate.
+		WithInternalMessage("some of the reservations changed since they were loaded").
+		WithAttrs(slog.String("reservationIDs", fmt.Sprint(ids)))
 }
 
 func toReservations(rows []*entity.StockReservation) ([]*model.StockReservation, error) {

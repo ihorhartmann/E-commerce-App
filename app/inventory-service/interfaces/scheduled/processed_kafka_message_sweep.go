@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"inventoryservice/application/port/out/idempotency"
+	"inventoryservice/domain/apperror"
 )
 
 const (
@@ -42,12 +43,20 @@ func (s *ProcessedKafkaMessageSweep) StartAsync(ctx context.Context) {
 	}()
 }
 
+// sweep recovers a panic and logs it: an unrecovered panic in this goroutine would stop the whole
+// service, and the next tick just tries again.
 func (s *ProcessedKafkaMessageSweep) sweep(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.Error("processed_kafka_messages sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+		}
+	}()
+
 	cutoff := time.Now().Add(-processedMessageRetention)
 	for {
 		deleted, err := s.store.DeleteExpired(ctx, cutoff, processedMessageSweepBatchSize)
 		if err != nil {
-			slog.Error("processed_kafka_messages sweep failed", "error", err)
+			slog.Error("processed_kafka_messages sweep failed", apperror.LogAttr(err))
 			return
 		}
 		if deleted == 0 {

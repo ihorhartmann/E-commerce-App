@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"inventoryservice/application/port/out/idempotency"
+	"inventoryservice/domain/apperror"
 )
 
 const (
@@ -41,12 +42,20 @@ func (s *HTTPRequestSweep) StartAsync(ctx context.Context) {
 	}()
 }
 
+// sweep recovers a panic and logs it: an unrecovered panic in this goroutine would stop the whole
+// service, and the next tick just tries again.
 func (s *HTTPRequestSweep) sweep(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.Error("idempotent_http_requests sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+		}
+	}()
+
 	cutoff := time.Now().Add(-httpRequestRetention)
 	for {
 		deleted, err := s.store.DeleteExpired(ctx, cutoff, httpRequestSweepBatchSize)
 		if err != nil {
-			slog.Error("idempotent_http_requests sweep failed", "error", err)
+			slog.Error("idempotent_http_requests sweep failed", apperror.LogAttr(err))
 			return
 		}
 		if deleted == 0 {

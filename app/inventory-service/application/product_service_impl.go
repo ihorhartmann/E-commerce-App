@@ -2,13 +2,14 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in"
 	"inventoryservice/application/port/out/idempotency"
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	"inventoryservice/application/port/out/repository"
 	"inventoryservice/application/port/out/repository/transaction"
-	"inventoryservice/domain"
+	"log/slog"
 	"math"
 
 	"inventoryservice/domain/model"
@@ -52,7 +53,7 @@ func (ps *ProductServiceImpl) Update(ctx context.Context, update dto.UpdateProdu
 
 func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Product, error) {
 	if id == 0 {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInvalidProductID
 	}
 
 	return ps.productRepository.GetByID(ctx, id)
@@ -61,7 +62,9 @@ func (ps *ProductServiceImpl) Get(ctx context.Context, id uint64) (*model.Produc
 func (ps *ProductServiceImpl) GetProducts(ctx context.Context, page, size int) (*dto.ProductPageDTO, error) {
 	// the page limit keeps page*size from overflowing
 	if page < 0 || size < 1 || size > maxPageSize || page > math.MaxInt32 {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInvalidPage.
+			WithAttrs(slog.Int("page", page), slog.Int("size", size)).
+			WithExternalMessage(fmt.Sprintf("page must be at least 0 and size between 1 and %d", maxPageSize))
 	}
 
 	products, totalElements, err := ps.productRepository.GetProducts(ctx, page*size, size)
@@ -75,7 +78,7 @@ func (ps *ProductServiceImpl) GetProducts(ctx context.Context, page, size int) (
 // Delete deletes the product unless some of its stock is reserved.
 func (ps *ProductServiceImpl) Delete(ctx context.Context, id uint64) error {
 	if id == 0 {
-		return domain.ErrInvalidInput
+		return ErrInvalidProductID
 	}
 
 	product, err := ps.productRepository.GetByID(ctx, id)

@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"net/http"
+	"log/slog"
 	"strings"
 
 	"inventoryservice/interfaces/http/auth"
-	httperr "inventoryservice/interfaces/http/errors"
+	"inventoryservice/interfaces/http/httperror"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -38,7 +38,7 @@ func (m *AuthMiddleware) Handle(c *fiber.Ctx) error {
 
 	rawToken, hasToken := strings.CutPrefix(c.Get(fiber.HeaderAuthorization), bearerPrefix)
 	if !hasToken || rawToken == "" {
-		return unauthorized(c, ErrMissingBearerToken)
+		return unauthorized(c, httperror.ErrMissingBearerToken)
 	}
 
 	principal, err := m.verifier.Verify(c.Context(), rawToken)
@@ -47,7 +47,9 @@ func (m *AuthMiddleware) Handle(c *fiber.Ctx) error {
 	}
 
 	if !found || !principal.HasAnyRole(rule.Roles...) {
-		return httperr.WithStatus(http.StatusForbidden, ErrAccessDenied)
+		return httperror.ErrAccessDenied.
+			WithInternalMessage("caller has none of the roles the endpoint requires").
+			WithAttrs(slog.String("userID", principal.UserID.String()), slog.String("method", c.Method()), slog.String("path", c.Path()))
 	}
 
 	c.Locals(principalLocalsKey, principal)
@@ -63,8 +65,8 @@ func findRule(method, path string) (auth.AccessRule, bool) {
 	return auth.AccessRule{}, false
 }
 
-// unauthorized answers 401 with the WWW-Authenticate challenge RFC 6750 requires for Bearer tokens.
+// unauthorized adds the WWW-Authenticate challenge RFC 6750 requires for Bearer tokens to a 401.
 func unauthorized(c *fiber.Ctx, err error) error {
 	c.Set(fiber.HeaderWWWAuthenticate, "Bearer")
-	return httperr.WithStatus(http.StatusUnauthorized, err)
+	return err
 }

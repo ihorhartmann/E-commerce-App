@@ -589,7 +589,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, correlationID string, _ []byte) error {
 			if correlationID == failingCorrelationID {
 				failingCalls.Add(1)
-				return incommon.NonRetryable(errors.New("permanent failure"))
+				return incommon.ErrMalformedMessage.WithCause(errors.New("permanent failure"))
 			}
 			received <- correlationID
 			return nil
@@ -639,7 +639,7 @@ func TestKafkaGoMessageConsumer_Integration(t *testing.T) {
 		consumer.ConsumeAsync(func(_ context.Context, _ kafka.MessageType, _ uuid.UUID, correlationID string, _ []byte) error {
 			if correlationID == failingCorrelationID {
 				closeFailingHandled.Do(func() { close(failingHandled) })
-				return incommon.NonRetryable(errors.New("permanent failure"))
+				return incommon.ErrMalformedMessage.WithCause(errors.New("permanent failure"))
 			}
 			received <- correlationID
 			return nil

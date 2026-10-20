@@ -1,7 +1,7 @@
 package values
 
 import (
-	"inventoryservice/domain"
+	"log/slog"
 
 	"github.com/shopspring/decimal"
 )
@@ -32,8 +32,11 @@ type Money struct {
 
 func NewMoney(amount decimal.Decimal, currency Currency) (Money, error) {
 	wholeCents := amount.Round(minorUnitDigits)
-	if amount.IsNegative() || !amount.Equal(wholeCents) || !currency.isValid() {
-		return Money{}, domain.ErrInvalidInput
+	if amount.IsNegative() || !amount.Equal(wholeCents) {
+		return Money{}, ErrInvalidMoneyAmount.WithAttrs(slog.String("amount", amount.String()))
+	}
+	if !currency.isValid() {
+		return Money{}, ErrUnsupportedCurrency.WithAttrs(slog.String("currency", string(currency)))
 	}
 
 	return Money{amount: wholeCents, currency: currency}, nil

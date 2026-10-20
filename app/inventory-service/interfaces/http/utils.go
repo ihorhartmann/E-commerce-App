@@ -1,16 +1,22 @@
 package http
 
 import (
-	"inventoryservice/domain"
+	"log/slog"
 	"strconv"
+
+	"inventoryservice/interfaces/http/httperror"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 func parseIDParam(c *fiber.Ctx, name string) (uint64, error) {
-	value, err := strconv.ParseUint(c.Params(name), 10, 64)
-	if err != nil || value <= 0 {
-		return 0, domain.ErrInvalidInput
+	raw := c.Params(name)
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		return 0, httperror.ErrInvalidPathParam.
+			WithAttrs(slog.String("param", name), slog.String("value", raw)).
+			WithExternalMessage(name + " must be a positive integer").
+			WithCause(err)
 	}
 
 	return value, nil
@@ -24,7 +30,10 @@ func parseIntQuery(c *fiber.Ctx, name string, defaultValue int) (int, error) {
 
 	value, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, domain.ErrInvalidInput
+		return 0, httperror.ErrInvalidQueryParam.
+			WithAttrs(slog.String("param", name), slog.String("value", raw)).
+			WithExternalMessage(name + " must be an integer").
+			WithCause(err)
 	}
 
 	return value, nil

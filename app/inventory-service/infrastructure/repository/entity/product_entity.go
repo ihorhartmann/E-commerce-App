@@ -1,6 +1,8 @@
 package entity
 
 import (
+	"log/slog"
+
 	"inventoryservice/domain/model"
 	"inventoryservice/domain/values"
 
@@ -39,7 +41,11 @@ func ToProductEntity(product *model.Product) *Product {
 func FromProductEntity(product *Product) (*model.Product, error) {
 	price, err := values.NewMoney(product.PriceAmount, values.Currency(product.PriceCurrency))
 	if err != nil {
-		return nil, err
+		// a stored price that isn't valid money is corrupted data, not an invalid request
+		return nil, model.ErrInconsistentProduct.
+			WithInternalMessage("stored product price is not valid money").
+			WithAttrs(slog.Uint64("productID", product.ID)).
+			WithCause(err)
 	}
 
 	return model.NewExistingProduct(product.ID, product.Name, product.Description, price, product.Quantity, product.Reserved, product.Version)

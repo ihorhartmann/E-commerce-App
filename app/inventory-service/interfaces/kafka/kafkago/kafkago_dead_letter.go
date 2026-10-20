@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"inventoryservice/application/port/common/kafka"
+	"inventoryservice/domain/apperror"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -95,11 +96,23 @@ func newDeadLetterMessage(source kafkago.Message, groupID string, cause error) k
 		kafkago.Header{Key: kafka.DLTOriginalPartitionHeader, Value: binary.BigEndian.AppendUint32(nil, uint32(source.Partition))},
 		kafkago.Header{Key: kafka.DLTOriginalOffsetHeader, Value: binary.BigEndian.AppendUint64(nil, uint64(source.Offset))},
 		kafkago.Header{Key: kafka.DLTOriginalConsumerGroupHeader, Value: []byte(groupID)},
-		kafkago.Header{Key: kafka.DLTExceptionFQCNHeader, Value: []byte(rootCauseType(cause))},
+		kafkago.Header{Key: kafka.DLTExceptionFQCNHeader, Value: []byte(failureType(cause))},
 		kafkago.Header{Key: kafka.DLTExceptionMessageHeader, Value: []byte(cause.Error())},
 	)
 
 	return kafkago.Message{Key: source.Key, Value: source.Value, Headers: headers}
+}
+
+// failureType fills the header the Java services put the exception class name in: the code of err's
+// outermost sentinel - what identifies the failure here - or, for an error without one, the type of
+// the innermost error in its chain.
+func failureType(err error) string {
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return appErr.Code()
+	}
+
+	return rootCauseType(err)
 }
 
 // rootCauseType names the type of the innermost error in err's chain, the closest Go has to the
