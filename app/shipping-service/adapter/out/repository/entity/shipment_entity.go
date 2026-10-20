@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"log/slog"
 	"time"
 
 	"shippingservice/domain/model"
@@ -55,7 +56,11 @@ func ToShipmentEntity(shipment *model.Shipment) *Shipment {
 func FromShipmentEntity(shipment *Shipment) (*model.Shipment, error) {
 	address, err := value.NewAddress(shipment.City, shipment.PostalCode, shipment.Line1, shipment.Line2)
 	if err != nil {
-		return nil, err
+		// a stored address that isn't valid is corrupted data, not an invalid request
+		return nil, model.ErrInconsistentShipment.
+			WithInternalMessage("stored shipment address is not valid").
+			WithAttrs(slog.Uint64("shipmentID", shipment.ID)).
+			WithCause(err)
 	}
 
 	return model.NewExistingShipment(

@@ -7,6 +7,7 @@ import (
 
 	kafkacommon "shippingservice/adapter/out/kafka/common"
 	"shippingservice/application/port/out/outbox"
+	"shippingservice/domain/apperror"
 
 	"github.com/google/uuid"
 )
@@ -44,10 +45,18 @@ func (r *OutboxMessageRelay) StartAsync(ctx context.Context) {
 	}()
 }
 
+// relay recovers a panic and logs it: an unrecovered panic in this goroutine would stop the whole
+// service, and the next tick just tries again.
 func (r *OutboxMessageRelay) relay(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.Error("outbox relay panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+		}
+	}()
+
 	messages, err := r.repository.FetchUnsent(ctx, outboxRelayBatchSize)
 	if err != nil {
-		slog.Error("outbox relay failed to fetch unsent messages", "error", err)
+		slog.Error("outbox relay failed to fetch unsent messages", apperror.LogAttr(err))
 		return
 	}
 	if len(messages) == 0 {
@@ -55,7 +64,7 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	}
 
 	if err = r.producer.SendBatch(messages); err != nil {
-		slog.Error("outbox relay failed to publish message batch", "count", len(messages), "error", err)
+		slog.Error("outbox relay failed to publish message batch", "count", len(messages), apperror.LogAttr(err))
 		return
 	}
 
@@ -65,6 +74,6 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	}
 
 	if err = r.repository.MarkSentBatch(ctx, messageIDs, time.Now()); err != nil {
-		slog.Error("outbox relay failed to mark message batch sent", "count", len(messageIDs), "error", err)
+		slog.Error("outbox relay failed to mark message batch sent", "count", len(messageIDs), apperror.LogAttr(err))
 	}
 }

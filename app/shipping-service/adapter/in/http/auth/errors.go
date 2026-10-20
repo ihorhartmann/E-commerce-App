@@ -1,9 +1,7 @@
 package auth
 
-import "errors"
+import "shippingservice/domain/apperror"
 
-var (
-	ErrInvalidToken = errors.New("invalid access token")
-	// ErrMissingPrincipal means a handler that needs the caller ran without AuthMiddleware authenticating one.
-	ErrMissingPrincipal = errors.New("request has no authenticated caller")
-)
+// ErrMissingPrincipal means a handler that needs the caller ran without AuthMiddleware authenticating
+// one - a bug in the access rules or the middleware order.
+var ErrMissingPrincipal = apperror.New("MISSING_PRINCIPAL", apperror.CategoryInternal, "Internal server error")

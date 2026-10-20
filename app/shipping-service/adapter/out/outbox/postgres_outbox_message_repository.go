@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"shippingservice/adapter/out/outbox/row"
@@ -29,7 +30,14 @@ func (r *postgresOutboxMessageRepository) Insert(ctx context.Context, message dt
 		return err
 	}
 
-	return tx.WithContext(ctx).Create(row.ToOutboxMessageRow(message)).Error
+	if err = tx.WithContext(ctx).Create(row.ToOutboxMessageRow(message)).Error; err != nil {
+		return ErrOutboxFailure.
+			WithInternalMessage("insert outbox message").
+			WithAttrs(slog.String("messageID", message.MessageID.String()), slog.String("messageType", message.MessageType)).
+			WithCause(err)
+	}
+
+	return nil
 }
 
 func (r *postgresOutboxMessageRepository) FetchUnsent(ctx context.Context, limit int) ([]*dto.OutboxMessage, error) {
@@ -39,7 +47,7 @@ func (r *postgresOutboxMessageRepository) FetchUnsent(ctx context.Context, limit
 		Order("created_at").
 		Limit(limit).
 		Find(&rows).Error; err != nil {
-		return nil, err
+		return nil, ErrOutboxFailure.WithInternalMessage("fetch unsent outbox messages").WithCause(err)
 	}
 
 	messages := make([]*dto.OutboxMessage, 0, len(rows))
@@ -58,10 +66,15 @@ func (r *postgresOutboxMessageRepository) MarkSentBatch(ctx context.Context, mes
 
 	result := r.db.WithContext(ctx).Model(&row.OutboxMessage{}).Where("id IN ?", messageIDs).Update("sent_at", sentAt)
 	if result.Error != nil {
-		return result.Error
+		return ErrOutboxFailure.
+			WithInternalMessage("mark outbox messages sent").
+			WithAttrs(slog.Int("count", len(messageIDs))).
+			WithCause(result.Error)
 	}
 	if result.RowsAffected != int64(len(messageIDs)) {
-		return outbox.ErrOutboxMessageNotFound
+		return ErrOutboxMessageNotFound.
+			WithInternalMessage("some outbox messages to mark sent are gone").
+			WithAttrs(slog.Int("count", len(messageIDs)), slog.Int64("marked", result.RowsAffected))
 	}
 
 	return nil

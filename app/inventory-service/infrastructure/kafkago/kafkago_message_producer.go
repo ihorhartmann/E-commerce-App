@@ -34,12 +34,18 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlationId string, key string, payload any) error {
 	value, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return ErrMessageBuildFailure.
+			WithInternalMessage("marshal kafka message payload").
+			WithAttrs(slog.String("messageType", messageType.String())).
+			WithCause(err)
 	}
 
 	messageID, err := uuid.NewV7()
 	if err != nil {
-		return err
+		return ErrMessageBuildFailure.
+			WithInternalMessage("generate kafka message id").
+			WithAttrs(slog.String("messageType", messageType.String())).
+			WithCause(err)
 	}
 
 	slog.Debug("sending kafka message", "messageType", messageType, "correlationId", correlationId, "key", key)
@@ -54,7 +60,9 @@ func (p *kafkaGoMessageProducer) Send(messageType kafka.MessageType, correlation
 		Value: value,
 	})
 	if err != nil {
-		return err
+		return ErrPublishFailure.
+			WithAttrs(slog.String("topic", p.writer.Topic), slog.String("messageType", messageType.String()), slog.String("messageID", messageID.String())).
+			WithCause(err)
 	}
 
 	slog.Info("successfully sent kafka message", "messageType", messageType, "correlationId", correlationId)

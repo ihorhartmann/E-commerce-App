@@ -14,6 +14,7 @@ import (
 	"time"
 
 	shippinghttp "shippingservice/adapter/in/http"
+	"shippingservice/adapter/in/http/httperror"
 	httpidempotency "shippingservice/adapter/in/http/idempotency"
 	"shippingservice/adapter/in/kafka"
 	"shippingservice/adapter/in/scheduled"
@@ -85,14 +86,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	router := gin.Default()
+	// The order matters - see error_handler_middleware.go. gin.New, not gin.Default: Default adds its
+	// own logger and its own panic recovery, which would write a plain 500 instead of a ProblemDetail.
+	router := gin.New()
+	router.HandleMethodNotAllowed = true
 	router.Use(
-		middleware.LoggingMiddleware(),
-		middleware.ErrorHandlerMiddleware(),
+		middleware.HandleMiddlewareError,
+		middleware.Recover,
+		middleware.LoggingMiddleware,
 		// before idempotency: a rejected request must not claim its Idempotency-Key
 		middleware.NewAuthMiddleware(tokenVerifier).Handle,
 		middleware.NewIdempotencyMiddleware(idempotencyService).Handle,
+		// last, right before the routes: a controller's error must be the response by the time it gets
+		// back to the idempotency middleware
+		middleware.HandleControllerError,
 	)
+	router.NoRoute(func(c *gin.Context) { _ = c.Error(httperror.ErrRouteNotFound) })
+	router.NoMethod(func(c *gin.Context) { _ = c.Error(httperror.ErrMethodNotAllowed) })
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

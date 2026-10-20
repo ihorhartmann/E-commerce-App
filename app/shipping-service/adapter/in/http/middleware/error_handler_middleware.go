@@ -1,39 +1,82 @@
 package middleware
 
 import (
-	"errors"
-	"log/slog"
-	"net/http"
-	inhttp "shippingservice/adapter/in/http"
+	"shippingservice/adapter/in/http/httperror"
+	"shippingservice/domain/apperror"
 
 	"github.com/gin-gonic/gin"
 )
 
-const InternalServerErrorMessage = "Internal server error"
+// handledErrorContextKey is where HandleControllerError leaves the error it has already written as
+// the response, for the middleware above it (gin.Context).
+const handledErrorContextKey = "handledError"
 
-func ErrorHandlerMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Next()
+// Errors are written as responses at two points of the chain, both by httperror.Write:
+//
+//	HandleMiddlewareError -> Recover -> Logging -> Auth -> Idempotency -> HandleControllerError -> controller
+//	   |                                                                     writes errors of controllers (and
+//	   |                                                                     of NoRoute/NoMethod) right after them
+//	   writes errors of the middleware above HandleControllerError - auth, idempotency - and panics
+//	   Recover caught
+//
+// Gin handlers don't return an error: they add it to the context with c.Error, and the error
+// handlers - ordinary middleware, unlike Fiber's ErrorHandler - write the last one after c.Next. A
+// controller's error has to be written below the idempotency middleware, which needs the final
+// response to decide whether to cache it.
 
-		if len(c.Errors) == 0 {
-			return
-		}
+// HandleMiddlewareError must be registered as the first middleware, where Fiber has its
+// ErrorHandler. It writes the error left in the context by the middleware below it.
+func HandleMiddlewareError(c *gin.Context) {
+	c.Next()
 
-		err := c.Errors.Last().Err
-		status := http.StatusInternalServerError
-
-		var statusErr *inhttp.StatusError
-		if errors.As(err, &statusErr) {
-			status = statusErr.Status()
-		}
-
-		if status >= http.StatusInternalServerError {
-			slog.Error("request failed", "err", err, "method", c.Request.Method, "path", c.FullPath())
-			c.JSON(status, inhttp.ErrorResponse(InternalServerErrorMessage))
-			return
-		}
-
-		slog.Warn("request failed", "err", err, "status", status, "method", c.Request.Method, "path", c.FullPath())
-		c.JSON(status, inhttp.ErrorResponse(err.Error()))
+	if len(c.Errors) == 0 || c.Writer.Written() {
+		return
 	}
+	httperror.Write(c, c.Errors.Last().Err)
+}
+
+// HandleControllerError must be registered as the last middleware, right before the routes. It
+// writes the error a controller left in the context - or a panic in it - as the response, records it
+// for HandledError, and clears the context's errors: the error is handled, so the middleware above
+// see a final response and nothing is left for HandleMiddlewareError.
+func HandleControllerError(c *gin.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			writeControllerError(c, apperror.FromPanic(recovered))
+			c.Abort()
+		}
+	}()
+
+	c.Next()
+
+	if len(c.Errors) > 0 {
+		writeControllerError(c, c.Errors.Last().Err)
+	}
+}
+
+func writeControllerError(c *gin.Context, err error) {
+	c.Set(handledErrorContextKey, err)
+	c.Errors = c.Errors[:0]
+	httperror.Write(c, err)
+}
+
+// HandledError returns the error HandleControllerError has already written as the response, or nil
+// if the controller succeeded.
+func HandledError(c *gin.Context) error {
+	err, _ := c.Value(handledErrorContextKey).(error)
+	return err
+}
+
+// Recover must be registered right below HandleMiddlewareError. It turns a panic anywhere in the
+// middleware below it into an error for HandleMiddlewareError, instead of a crashed request. A panic
+// in a controller is already caught lower, by HandleControllerError.
+func Recover(c *gin.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			_ = c.Error(apperror.FromPanic(recovered))
+			c.Abort()
+		}
+	}()
+
+	c.Next()
 }

@@ -1,11 +1,11 @@
 package middleware
 
 import (
-	"net/http"
+	"log/slog"
 	"strings"
 
-	inhttp "shippingservice/adapter/in/http"
 	"shippingservice/adapter/in/http/auth"
+	"shippingservice/adapter/in/http/httperror"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,7 +20,7 @@ const (
 // in accessRules matching the method and path, and either lets it through, or requires a valid Bearer access token
 // with one of the rule's roles. A request no rule matches is denied - an endpoint has to be opened explicitly.
 //
-// Register it after ErrorHandlerMiddleware (so its errors are formatted) and before IdempotencyMiddleware: a rejected
+// Register it below HandleMiddlewareError (so its errors are written) and above IdempotencyMiddleware: a rejected
 // request must not claim its Idempotency-Key, otherwise the same request retried with a valid token would get
 // "already in progress" until the claim expires.
 type AuthMiddleware struct {
@@ -40,7 +40,7 @@ func (m *AuthMiddleware) Handle(c *gin.Context) {
 
 	rawToken, hasToken := strings.CutPrefix(c.GetHeader(authorizationHeader), bearerPrefix)
 	if !hasToken || rawToken == "" {
-		abortUnauthorized(c, ErrMissingBearerToken)
+		abortUnauthorized(c, httperror.ErrMissingBearerToken)
 		return
 	}
 
@@ -51,7 +51,9 @@ func (m *AuthMiddleware) Handle(c *gin.Context) {
 	}
 
 	if !found || !principal.HasAnyRole(rule.Roles...) {
-		_ = c.Error(inhttp.WithStatus(http.StatusForbidden, ErrAccessDenied))
+		_ = c.Error(httperror.ErrAccessDenied.
+			WithInternalMessage("caller has none of the roles the endpoint requires").
+			WithAttrs(slog.String("userID", principal.UserID.String()), slog.String("method", c.Request.Method), slog.String("path", c.Request.URL.Path)))
 		c.Abort()
 		return
 	}
@@ -69,9 +71,9 @@ func findRule(method, path string) (auth.AccessRule, bool) {
 	return auth.AccessRule{}, false
 }
 
-// abortUnauthorized answers 401 with the WWW-Authenticate challenge RFC 6750 requires for Bearer tokens.
+// abortUnauthorized adds the WWW-Authenticate challenge RFC 6750 requires for Bearer tokens to a 401.
 func abortUnauthorized(c *gin.Context, err error) {
 	c.Header(wwwAuthenticateHeader, "Bearer")
-	_ = c.Error(inhttp.WithStatus(http.StatusUnauthorized, err))
+	_ = c.Error(err)
 	c.Abort()
 }

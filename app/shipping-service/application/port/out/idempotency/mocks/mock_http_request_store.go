@@ -115,3 +115,17 @@ func (mr *MockHTTPRequestStoreMockRecorder) Reclaim(ctx, idempotencyKey, ttl any
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reclaim", reflect.TypeOf((*MockHTTPRequestStore)(nil).Reclaim), ctx, idempotencyKey, ttl)
 }
+
+// Release mocks base method.
+func (m *MockHTTPRequestStore) Release(ctx context.Context, idempotencyKey string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Release", ctx, idempotencyKey)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Release indicates an expected call of Release.
+func (mr *MockHTTPRequestStoreMockRecorder) Release(ctx, idempotencyKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockHTTPRequestStore)(nil).Release), ctx, idempotencyKey)
+}

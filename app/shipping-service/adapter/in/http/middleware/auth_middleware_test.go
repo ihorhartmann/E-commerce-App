@@ -9,6 +9,7 @@ import (
 
 	"shippingservice/adapter/in/http/auth"
 	"shippingservice/adapter/in/http/auth/mocks"
+	"shippingservice/adapter/in/http/httperror"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,12 +24,12 @@ const (
 	unlistedPath  = "/api/v1/unlisted"
 )
 
-// newAuthTestApp registers the middleware (behind the error handler, as in main) ahead of handlers on the service's
+// newAuthTestApp registers the middleware (below HandleMiddlewareError, as in main) ahead of handlers on the service's
 // real routes that answer 200 and report the principal they saw.
 func newAuthTestApp(verifier auth.TokenVerifier) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(ErrorHandlerMiddleware(), NewAuthMiddleware(verifier).Handle)
+	router.Use(HandleMiddlewareError, NewAuthMiddleware(verifier).Handle)
 	handler := func(c *gin.Context) {
 		principal, _ := c.Value(auth.PrincipalContextKey).(auth.Principal)
 		c.String(http.StatusOK, principal.UserID.String())
@@ -152,7 +153,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "expired-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{}, errors.Join(auth.ErrInvalidToken, errors.New("token is expired"))).Times(1)
+			Return(auth.Principal{}, httperror.ErrInvalidToken.WithCause(errors.New("token is expired"))).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPost, pickupPath, "Bearer "+token)
 

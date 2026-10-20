@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 
 	"shippingservice/adapter/out/repository/entity"
 	"shippingservice/adapter/out/repository/transaction"
@@ -35,10 +35,13 @@ func (r *postgresShipmentRepository) Create(ctx context.Context, shipment *model
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "order_id"}}, DoNothing: true}, clause.Returning{}).
 		Create(row)
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("create shipment").
+			WithAttrs(slog.Uint64("orderID", shipment.OrderId())).
+			WithCause(result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, fmt.Errorf("%w: order %d", repository.ErrShipmentAlreadyExists, shipment.OrderId())
+		return nil, repository.ErrShipmentAlreadyExists.WithAttrs(slog.Uint64("orderID", shipment.OrderId()))
 	}
 
 	return entity.FromShipmentEntity(row)
@@ -50,9 +53,12 @@ func (r *postgresShipmentRepository) GetByID(ctx context.Context, id uint64) (*m
 	var row entity.Shipment
 	if err := db.WithContext(ctx).First(&row, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.ErrShipmentNotFound
+			return nil, repository.ErrShipmentNotFound.WithAttrs(slog.Uint64("shipmentID", id))
 		}
-		return nil, err
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("get shipment").
+			WithAttrs(slog.Uint64("shipmentID", id)).
+			WithCause(err)
 	}
 
 	return entity.FromShipmentEntity(&row)
@@ -64,9 +70,12 @@ func (r *postgresShipmentRepository) GetByOrderID(ctx context.Context, orderID u
 	var row entity.Shipment
 	if err := db.WithContext(ctx).First(&row, "order_id = ?", orderID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("%w: order %d", repository.ErrShipmentNotFound, orderID)
+			return nil, repository.ErrShipmentNotFound.WithAttrs(slog.Uint64("orderID", orderID))
 		}
-		return nil, err
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("get shipment of order").
+			WithAttrs(slog.Uint64("orderID", orderID)).
+			WithCause(err)
 	}
 
 	return entity.FromShipmentEntity(&row)
@@ -80,12 +89,15 @@ func (r *postgresShipmentRepository) GetAvailableShipments(ctx context.Context, 
 
 	var totalElements int64
 	if err := query.Count(&totalElements).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, ErrDatabaseFailure.WithInternalMessage("count available shipments").WithCause(err)
 	}
 
 	var rows []*entity.Shipment
 	if err := query.Order("created_at, id").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, ErrDatabaseFailure.
+			WithInternalMessage("get available shipments page").
+			WithAttrs(slog.Int("offset", offset), slog.Int("limit", limit)).
+			WithCause(err)
 	}
 
 	shipments, err := entity.FromShipmentEntities(rows)
@@ -105,12 +117,18 @@ func (r *postgresShipmentRepository) GetActiveShipmentsByCourier(ctx context.Con
 
 	var totalElements int64
 	if err := query.Count(&totalElements).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, ErrDatabaseFailure.
+			WithInternalMessage("count active shipments of courier").
+			WithAttrs(slog.String("courierID", courierID.String())).
+			WithCause(err)
 	}
 
 	var rows []*entity.Shipment
 	if err := query.Order("created_at, id").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, ErrDatabaseFailure.
+			WithInternalMessage("get active shipments page of courier").
+			WithAttrs(slog.String("courierID", courierID.String()), slog.Int("offset", offset), slog.Int("limit", limit)).
+			WithCause(err)
 	}
 
 	shipments, err := entity.FromShipmentEntities(rows)
@@ -140,14 +158,19 @@ func (r *postgresShipmentRepository) Update(ctx context.Context, shipment *model
 			"version":             gorm.Expr("version + 1"),
 		})
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, ErrDatabaseFailure.
+			WithInternalMessage("update shipment").
+			WithAttrs(slog.Uint64("shipmentID", row.ID)).
+			WithCause(result.Error)
 	}
 	if result.RowsAffected == 0 {
 		// Nothing matched: either the shipment is gone, or someone changed it after it was loaded.
 		if _, err := r.GetByID(ctx, row.ID); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("%w: shipment %d changed since version %d", repository.ErrConcurrentUpdate, row.ID, version)
+		return nil, repository.ErrConcurrentUpdate.
+			WithInternalMessage("shipment changed since it was loaded").
+			WithAttrs(slog.Uint64("shipmentID", row.ID), slog.Uint64("version", version))
 	}
 
 	return entity.FromShipmentEntity(row)

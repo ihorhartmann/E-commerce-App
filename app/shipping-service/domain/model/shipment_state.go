@@ -2,7 +2,7 @@ package model
 
 import (
 	"fmt"
-	"shippingservice/domain"
+	"log/slog"
 	"slices"
 
 	"github.com/google/uuid"
@@ -62,7 +62,7 @@ func isValidState(status ShipmentStatus, holder ShipmentHolder, courierID uuid.U
 // startDelivery is the pickup: the courier takes the goods from the inventory, and the shipment becomes theirs.
 func (s *shipmentState) startDelivery(courierID uuid.UUID) error {
 	if courierID == uuid.Nil {
-		return domain.ErrInvalidInput
+		return ErrMissingCourier
 	}
 	if err := s.requireStatus("start delivery", Created); err != nil {
 		return err
@@ -103,7 +103,9 @@ func (s *shipmentState) returnToInventory() error {
 		return err
 	}
 	if s.holder != HolderCourier {
-		return fmt.Errorf("%w: cannot confirm returned to inventory: expected holder %s but was %s", ErrInvalidStatusTransition, HolderCourier, s.holder)
+		return ErrInvalidStatusTransition.
+			WithInternalMessage("cannot confirm returned to inventory: the courier doesn't have the goods").
+			WithAttrs(slog.String("expectedHolder", string(HolderCourier)), slog.String("holder", string(s.holder)))
 	}
 
 	return s.change(s.status, HolderInventory, s.courierID, s.cancellationReason)
@@ -133,9 +135,20 @@ func (s *shipmentState) requireStatus(action string, expected ...ShipmentStatus)
 		return nil
 	}
 
-	return fmt.Errorf("%w: cannot %s: expected status %v but was %s", ErrInvalidStatusTransition, action, expected, s.status)
+	return ErrInvalidStatusTransition.
+		WithInternalMessage("shipment is not in a status that allows the transition").
+		WithAttrs(slog.String("action", action), slog.String("expectedStatuses", fmt.Sprint(expected)), slog.String("status", string(s.status)))
 }
 
+// invalidStateError reports a state no shipment can be in - stored data that is corrupted, or a transition that
+// should never produce it - so it is internal, not a request to reject.
 func invalidStateError(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID, cancellationReason CancellationReason) error {
-	return fmt.Errorf("%w: status %s, holder %s, courier %s, cancellation reason %q", domain.ErrInvalidInput, status, holder, courierID, cancellationReason)
+	return ErrInconsistentShipment.
+		WithInternalMessage("shipment state breaks the shipment's rules").
+		WithAttrs(
+			slog.String("status", string(status)),
+			slog.String("holder", string(holder)),
+			slog.String("courierID", courierID.String()),
+			slog.String("cancellationReason", string(cancellationReason)),
+		)
 }

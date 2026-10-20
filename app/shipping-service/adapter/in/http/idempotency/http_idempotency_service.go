@@ -23,6 +23,9 @@ type HTTPIdempotencyService interface {
 	Claim(ctx context.Context, idempotencyKey string, request dto.RequestFingerprint, ttl time.Duration) (*dto.RequestAttempt, error)
 	// Complete records the final response for idempotencyKey, moving it to COMPLETED.
 	Complete(ctx context.Context, idempotencyKey string, httpCode int, response []byte) error
+	// Release gives up idempotencyKey's claim after a failure repeating the same request may fix, so
+	// a retry with the same key runs it again at once.
+	Release(ctx context.Context, idempotencyKey string) error
 }
 
 type httpIdempotencyService struct {
@@ -89,6 +92,10 @@ func (s *httpIdempotencyService) resolveExistingClaim(
 
 func (s *httpIdempotencyService) Complete(ctx context.Context, idempotencyKey string, httpCode int, response []byte) error {
 	return s.store.Complete(ctx, idempotencyKey, httpCode, response)
+}
+
+func (s *httpIdempotencyService) Release(ctx context.Context, idempotencyKey string) error {
+	return s.store.Release(ctx, idempotencyKey)
 }
 
 // hashRequest computes the request hash used to detect whether a retried Idempotency-Key was

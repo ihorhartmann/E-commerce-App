@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
 
 	commonkafka "shippingservice/adapter/common/kafka"
@@ -12,7 +11,6 @@ import (
 	servicemocks "shippingservice/application/port/in/mocks"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	"shippingservice/application/port/out/repository"
-	"shippingservice/domain"
 	"shippingservice/domain/value"
 
 	"go.uber.org/mock/gomock"
@@ -50,7 +48,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("returns a transient service error unmarked, so it gets retried", func(t *testing.T) {
+	t.Run("returns the service's error as it is - the retry loop decides by its category", func(t *testing.T) {
 		orderID := uint64(7)
 		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
 		payload, err := json.Marshal(command)
@@ -62,7 +60,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 			t.Fatalf("failed to build expected address: %v", err)
 		}
 		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-2", MessageType: string(commonkafka.CreateShipmentCommand)}
-		serviceErr := errors.New("shipment creation failed")
+		serviceErr := repository.ErrShipmentAlreadyExists.WithInternalMessage("order already has a shipment")
 
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
@@ -76,84 +74,19 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if !errors.Is(err, serviceErr) {
 			t.Errorf("err = %v, want %v", err, serviceErr)
 		}
-		if errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a retryable error", err)
-		}
 	})
 
-	t.Run("marks a service error caused by invalid input as non-retryable", func(t *testing.T) {
-		orderID := uint64(8)
-		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
-		payload, err := json.Marshal(command)
-		if err != nil {
-			t.Fatalf("failed to marshal command: %v", err)
-		}
-		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
-		if err != nil {
-			t.Fatalf("failed to build expected address: %v", err)
-		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-6", MessageType: string(commonkafka.CreateShipmentCommand)}
-		serviceErr := fmt.Errorf("create shipment: %w", domain.ErrInvalidInput)
-
-		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
-		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), msg, orderID, wantAddress).
-			Return(nil, serviceErr).
-			Times(1)
-		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
-
-		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, msg.MessageID, msg.CorrelationID, payload)
-
-		if !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable error", err)
-		}
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want it to wrap %v", err, domain.ErrInvalidInput)
-		}
-	})
-
-	t.Run("marks a service error caused by the order already having a shipment as non-retryable", func(t *testing.T) {
-		orderID := uint64(9)
-		command := dto.CreateShipmentCommand{OrderID: orderID, Address: testAddressDTO()}
-		payload, err := json.Marshal(command)
-		if err != nil {
-			t.Fatalf("failed to marshal command: %v", err)
-		}
-		wantAddress, err := value.NewAddress(command.Address.City, command.Address.PostalCode, command.Address.Line1, command.Address.Line2)
-		if err != nil {
-			t.Fatalf("failed to build expected address: %v", err)
-		}
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-7", MessageType: string(commonkafka.CreateShipmentCommand)}
-		serviceErr := fmt.Errorf("%w: order %d", repository.ErrShipmentAlreadyExists, orderID)
-
-		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
-		shipmentService.EXPECT().
-			CreateShipment(gomock.Any(), msg, orderID, wantAddress).
-			Return(nil, serviceErr).
-			Times(1)
-		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
-
-		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, msg.MessageID, msg.CorrelationID, payload)
-
-		if !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable error", err)
-		}
-		if !errors.Is(err, repository.ErrShipmentAlreadyExists) {
-			t.Errorf("err = %v, want it to wrap %v", err, repository.ErrShipmentAlreadyExists)
-		}
-	})
-
-	t.Run("returns a non-retryable error without calling the service when the payload is malformed JSON", func(t *testing.T) {
+	t.Run("returns ErrMalformedMessage without calling the service when the payload is malformed JSON", func(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().CreateShipment(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err := consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, uuid.New(), "corr-3", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
+		if err := consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, uuid.New(), "corr-3", []byte("not json")); !errors.Is(err, ErrMalformedMessage) {
+			t.Errorf("err = %v, want %v", err, ErrMalformedMessage)
 		}
 	})
 
-	t.Run("returns a non-retryable error without calling the service when the address is invalid", func(t *testing.T) {
+	t.Run("returns ErrInvalidAddress without calling the service when the address is invalid", func(t *testing.T) {
 		command := dto.CreateShipmentCommand{OrderID: 1, Address: dto.AddressDTO{City: "", PostalCode: "01001", Line1: "Khreshchatyk 1"}}
 		payload, err := json.Marshal(command)
 		if err != nil {
@@ -166,11 +99,8 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 
 		err = consumer.handleMessage(context.Background(), commonkafka.CreateShipmentCommand, uuid.New(), "corr-4", payload)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
-		}
-		if !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable error", err)
+		if !errors.Is(err, value.ErrInvalidAddress) {
+			t.Errorf("err = %v, want %v", err, value.ErrInvalidAddress)
 		}
 	})
 
@@ -204,26 +134,7 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("marks a CancelShipmentCommand for an order without a shipment as non-retryable", func(t *testing.T) {
-		orderID := uint64(44)
-		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-10", MessageType: string(commonkafka.CancelShipmentCommand)}
-		serviceErr := fmt.Errorf("%w: order %d", repository.ErrShipmentNotFound, orderID)
-
-		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
-		shipmentService.EXPECT().CancelByOrder(gomock.Any(), msg, orderID).Return(false, serviceErr).Times(1)
-		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
-
-		err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, msg.MessageID, msg.CorrelationID, []byte(`{"orderId":44}`))
-
-		if !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable error", err)
-		}
-		if !errors.Is(err, repository.ErrShipmentNotFound) {
-			t.Errorf("err = %v, want it to wrap %v", err, repository.ErrShipmentNotFound)
-		}
-	})
-
-	t.Run("returns a concurrent update of the shipment being cancelled unmarked, so it gets retried", func(t *testing.T) {
+	t.Run("returns the CancelShipmentCommand service error as it is - the retry loop decides by its category", func(t *testing.T) {
 		orderID := uint64(45)
 		msg := idempotencydto.KafkaMessageMetadata{MessageID: uuid.New(), CorrelationID: "corr-11", MessageType: string(commonkafka.CancelShipmentCommand)}
 
@@ -236,18 +147,15 @@ func TestShipmentKafkaConsumer_handleMessage(t *testing.T) {
 		if !errors.Is(err, repository.ErrConcurrentUpdate) {
 			t.Errorf("err = %v, want %v", err, repository.ErrConcurrentUpdate)
 		}
-		if errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a retryable error", err)
-		}
 	})
 
-	t.Run("returns a non-retryable error without calling the service when the CancelShipmentCommand payload is malformed JSON", func(t *testing.T) {
+	t.Run("returns ErrMalformedMessage without calling the service when the CancelShipmentCommand payload is malformed JSON", func(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().CancelByOrder(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 		consumer := NewShipmentKafkaConsumer(nil, shipmentService)
 
-		if err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, uuid.New(), "corr-12", []byte("not json")); !errors.Is(err, ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable unmarshal error", err)
+		if err := consumer.handleMessage(context.Background(), commonkafka.CancelShipmentCommand, uuid.New(), "corr-12", []byte("not json")); !errors.Is(err, ErrMalformedMessage) {
+			t.Errorf("err = %v, want %v", err, ErrMalformedMessage)
 		}
 	})
 

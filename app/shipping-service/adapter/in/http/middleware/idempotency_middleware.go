@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	inhttp "shippingservice/adapter/in/http"
+	"shippingservice/adapter/in/http/httperror"
 	"shippingservice/adapter/in/http/idempotency"
 	"shippingservice/adapter/in/http/idempotency/dto"
+	"shippingservice/domain/apperror"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,10 +36,13 @@ func (w *responseBodyWriter) Write(b []byte) (int, error) {
 
 // IdempotencyMiddleware protects every mutating request (POST/PUT/PATCH/DELETE) with a
 // client-supplied Idempotency-Key: a retried request with the same key and body gets the original
-// response replayed instead of the handler running again. A request whose handler errors is
-// deliberately left IN_PROGRESS rather than cached - it becomes retryable again once claimTTL
-// elapses, rather than permanently caching a response we never actually captured. Register this
-// after ErrorHandlerMiddleware so the errors it raises are still caught and formatted by it.
+// response replayed instead of the handler running again. A success and a permanent failure are
+// cached and replayed alike, since the same request would get the same answer again. Any other
+// failure releases the key at once, so a retry with the same key runs the request again.
+//
+// It has to be registered below HandleMiddlewareError, which writes the errors it raises, and above
+// HandleControllerError, which writes a controller's error as the response before control returns
+// here.
 type IdempotencyMiddleware struct {
 	service idempotency.HTTPIdempotencyService
 }
@@ -55,15 +59,13 @@ func (m *IdempotencyMiddleware) Handle(c *gin.Context) {
 
 	idempotencyKey := c.GetHeader(idempotencyKeyHeader)
 	if idempotencyKey == "" {
-		_ = c.Error(inhttp.WithStatus(http.StatusBadRequest, ErrMissingIdempotencyKey))
-		c.Abort()
+		m.abort(c, httperror.ErrMissingIdempotencyKey)
 		return
 	}
 
 	body, err := readAndRestoreBody(c)
 	if err != nil {
-		_ = c.Error(err)
-		c.Abort()
+		m.abort(c, httperror.ErrMalformedRequestBody.WithInternalMessage("read request body").WithCause(err))
 		return
 	}
 
@@ -75,23 +77,20 @@ func (m *IdempotencyMiddleware) Handle(c *gin.Context) {
 
 	attempt, err := m.service.Claim(c.Request.Context(), idempotencyKey, request, claimTTL)
 	if err != nil {
-		_ = c.Error(err)
-		c.Abort()
+		m.abort(c, err)
 		return
 	}
 
 	switch attempt.Result {
 	case dto.Cached:
-		c.Data(attempt.Record.HTTPCode, "application/json", attempt.Record.Response)
+		m.replay(c, attempt)
 		c.Abort()
 		return
 	case dto.HashMismatch:
-		_ = c.Error(inhttp.WithStatus(http.StatusConflict, ErrIdempotencyKeyReused))
-		c.Abort()
+		m.abort(c, httperror.ErrIdempotencyKeyReused.WithAttrs(slog.String("idempotencyKey", idempotencyKey)))
 		return
 	case dto.InProgress:
-		_ = c.Error(inhttp.WithStatus(http.StatusConflict, ErrRequestInProgress))
-		c.Abort()
+		m.abort(c, httperror.ErrRequestInProgress.WithAttrs(slog.String("idempotencyKey", idempotencyKey)))
 		return
 	}
 
@@ -101,6 +100,16 @@ func (m *IdempotencyMiddleware) Handle(c *gin.Context) {
 	c.Next()
 
 	if len(c.Errors) > 0 {
+		// Not a controller's error - HandleControllerError below writes every one of those as the
+		// response and clears it from the context (see HandledError below). An error still here means
+		// HandleControllerError isn't below this middleware: there is no response to cache, so the
+		// key is released for a retry.
+		m.release(c, idempotencyKey)
+		return
+	}
+
+	if handledErr := HandledError(c); handledErr != nil && !apperror.OutermostError(handledErr).Category().Permanent() {
+		m.release(c, idempotencyKey)
 		return
 	}
 
@@ -108,7 +117,39 @@ func (m *IdempotencyMiddleware) Handle(c *gin.Context) {
 	// must never override it with an error response - it only means this key's replay cache
 	// stays stale (reclaimed like any abandoned IN_PROGRESS record).
 	if err = m.service.Complete(c.Request.Context(), idempotencyKey, writer.Status(), writer.body.Bytes()); err != nil {
-		slog.Error("failed to record idempotent response", "idempotencyKey", idempotencyKey, "error", err)
+		slog.ErrorContext(c.Request.Context(), "failed to record idempotent response",
+			slog.String("idempotencyKey", idempotencyKey), apperror.LogAttr(err))
+	}
+}
+
+// abort leaves err for HandleMiddlewareError and stops the chain.
+func (m *IdempotencyMiddleware) abort(c *gin.Context, err error) {
+	_ = c.Error(err)
+	c.Abort()
+}
+
+// replay sends the cached response as it was first sent: an error response keeps its problem+json
+// content type, and an empty one stays empty.
+func (m *IdempotencyMiddleware) replay(c *gin.Context, attempt *dto.RequestAttempt) {
+	record := attempt.Record
+	if len(record.Response) == 0 {
+		c.Status(record.HTTPCode)
+		return
+	}
+
+	if record.HTTPCode >= http.StatusBadRequest {
+		c.Data(record.HTTPCode, "application/problem+json", record.Response)
+	} else {
+		c.Data(record.HTTPCode, "application/json", record.Response)
+	}
+}
+
+// release is best-effort, like recording a response: if it fails, the key is reclaimed once its
+// claim expires, as before.
+func (m *IdempotencyMiddleware) release(c *gin.Context, idempotencyKey string) {
+	if err := m.service.Release(c.Request.Context(), idempotencyKey); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to release idempotency key",
+			slog.String("idempotencyKey", idempotencyKey), apperror.LogAttr(err))
 	}
 }
 

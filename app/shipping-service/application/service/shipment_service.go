@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 
 	commonkafka "shippingservice/application/port/common/kafka"
@@ -77,7 +78,9 @@ func (s *ShipmentServiceImpl) GetCourierActiveShipments(ctx context.Context, cou
 
 func validatePage(page, size int) error {
 	if page < 0 || size < 1 || size > maxPageSize || page > math.MaxInt32 {
-		return fmt.Errorf("%w: page must not be negative and size must be between 1 and %d", ErrInvalidPage, maxPageSize)
+		return ErrInvalidPage.
+			WithAttrs(slog.Int("page", page), slog.Int("size", size)).
+			WithExternalMessage(fmt.Sprintf("page must be at least 0 and size between 1 and %d", maxPageSize))
 	}
 
 	return nil
@@ -114,7 +117,11 @@ func (s *ShipmentServiceImpl) CreateShipment(ctx context.Context, msg idempotenc
 func (s *ShipmentServiceImpl) StartDelivery(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	shipment, err := s.applyTransition(ctx, id, func(shipment *model.Shipment) error { return shipment.StartDelivery(courierID) })
 	if errors.Is(err, repository.ErrConcurrentUpdate) {
-		return nil, fmt.Errorf("%w: shipment %d", ErrAlreadyPickedUp, id)
+		// reported as a different sentinel on purpose: a retry would only find the shipment taken
+		return nil, ErrAlreadyPickedUp.
+			WithInternalMessage("another courier picked the shipment up first").
+			WithAttrs(slog.Uint64("shipmentID", id)).
+			WithCause(err)
 	}
 
 	return shipment, err
@@ -134,7 +141,7 @@ func (s *ShipmentServiceImpl) Lose(ctx context.Context, id uint64, courierID uui
 
 func (s *ShipmentServiceImpl) Cancel(ctx context.Context, id uint64, courierID uuid.UUID, reason model.CancellationReason) (*model.Shipment, error) {
 	if !reason.IsReportedByCourier() {
-		return nil, fmt.Errorf("%w: %q", ErrInvalidCancellationReason, reason)
+		return nil, ErrInvalidCancellationReason.WithAttrs(slog.String("reason", string(reason)))
 	}
 
 	return s.applyTransition(ctx, id, func(shipment *model.Shipment) error {
@@ -242,7 +249,7 @@ func (s *ShipmentServiceImpl) applyTransition(
 // it, report it lost or bring it back.
 func requireAssignedCourier(shipment *model.Shipment, courierID uuid.UUID, transition func(*model.Shipment) error) error {
 	if !shipment.IsAssignedTo(courierID) {
-		return fmt.Errorf("%w: shipment %d", ErrNotAssignedCourier, shipment.Id())
+		return ErrNotAssignedCourier.WithAttrs(slog.Uint64("shipmentID", shipment.Id()), slog.String("courierID", courierID.String()))
 	}
 
 	return transition(shipment)

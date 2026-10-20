@@ -16,7 +16,7 @@ import (
 
 const testTTL = 60 * time.Second
 
-var testFingerprint = dto.RequestFingerprint{Method: "POST", Path: "/api/v1/shipments", Body: []byte(`{"orderId":1}`)}
+var testFingerprint = dto.RequestFingerprint{Method: "POST", Path: "/api/v1/products", Body: []byte(`{"name":"widget"}`)}
 
 // testHash computes the same hash Claim would compute internally for fingerprint, so tests can set
 // up store expectations/records without duplicating the hashing algorithm.
@@ -38,7 +38,7 @@ func TestHTTPIdempotencyService_hashRequest(t *testing.T) {
 
 	t.Run("computes a different hash when the body differs", func(t *testing.T) {
 		service := &httpIdempotencyService{}
-		other := dto.RequestFingerprint{Method: testFingerprint.Method, Path: testFingerprint.Path, Body: []byte(`{"orderId":2}`)}
+		other := dto.RequestFingerprint{Method: testFingerprint.Method, Path: testFingerprint.Path, Body: []byte(`{"name":"gadget"}`)}
 
 		got := service.hashRequest(testFingerprint)
 		want := service.hashRequest(other)
@@ -269,6 +269,31 @@ func TestHTTPIdempotencyService_Complete(t *testing.T) {
 
 		if !errors.Is(err, wantErr) {
 			t.Fatalf("Complete() error = %v, want %v", err, wantErr)
+		}
+	})
+}
+
+func TestHTTPIdempotencyService_Release(t *testing.T) {
+	t.Run("delegates to the store", func(t *testing.T) {
+		idempotencyKey := "key-1"
+		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
+		store.EXPECT().Release(gomock.Any(), idempotencyKey).Return(nil).Times(1)
+		service := NewHTTPIdempotencyService(store)
+
+		if err := service.Release(context.Background(), idempotencyKey); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("propagates an error from the store", func(t *testing.T) {
+		idempotencyKey := "key-1"
+		wantErr := errors.New("db down")
+		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
+		store.EXPECT().Release(gomock.Any(), idempotencyKey).Return(wantErr).Times(1)
+		service := NewHTTPIdempotencyService(store)
+
+		if err := service.Release(context.Background(), idempotencyKey); !errors.Is(err, wantErr) {
+			t.Fatalf("Release() error = %v, want %v", err, wantErr)
 		}
 	})
 }

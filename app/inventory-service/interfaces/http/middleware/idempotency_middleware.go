@@ -37,7 +37,7 @@ func NewIdempotencyMiddleware(service idempotency.HTTPIdempotencyService) *Idemp
 }
 
 func (m *IdempotencyMiddleware) Handle(c *fiber.Ctx) error {
-	if !requiresIdempotency(c) {
+	if !requiresIdempotency(c.Method()) {
 		return c.Next()
 	}
 
@@ -117,8 +117,8 @@ func (m *IdempotencyMiddleware) release(c *fiber.Ctx, idempotencyKey string) {
 	}
 }
 
-func requiresIdempotency(c *fiber.Ctx) bool {
-	switch c.Method() {
+func requiresIdempotency(method string) bool {
+	switch method {
 	case fiber.MethodPost, fiber.MethodPut, fiber.MethodPatch, fiber.MethodDelete:
 		return true
 	default:

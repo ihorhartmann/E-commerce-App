@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"shippingservice/adapter/in/kafka"
+	"shippingservice/application/port/out/repository"
 	"slices"
 	"testing"
 	"time"
@@ -89,18 +90,34 @@ func TestRunWithRetry(t *testing.T) {
 		}
 	})
 
-	t.Run("does not retry a non-retryable error", func(t *testing.T) {
+	t.Run("does not retry an error of a permanent category", func(t *testing.T) {
 		gotCalls := 0
 
 		err := runWithRetry(context.Background(), backoffDelays(4, time.Millisecond), func() error {
 			gotCalls++
-			return kafka.NonRetryable(errors.New("permanent failure"))
+			return kafka.ErrMalformedMessage.WithCause(errors.New("not json"))
 		})
 
-		if !errors.Is(err, kafka.ErrNonRetryable) {
-			t.Errorf("err = %v, want a non-retryable error", err)
+		if !errors.Is(err, kafka.ErrMalformedMessage) {
+			t.Errorf("err = %v, want %v", err, kafka.ErrMalformedMessage)
 		}
 		if wantCalls := 1; gotCalls != wantCalls {
+			t.Errorf("calls = %d, want %d", gotCalls, wantCalls)
+		}
+	})
+
+	t.Run("retries an error of a transient category", func(t *testing.T) {
+		gotCalls := 0
+
+		err := runWithRetry(context.Background(), backoffDelays(2, time.Millisecond), func() error {
+			gotCalls++
+			return repository.ErrConcurrentUpdate.WithInternalMessage("product changed")
+		})
+
+		if !errors.Is(err, repository.ErrConcurrentUpdate) {
+			t.Errorf("err = %v, want %v", err, repository.ErrConcurrentUpdate)
+		}
+		if wantCalls := 3; gotCalls != wantCalls {
 			t.Errorf("calls = %d, want %d", gotCalls, wantCalls)
 		}
 	})

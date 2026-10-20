@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	inkafka "shippingservice/adapter/in/kafka"
 	"testing"
 	"time"
@@ -78,7 +79,7 @@ func TestNewDeadLetterMessage(t *testing.T) {
 		source := sourceMessage()
 		groupID := "shipping-service"
 		var payload struct{}
-		cause := inkafka.NonRetryable(json.Unmarshal([]byte("not json"), &payload))
+		cause := inkafka.ErrMalformedMessage.WithCause(json.Unmarshal([]byte("not json"), &payload))
 
 		got := newDeadLetterMessage(source, groupID, cause)
 
@@ -94,11 +95,22 @@ func TestNewDeadLetterMessage(t *testing.T) {
 		if gotGroup := string(singleHeader(t, got.Headers, kafka.DLTOriginalConsumerGroupHeader)); gotGroup != groupID {
 			t.Errorf("original consumer group = %q, want %q", gotGroup, groupID)
 		}
-		if gotFQCN, wantFQCN := string(singleHeader(t, got.Headers, kafka.DLTExceptionFQCNHeader)), "*json.SyntaxError"; gotFQCN != wantFQCN {
+		if gotFQCN, wantFQCN := string(singleHeader(t, got.Headers, kafka.DLTExceptionFQCNHeader)), inkafka.ErrMalformedMessage.Code(); gotFQCN != wantFQCN {
 			t.Errorf("exception type = %q, want %q", gotFQCN, wantFQCN)
 		}
 		if gotMessage := string(singleHeader(t, got.Headers, kafka.DLTExceptionMessageHeader)); gotMessage != cause.Error() {
 			t.Errorf("exception message = %q, want %q", gotMessage, cause.Error())
+		}
+	})
+
+	t.Run("names the type of the innermost error for an error without a sentinel", func(t *testing.T) {
+		var payload struct{}
+		cause := fmt.Errorf("decode: %w", json.Unmarshal([]byte("not json"), &payload))
+
+		got := newDeadLetterMessage(sourceMessage(), "shipping-service", cause)
+
+		if gotFQCN, wantFQCN := string(singleHeader(t, got.Headers, kafka.DLTExceptionFQCNHeader)), "*json.SyntaxError"; gotFQCN != wantFQCN {
+			t.Errorf("exception type = %q, want %q", gotFQCN, wantFQCN)
 		}
 	})
 

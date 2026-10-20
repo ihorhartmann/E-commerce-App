@@ -151,7 +151,9 @@ Examples:
 * REST API handlers
 * Kafka consumers
 
-HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
+A controller never writes an error response itself: it hands the error to Gin with `_ = c.Error(err)`, as it is - see
+[Error handling](#error-handling). Only an error that isn't ours yet gets a sentinel there, e.g.
+`c.ShouldBindJSON`'s as `httperror.ErrMalformedRequestBody`.
 
 Each controller must provide a `RegisterRoutes` function responsible for registering all controller routes. See the
 [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
@@ -160,7 +162,7 @@ Each controller must provide a `RegisterRoutes` function responsible for registe
 `AccessRule`; its JWT/JWKS-based implementation (`JWKSTokenVerifier`) lives in `infrastructure/jwks`, like the
 kafka-go implementations of adapter interfaces. `middleware.AuthMiddleware` checks every request against the rule
 table in `adapter/in/http/middleware/auth_access_rules.go` (anything not listed is denied) and must stay registered after
-`ErrorHandlerMiddleware` and before `IdempotencyMiddleware`, so a rejected request never claims its Idempotency-Key.
+`HandleMiddlewareError` and before `IdempotencyMiddleware`, so a rejected request never claims its Idempotency-Key.
 A new endpoint needs a rule there.
 
 `adapter/in/http/idempotency` holds `HTTPIdempotencyService`, which decides whether a mutating HTTP request should
@@ -196,3 +198,52 @@ interfaces declared in `adapter/out/kafka/common`/`adapter/in/kafka/common`.
 These implementations do not contain business-specific logic and are therefore implemented at the infrastructure level.
 
 Kafka producers and consumers that contain business-specific behavior belong to the `Adapters` layer.
+
+## Error handling
+
+Every error is a `domain/apperror.Error`: a sentinel declared once, as a package-level variable in the `errors.go`
+next to the code that returns it, or an occurrence of it made by the sentinel's `With*` methods.
+
+```go
+var ErrNotAssignedCourier = apperror.New("NOT_ASSIGNED_COURIER", apperror.CategoryInvalid, "The shipment is not assigned to this courier")
+
+return ErrNotAssignedCourier.
+	WithAttrs(slog.Uint64("shipmentID", shipment.Id()), slog.String("courierID", courierID.String()))
+```
+
+* The code (`SHIPPING.NOT_ASSIGNED_COURIER` - `New` adds the service prefix) and the title are public and the same for
+  every occurrence; keep codes specific (`SHIPMENT_NOT_FOUND`, not `NOT_FOUND`). The category alone decides the HTTP
+  status, whether a Kafka message is retried or dead-lettered at once (permanent categories: invalid, not found,
+  conflict), and whether the idempotency middleware caches the response or releases the key.
+* The internal message and the attrs never leave the service; keep the internal message constant and put every value
+  in the attrs. The external message (`WithExternalMessage`) is the only per-occurrence text a caller sees.
+* An error gets its sentinel where it first enters this service's code: a domain rule, a Postgres repository turning
+  a gorm error into its `ErrDatabaseFailure.WithCause(err)`, a controller turning a `ShouldBindJSON` error into
+  `httperror.ErrMalformedRequestBody.WithCause(err)`. An error that already is one of ours is returned as it is -
+  giving it to `WithCause` of another sentinel replaces its code; do that only on purpose (e.g. `StartDelivery`
+  reporting a concurrent update as `ErrAlreadyPickedUp`).
+* A sentinel lives where the root CLAUDE.md puts errors: next to a port only if the port's callers branch on it
+  (`repository.ErrShipmentNotFound`, `repository.ErrConcurrentUpdate`), otherwise next to the adapter that returns it
+  (`adapter/out/repository.ErrDatabaseFailure`, `adapter/out/idempotency/store.ErrStoreFailure`,
+  `adapter/out/repository/transaction.ErrTransactionFailure`, `adapter/out/outbox.ErrOutboxFailure`).
+* Stored data that breaks a domain rule is corrupted, not an invalid request: `NewExistingShipment` and the entity
+  mapper report it as `ErrInconsistentShipment` (internal).
+* Keep errors in variables and results of type `error`, never `*apperror.Error`: a nil `*Error` returned as an `error`
+  is not a nil error.
+* Log an error once, where it is handled - `httperror.Write`, the Kafka consumer, a sweep, the outbox relay - with
+  `apperror.LogAttr(err)`, not `"error", err`.
+
+HTTP error responses are RFC 9457 problem details, written only by `httperror.Write`. It is called at two points of
+the middleware chain, in this order in `main.go` (see `adapter/in/http/middleware/error_handler_middleware.go`):
+`HandleMiddlewareError` -> `Recover` -> `LoggingMiddleware` -> `AuthMiddleware` -> `IdempotencyMiddleware` ->
+`HandleControllerError` -> routes - the same as inventory, with `HandleMiddlewareError` where Fiber has its
+`ErrorHandler`. Gin handlers return no error: they add it with `c.Error`, and both error handlers are ordinary
+middleware that write the last one after `c.Next()`. `HandleControllerError` writes a controller's error
+right after it, so `IdempotencyMiddleware` sees the final response; `HandleMiddlewareError` writes the errors of the
+middleware below it. The router is built with `gin.New()`, not `gin.Default()`, whose own logger and recovery would
+bypass this chain; unknown routes and methods go through it too (`NoRoute`/`NoMethod`). A status that differs from
+the category's default (401, 403, 405, 422) is listed in `httperror.StatusOf`.
+
+A panic is recovered - in a controller by `HandleControllerError`, in a middleware by `Recover`, in a Kafka handler by
+the consumer, in a sweep or the outbox relay by itself - and becomes an `apperror.ErrInternal` occurrence via
+`apperror.FromPanic`.

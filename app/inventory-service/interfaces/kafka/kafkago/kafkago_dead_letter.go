@@ -41,7 +41,13 @@ func newKafkaGoDeadLetterProducer(brokers []string, topic string) deadLetterProd
 }
 
 func (p *kafkaGoDeadLetterProducer) Send(ctx context.Context, message kafkago.Message) error {
-	return p.writer.WriteMessages(ctx, message)
+	if err := p.writer.WriteMessages(ctx, message); err != nil {
+		return ErrDeadLetterPublishFailure.
+			WithAttrs(slog.String("topic", p.writer.Topic), slog.String("key", string(message.Key))).
+			WithCause(err)
+	}
+
+	return nil
 }
 
 func (p *kafkaGoDeadLetterProducer) Close() error {
@@ -68,7 +74,7 @@ func (p *deadLetterRetryableProducer) Send(ctx context.Context, message kafkago.
 			return ctx.Err()
 		}
 
-		slog.Error("failed to publish kafka message to the dead-letter topic, retrying", "key", string(message.Key), "error", err)
+		slog.Error("failed to publish kafka message to the dead-letter topic, retrying", "key", string(message.Key), apperror.LogAttr(err))
 		if err = sleep(ctx, p.interval); err != nil {
 			return err
 		}

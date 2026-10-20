@@ -1,7 +1,7 @@
 package kafka
 
 import (
-	"fmt"
+	"log/slog"
 	"shippingservice/domain/model"
 )
 
@@ -34,7 +34,7 @@ var shipmentStatusMessageTypes = map[model.ShipmentStatus]MessageType{
 func ConvertShipmentStatusMessageType(status model.ShipmentStatus) (MessageType, error) {
 	messageType, ok := shipmentStatusMessageTypes[status]
 	if !ok {
-		return "", fmt.Errorf("no kafka message type mapped for shipment status %q", status)
+		return "", ErrUnmappedShipmentStatus.WithAttrs(slog.String("status", string(status)))
 	}
 
 	return messageType, nil

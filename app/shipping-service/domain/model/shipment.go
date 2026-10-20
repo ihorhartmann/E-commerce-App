@@ -1,8 +1,7 @@
 package model
 
 import (
-	"fmt"
-	"shippingservice/domain"
+	"log/slog"
 	"shippingservice/domain/value"
 	"time"
 
@@ -34,7 +33,9 @@ func NewExistingShipment(
 	version uint64,
 ) (*Shipment, error) {
 	if id == 0 || orderId == 0 {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInconsistentShipment.
+			WithInternalMessage("stored shipment has no id or order id").
+			WithAttrs(slog.Uint64("shipmentID", id), slog.Uint64("orderID", orderId))
 	}
 
 	state, err := newShipmentState(status, holder, courierID, cancellationReason)
@@ -57,7 +58,7 @@ func NewExistingShipment(
 // held by the inventory (not yet picked up by a courier).
 func NewShipment(orderId uint64, address value.Address) (*Shipment, error) {
 	if orderId == 0 {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInvalidShipment.WithExternalMessage("orderId must be positive")
 	}
 
 	state, err := newShipmentState(Created, HolderInventory, uuid.Nil, NoCancellationReason)
@@ -107,10 +108,10 @@ func (s *Shipment) ConfirmReturnedToInventory() error {
 }
 
 // apply records when a transition changed the state; a rejected transition left the state, and so the whole shipment,
-// exactly as it was.
+// exactly as it was. The rejection is already one of ours, so it is returned as it is.
 func (s *Shipment) apply(err error) error {
 	if err != nil {
-		return fmt.Errorf("shipment %d: %w", s.id, err)
+		return err
 	}
 
 	s.updatedAt = time.Now()
