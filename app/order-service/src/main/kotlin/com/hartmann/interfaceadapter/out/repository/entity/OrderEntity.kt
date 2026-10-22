@@ -19,6 +19,8 @@ import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 import org.hibernate.annotations.BatchSize
+import com.hartmann.entities.exception.OrderServiceException
+import com.hartmann.interfaceadapter.out.repository.exception.InconsistentOrderException
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
@@ -102,7 +104,20 @@ fun toOrderEntity(order: Order): OrderEntity {
     return entity
 }
 
-fun fromOrderEntity(entity: OrderEntity): Order {
+/**
+ * A stored order that breaks one of the order's own rules - a negative amount, a blank address field - is
+ * corrupted data, not a request to reject, so it is reported as InconsistentOrderException.
+ */
+fun fromOrderEntity(entity: OrderEntity): Order =
+    try {
+        buildOrder(entity)
+    } catch (e: OrderServiceException) {
+        throw InconsistentOrderException(entity.id, e)
+    } catch (e: IllegalArgumentException) {
+        throw InconsistentOrderException(entity.id, e)
+    }
+
+private fun buildOrder(entity: OrderEntity): Order {
     val shipment = entity.shipmentId?.let {
         ShipmentInfo(
             shipmentId = it,

@@ -1,5 +1,7 @@
 package com.hartmann.usecase
 
+import com.hartmann.entities.exception.ConflictException
+import com.hartmann.entities.exception.ErrorCode
 import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
@@ -12,7 +14,6 @@ import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
-import com.hartmann.usecase.port.out.internal.exception.InsufficientStockException
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import io.mockk.every
@@ -49,6 +50,14 @@ private fun storedOrder(id: Long, customerId: UUID, productId: Long): Order = Or
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class PlaceOrderUseCaseImplTest {
+    private enum class TestErrorCode(override val title: String) : ErrorCode {
+        TEST_RESERVATION_REJECTED("Test reservation rejected"),
+    }
+
+    // A failure the inventory port reports - e.g. insufficient stock, whose own exception lives in the adapter
+    // layer this test must not depend on. The use case passes any such failure on as it is.
+    private class TestReservationRejectedException :
+        ConflictException(TestErrorCode.TEST_RESERVATION_REJECTED, "Reservation rejected")
 
     private val orderRepository = mockk<OrderRepository>()
     private val inventoryClient = mockk<InventoryClient>()
@@ -93,13 +102,18 @@ class PlaceOrderUseCaseImplTest {
     }
 
     @Test
-    fun `execute - stores no order when the stock can't be reserved`() {
+    fun `execute - stores no order and rethrows when the stock can't be reserved`() {
         val orderId = 7L
         val requestedItems = testRequestedItems(productId = 3L)
         every { orderRepository.nextId() } returns orderId
-        every { inventoryClient.reserve(orderId, requestedItems) } throws InsufficientStockException("no stock")
+        val expected = TestReservationRejectedException()
+        every { inventoryClient.reserve(orderId, requestedItems) } throws expected
 
-        assertThrows<InsufficientStockException> { useCase.execute(UUID.randomUUID(), requestedItems, testAddress()) }
+        val actual = assertThrows<TestReservationRejectedException> {
+            useCase.execute(UUID.randomUUID(), requestedItems, testAddress())
+        }
+
+        assertSame(expected, actual)
 
         verify(exactly = 1) { inventoryClient.reserve(orderId, requestedItems) }
         verify(exactly = 0) { orderRepository.create(any()) }

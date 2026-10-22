@@ -1,5 +1,7 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
+import com.hartmann.entities.model.OrderStatus
+import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
 import com.hartmann.frameworks.config.KafkaErrorHandlerConfig
 import com.hartmann.frameworks.config.KafkaTopicConfig
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
@@ -238,7 +240,7 @@ class OrderKafkaConsumerIntegrationTest {
     }
 
     // QueryTimeoutException is what a database timeout looks like here: an infrastructure failure
-    // that is deliberately absent from the not-retryable list, unlike the domain-rule failures below.
+    // that is no OrderServiceException at all, so nothing says it is permanent.
     @Test
     fun `onPaymentEvent - a retryable infrastructure failure is retried five times then dead-lettered`() {
         val orderId = 105L
@@ -278,13 +280,12 @@ class OrderKafkaConsumerIntegrationTest {
         verify(saga, times(1)).onPaymentCompleted(any(), eq(orderId))
     }
 
-    // The domain model signals an invalid transition through check()/require(), i.e. an
-    // IllegalStateException/IllegalArgumentException, not only through its own DomainException.
     @Test
     fun `onPaymentEvent - a domain rule violation is dead-lettered after a single attempt`() {
         val orderId = 107L
         val correlationId = UUID.randomUUID().toString()
-        whenever(saga.onPaymentCompleted(any(), eq(orderId))).thenThrow(IllegalStateException("refund already confirmed"))
+        whenever(saga.onPaymentCompleted(any(), eq(orderId)))
+            .thenThrow(OrderTransitionNotAllowedException(orderId, "confirm payment", OrderStatus.CANCELLED))
 
         send(eventRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, correlationId, "{\"orderId\":$orderId}"))
 

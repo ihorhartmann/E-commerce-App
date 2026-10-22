@@ -1,0 +1,152 @@
+package com.hartmann.interfaceadapter.out.http.inventory
+
+import com.hartmann.entities.value.Currency
+import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ReservedItem
+import com.hartmann.interfaceadapter.out.http.common.connectFailureRetryConfig
+import com.hartmann.interfaceadapter.out.http.inventory.exception.InsufficientStockException
+import com.hartmann.interfaceadapter.out.http.inventory.exception.InventoryFailureException
+import com.hartmann.interfaceadapter.out.http.inventory.exception.InventoryUnavailableException
+import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
+import com.hartmann.usecase.port.out.internal.InventoryClient
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.retry.Retry
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
+import org.springframework.web.client.ResourceAccessException
+import java.math.BigDecimal
+import java.net.ConnectException
+import java.net.http.HttpTimeoutException
+import java.time.Duration
+
+private const val MAX_ATTEMPTS = 3
+private val BACKOFF = Duration.ofMillis(1)
+
+@TestInstance(TestInstance.Lifecycle.PER_METHOD)
+class Resilience4jInventoryClientTest {
+
+    private val delegate = mockk<InventoryClient>()
+    private val circuitBreaker = CircuitBreaker.of("inventory-service", Resilience4jInventoryClient.circuitBreakerConfig())
+    private val client = Resilience4jInventoryClient(
+        delegate,
+        Retry.of("inventory-service", connectFailureRetryConfig(MAX_ATTEMPTS, BACKOFF)),
+        circuitBreaker,
+    )
+
+    @Test
+    fun `reserve - delegates once and returns the reserved items when the call succeeds`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        val expected = listOf(ReservedItem(5L, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR)))
+        every { delegate.reserve(orderId, items) } returns expected
+
+        val actual = client.reserve(orderId, items)
+
+        assertEquals(expected, actual)
+        verify(exactly = 1) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - retries a connect failure and succeeds on the next attempt`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        every { delegate.reserve(orderId, items) } throws
+            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen emptyList()
+
+        client.reserve(orderId, items)
+
+        verify(exactly = 2) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - throws InventoryUnavailableException once every attempt fails to connect`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        every { delegate.reserve(orderId, items) } throws
+            ResourceAccessException("I/O error", ConnectException("Connection refused"))
+
+        assertThrows<InventoryUnavailableException> { client.reserve(orderId, items) }
+
+        verify(exactly = MAX_ATTEMPTS) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - does not retry a read timeout and throws InventoryUnavailableException`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        every { delegate.reserve(orderId, items) } throws
+            ResourceAccessException("I/O error", HttpTimeoutException("request timed out"))
+
+        assertThrows<InventoryUnavailableException> { client.reserve(orderId, items) }
+
+        verify(exactly = 1) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - does not retry a server error and rethrows it`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        every { delegate.reserve(orderId, items) } throws
+            InventoryFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), null, RuntimeException("server error"))
+
+        assertThrows<InventoryFailureException> { client.reserve(orderId, items) }
+
+        verify(exactly = 1) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - does not retry insufficient stock and rethrows it`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        every { delegate.reserve(orderId, items) } throws InsufficientStockException(orderId, RuntimeException("no stock"))
+
+        assertThrows<InsufficientStockException> { client.reserve(orderId, items) }
+
+        verify(exactly = 1) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - throws InventoryUnavailableException without calling the delegate while the circuit breaker is open`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        circuitBreaker.transitionToOpenState()
+
+        assertThrows<InventoryUnavailableException> { client.reserve(orderId, items) }
+
+        verify(exactly = 0) { delegate.reserve(any(), any()) }
+    }
+
+    @Test
+    fun `reserve - opens the circuit breaker once enough calls fail with a server error`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        val failedCalls = 10
+        every { delegate.reserve(orderId, items) } throws
+            InventoryFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), null, RuntimeException("server error"))
+
+        repeat(failedCalls) { assertThrows<InventoryFailureException> { client.reserve(orderId, items) } }
+
+        assertEquals(CircuitBreaker.State.OPEN, circuitBreaker.state)
+        assertThrows<InventoryUnavailableException> { client.reserve(orderId, items) }
+        verify(exactly = failedCalls) { delegate.reserve(orderId, items) }
+    }
+
+    @Test
+    fun `reserve - keeps the circuit breaker closed when calls are rejected for insufficient stock`() {
+        val orderId = 1L
+        val items = emptyList<RequestedItem>()
+        val rejectedCalls = 10
+        every { delegate.reserve(orderId, items) } throws InsufficientStockException(orderId, RuntimeException("no stock"))
+
+        repeat(rejectedCalls) { assertThrows<InsufficientStockException> { client.reserve(orderId, items) } }
+
+        assertEquals(CircuitBreaker.State.CLOSED, circuitBreaker.state)
+        verify(exactly = rejectedCalls) { delegate.reserve(orderId, items) }
+    }
+}

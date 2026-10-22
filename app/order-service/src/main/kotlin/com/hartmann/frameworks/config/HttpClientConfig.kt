@@ -1,11 +1,11 @@
 package com.hartmann.frameworks.config
 
-import com.hartmann.interfaceadapter.out.http.HttpInventoryClient
-import com.hartmann.interfaceadapter.out.http.HttpPaymentClient
-import com.hartmann.interfaceadapter.out.http.LoggingClientHttpRequestInterceptor
-import com.hartmann.interfaceadapter.out.http.Resilience4jInventoryClient
-import com.hartmann.interfaceadapter.out.http.Resilience4jPaymentClient
-import com.hartmann.interfaceadapter.out.http.connectFailureRetryConfig
+import com.hartmann.interfaceadapter.out.http.common.LoggingClientHttpRequestInterceptor
+import com.hartmann.interfaceadapter.out.http.common.connectFailureRetryConfig
+import com.hartmann.interfaceadapter.out.http.inventory.HttpInventoryClient
+import com.hartmann.interfaceadapter.out.http.inventory.Resilience4jInventoryClient
+import com.hartmann.interfaceadapter.out.http.payment.HttpPaymentClient
+import com.hartmann.interfaceadapter.out.http.payment.Resilience4jPaymentClient
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import io.github.resilience4j.circuitbreaker.CircuitBreaker

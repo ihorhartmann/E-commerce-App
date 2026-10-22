@@ -4,7 +4,8 @@ import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.ShipmentCancellationReason
 import com.hartmann.interfaceadapter.`in`.kafka.exception.InvalidMessageHeaderException
-import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
+import com.hartmann.interfaceadapter.`in`.kafka.exception.MalformedPayloadException
+import com.hartmann.interfaceadapter.`in`.kafka.exception.UnknownShipmentCancellationReasonException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
@@ -114,8 +115,8 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onPaymentEvent - throws a NonRetryableException without dispatching when the payload is malformed JSON`() {
-        val exception = assertThrows<NonRetryableException> {
+    fun `onPaymentEvent - throws a MalformedPayloadException without dispatching when the payload is malformed JSON`() {
+        val exception = assertThrows<MalformedPayloadException> {
             consumer.onPaymentEvent(KafkaConst.PAYMENT_COMPLETED_EVENT, UUID.randomUUID().toString(), "corr-6", "not json")
         }
 
@@ -124,36 +125,35 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onPaymentEvent - throws a NonRetryableException without dispatching when the messageId is not a UUID`() {
-        val exception = assertThrows<NonRetryableException> {
+    fun `onPaymentEvent - throws an InvalidMessageHeaderException without dispatching when the messageId is not a UUID`() {
+        assertThrows<InvalidMessageHeaderException> {
             consumer.onPaymentEvent(KafkaConst.PAYMENT_COMPLETED_EVENT, "not-a-uuid", "corr-18", "{\"orderId\":108}")
         }
 
-        assertTrue(exception.cause is InvalidMessageHeaderException)
         verify { saga wasNot Called }
     }
 
     @Test
-    fun `onPaymentEvent - wraps a non-retryable saga failure in a NonRetryableException`() {
+    fun `onPaymentEvent - rethrows a permanent saga failure as it is`() {
         val orderId = 107L
         val messageId = UUID.randomUUID()
         val correlationId = "corr-16"
         val messageType = KafkaConst.PAYMENT_COMPLETED_EVENT
         val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val cause = OrderNotFoundException(orderId)
-        every { saga.onPaymentCompleted(message, orderId) } throws cause
+        val expected = OrderNotFoundException(orderId)
+        every { saga.onPaymentCompleted(message, orderId) } throws expected
 
-        val exception = assertThrows<NonRetryableException> {
+        val actual = assertThrows<OrderNotFoundException> {
             consumer.onPaymentEvent(messageType, messageId.toString(), correlationId, "{\"orderId\":$orderId}")
         }
 
-        assertSame(cause, exception.cause)
+        assertSame(expected, actual)
         verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
         confirmVerified(saga)
     }
 
     @Test
-    fun `onPaymentEvent - rethrows a retryable saga failure unwrapped`() {
+    fun `onPaymentEvent - rethrows a retryable saga failure as it is`() {
         val orderId = 108L
         val messageId = UUID.randomUUID()
         val correlationId = "corr-17"
@@ -246,15 +246,14 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onShippingEvent - throws a NonRetryableException without dispatching when ShipmentCancelled names an unknown reason`() {
-        val exception = assertThrows<NonRetryableException> {
+    fun `onShippingEvent - throws an UnknownShipmentCancellationReasonException without dispatching when ShipmentCancelled names an unknown reason`() {
+        assertThrows<UnknownShipmentCancellationReasonException> {
             consumer.onShippingEvent(
                 KafkaConst.SHIPMENT_CANCELLED_EVENT, UUID.randomUUID().toString(), "corr-17",
                 "{\"orderId\":204,\"shipmentId\":5,\"reason\":\"Whatever\"}",
             )
         }
 
-        assertTrue(exception.cause is IllegalArgumentException)
         verify { saga wasNot Called }
     }
 
@@ -302,8 +301,8 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onShippingEvent - throws a NonRetryableException without dispatching when the payload is malformed JSON`() {
-        val exception = assertThrows<NonRetryableException> {
+    fun `onShippingEvent - throws a MalformedPayloadException without dispatching when the payload is malformed JSON`() {
+        val exception = assertThrows<MalformedPayloadException> {
             consumer.onShippingEvent(KafkaConst.SHIPMENT_CREATED_EVENT, UUID.randomUUID().toString(), "corr-15", "not json")
         }
 
@@ -312,12 +311,11 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onShippingEvent - throws a NonRetryableException without dispatching when the messageId is not a UUID`() {
-        val exception = assertThrows<NonRetryableException> {
+    fun `onShippingEvent - throws an InvalidMessageHeaderException without dispatching when the messageId is not a UUID`() {
+        assertThrows<InvalidMessageHeaderException> {
             consumer.onShippingEvent(KafkaConst.SHIPMENT_CREATED_EVENT, "not-a-uuid", "corr-19", "{\"orderId\":109}")
         }
 
-        assertTrue(exception.cause is InvalidMessageHeaderException)
         verify { saga wasNot Called }
     }
 }

@@ -7,6 +7,7 @@ import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.usecase.port.`in`.usecase.FindCustomerOrdersUseCase.Companion.MAX_PAGE_SIZE
+import com.hartmann.usecase.port.`in`.usecase.exception.InvalidPageException
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import com.hartmann.usecase.port.out.repository.dto.OrderPage
 import io.mockk.every
@@ -51,7 +52,7 @@ class FindCustomerOrdersUseCaseImplTest {
 
     @Test
     fun `execute - rejects a negative page without reading the orders`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<InvalidPageException> {
             useCase.execute(UUID.randomUUID(), -1, 20)
         }
 
@@ -60,7 +61,7 @@ class FindCustomerOrdersUseCaseImplTest {
 
     @Test
     fun `execute - rejects a zero size without reading the orders`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<InvalidPageException> {
             useCase.execute(UUID.randomUUID(), 0, 0)
         }
 
@@ -69,7 +70,7 @@ class FindCustomerOrdersUseCaseImplTest {
 
     @Test
     fun `execute - rejects a size above the maximum without reading the orders`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<InvalidPageException> {
             useCase.execute(UUID.randomUUID(), 0, MAX_PAGE_SIZE + 1)
         }
 

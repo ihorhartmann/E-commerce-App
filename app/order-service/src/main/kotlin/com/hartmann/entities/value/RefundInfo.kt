@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.RefundTransitionNotAllowedException
 import java.time.Instant
 
 data class RefundInfo(
@@ -11,13 +12,19 @@ data class RefundInfo(
     val isConfirmed: Boolean get() = confirmedAt != null
 
     fun confirm(amount: Money): RefundInfo {
-        check(confirmedAt == null) { "refund already confirmed" }
+        requireNotConfirmed("confirm")
         return copy(amount = amount, confirmedAt = Instant.now())
     }
 
     fun markFailed(): RefundInfo {
-        check(confirmedAt == null) { "cannot fail a refund that already confirmed" }
+        requireNotConfirmed("mark failed")
         return copy(failedAt = Instant.now())
+    }
+
+    private fun requireNotConfirmed(action: String) {
+        if (isConfirmed) {
+            throw RefundTransitionNotAllowedException(action)
+        }
     }
 
     companion object {

@@ -1,5 +1,7 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.InvalidAddressException
+
 data class Address(
     val city: String,
     val postalCode: String,
@@ -7,8 +9,14 @@ data class Address(
     val line2: String,
 ) {
     init {
-        require(city.isNotBlank()) { "city is required" }
-        require(postalCode.isNotBlank()) { "postalCode is required" }
-        require(line1.isNotBlank()) { "line1 is required" }
+        requireField("city", city)
+        requireField("postalCode", postalCode)
+        requireField("line1", line1)
+    }
+
+    private fun requireField(field: String, value: String) {
+        if (value.isBlank()) {
+            throw InvalidAddressException(field)
+        }
     }
 }

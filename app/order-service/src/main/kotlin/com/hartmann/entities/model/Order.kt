@@ -1,7 +1,11 @@
 package com.hartmann.entities.model
 
-import com.hartmann.entities.exception.DomainException
-import com.hartmann.entities.exception.OrderNotCancellableException
+import com.hartmann.entities.model.exception.OrderNotCancellableException
+import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
+import com.hartmann.entities.model.exception.RefundAmountMismatchException
+import com.hartmann.entities.model.exception.RefundNotRequestedException
+import com.hartmann.entities.model.exception.ShipmentNotCreatedException
+import com.hartmann.entities.model.exception.UnrequestedShipmentCancellationException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
@@ -87,7 +91,7 @@ class Order private constructor(
             return false
         }
         if (status != OrderStatus.PROCESSING) {
-            throw OrderNotCancellableException("cannot cancel order $id: it is $status")
+            throw OrderNotCancellableException(id, status)
         }
         status = OrderStatus.CANCEL_REQUESTED
         cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER
@@ -101,7 +105,7 @@ class Order private constructor(
 
     fun startDelivery() {
         requireOpenShipment("start delivery")
-        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to start delivery for" }
+        val currentShipment = requireShipment("start delivery")
         shipment = currentShipment.pickUp()
     }
 
@@ -111,7 +115,7 @@ class Order private constructor(
      */
     fun deliver() {
         requireOpenShipment("deliver")
-        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to deliver" }
+        val currentShipment = requireShipment("deliver")
         val deliveredShipment = currentShipment.deliver()
         status = OrderStatus.FULFILLED
         cancellationReason = null
@@ -167,7 +171,7 @@ class Order private constructor(
             ShipmentCancellationReason.RECIPIENT_REFUSED -> CancellationReason.CANCELLED_BY_CUSTOMER
             ShipmentCancellationReason.RECIPIENT_UNAVAILABLE -> CancellationReason.DELIVERY_FAILED
             ShipmentCancellationReason.ORDER_CANCELLED ->
-                throw DomainException("shipment of order $id was cancelled for the order, which nobody asked to cancel")
+                throw UnrequestedShipmentCancellationException(id)
         }
 
     /** A cancelled order is refunded in full - everything the customer paid for its items. */
@@ -185,10 +189,10 @@ class Order private constructor(
      */
     fun returnToStock() {
         requireStatus("return to stock", OrderStatus.CANCEL_REQUESTED)
-        requireNotNull(refund) { "order $id has no confirmed cancellation to return the goods of" }
-        val currentShipment = requireNotNull(shipment) { "order $id has no shipment to return" }
+        val currentRefund = requireRefund("return to stock")
+        val currentShipment = requireShipment("return to stock")
         val returnedShipment = currentShipment.returnToInventory()
-        if (refund?.isConfirmed == true) {
+        if (currentRefund.isConfirmed) {
             status = OrderStatus.CANCELLED
         }
         shipment = returnedShipment
@@ -203,9 +207,9 @@ class Order private constructor(
      */
     fun confirmRefund(amount: Money) {
         requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
-        val currentRefund = requireNotNull(refund) { "order $id has no refund request to confirm" }
+        val currentRefund = requireRefund("confirm refund")
         if (amount != refundAmount()) {
-            throw DomainException("refunded $amount for order $id, but ${refundAmount()} was requested")
+            throw RefundAmountMismatchException(id, amount, refundAmount())
         }
         val confirmedRefund = currentRefund.confirm(amount)
         if (!awaitingReturn) {
@@ -217,7 +221,7 @@ class Order private constructor(
     /** Payment service reported the refund failed; the order stays CANCEL_REQUESTED, flagged for follow-up. */
     fun markRefundFailed() {
         requireStatus("mark refund failed", OrderStatus.CANCEL_REQUESTED)
-        val currentRefund = requireNotNull(refund) { "order $id has no refund request to fail" }
+        val currentRefund = requireRefund("mark refund failed")
         refund = currentRefund.markFailed()
     }
 
@@ -233,12 +237,13 @@ class Order private constructor(
     private fun requireOpenShipment(action: String) {
         val awaitingShipmentCancellation = status == OrderStatus.CANCEL_REQUESTED && refund == null
         if (status != OrderStatus.PROCESSING && !awaitingShipmentCancellation) {
-            throw DomainException(
-                "cannot $action for order $id: expected status ${OrderStatus.PROCESSING}, or " +
-                        "${OrderStatus.CANCEL_REQUESTED} not yet confirmed by shipping, but was $status",
-            )
+            throw OrderTransitionNotAllowedException(id, action, status)
         }
     }
+
+    private fun requireShipment(action: String): ShipmentInfo = shipment ?: throw ShipmentNotCreatedException(id, action)
+
+    private fun requireRefund(action: String): RefundInfo = refund ?: throw RefundNotRequestedException(id, action)
 
     private fun cancel(reason: CancellationReason) {
         status = OrderStatus.CANCELLED
@@ -247,9 +252,7 @@ class Order private constructor(
 
     private fun requireStatus(action: String, vararg expected: OrderStatus) {
         if (status !in expected) {
-            throw DomainException(
-                "cannot $action for order $id: expected status ${expected.joinToString()} but was $status",
-            )
+            throw OrderTransitionNotAllowedException(id, action, status)
         }
     }
 

@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.ShipmentTransitionNotAllowedException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -32,7 +33,7 @@ class ShipmentInfoTest {
     fun `pickUp - throws when already picked up`() {
         val shipment = ShipmentInfo.create(5L).pickUp()
 
-        assertThrows<IllegalStateException> { shipment.pickUp() }
+        assertThrows<ShipmentTransitionNotAllowedException> { shipment.pickUp() }
     }
 
     @Test
@@ -46,7 +47,7 @@ class ShipmentInfoTest {
     fun `deliver - throws when never picked up`() {
         val shipment = ShipmentInfo.create(5L)
 
-        assertThrows<IllegalStateException> { shipment.deliver() }
+        assertThrows<ShipmentTransitionNotAllowedException> { shipment.deliver() }
     }
 
     @Test
@@ -60,6 +61,6 @@ class ShipmentInfoTest {
     fun `returnToInventory - throws when already returned`() {
         val shipment = ShipmentInfo.create(5L).pickUp().returnToInventory()
 
-        assertThrows<IllegalStateException> { shipment.returnToInventory() }
+        assertThrows<ShipmentTransitionNotAllowedException> { shipment.returnToInventory() }
     }
 }

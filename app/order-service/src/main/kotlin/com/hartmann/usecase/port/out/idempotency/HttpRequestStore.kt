@@ -18,7 +18,11 @@ interface HttpRequestStore {
     /** Reclaims a stale IN_PROGRESS row, resetting claimedAt. Returns false if it was already reclaimed by someone else. */
     fun reclaim(idempotencyKey: String, ttl: Duration): Boolean
 
+    /** Moves the row to COMPLETED with the response to replay. An empty [response] is stored as no body at all. */
     fun complete(idempotencyKey: String, httpCode: Int, response: String)
+
+    /** Deletes idempotencyKey's row if it is still IN_PROGRESS, so the key can be claimed again at once. */
+    fun release(idempotencyKey: String)
 
     /** Deletes up to limit rows older than cutoff. Returns how many were deleted. */
     fun deleteExpired(cutoff: Instant, limit: Int): Int

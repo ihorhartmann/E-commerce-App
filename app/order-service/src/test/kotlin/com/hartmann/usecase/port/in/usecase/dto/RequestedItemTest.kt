@@ -1,5 +1,6 @@
 package com.hartmann.usecase.port.`in`.usecase.dto
 
+import com.hartmann.usecase.port.`in`.usecase.exception.InvalidRequestedItemException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -21,11 +22,11 @@ class RequestedItemTest {
 
     @Test
     fun `constructor - rejects a non-positive product id`() {
-        assertThrows<IllegalArgumentException> { RequestedItem(productId = 0, quantity = 1) }
+        assertThrows<InvalidRequestedItemException> { RequestedItem(productId = 0, quantity = 1) }
     }
 
     @Test
     fun `constructor - rejects a non-positive quantity`() {
-        assertThrows<IllegalArgumentException> { RequestedItem(productId = 1, quantity = 0) }
+        assertThrows<InvalidRequestedItemException> { RequestedItem(productId = 1, quantity = 0) }
     }
 }
