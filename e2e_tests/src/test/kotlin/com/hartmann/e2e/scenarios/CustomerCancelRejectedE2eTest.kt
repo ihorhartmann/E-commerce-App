@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.payment.PaymentApi
 import com.hartmann.e2e.support.api.shipping.ShippingApi
@@ -29,9 +30,9 @@ class CustomerCancelRejectedE2eTest : E2eScenarioTest() {
             assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("FULFILLED")
         }
 
-        val statusCode = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id).extract().statusCode()
+        val response = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id)
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
+        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.ORDER_NOT_CANCELLABLE")
         val orderAfterRequest = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
         assertThat(orderAfterRequest.status).isEqualTo("FULFILLED")
         assertThat(orderAfterRequest.cancellationReason).isNull()
@@ -44,9 +45,9 @@ class CustomerCancelRejectedE2eTest : E2eScenarioTest() {
         val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, BigDecimal("79.99"))
         val order = E2eSharedSteps.placeOrder(orderUrl, product.id, 1)
 
-        val statusCode = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id).extract().statusCode()
+        val response = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id)
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
+        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.ORDER_NOT_CANCELLABLE")
         assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("PLACED")
     }
 
@@ -56,12 +57,12 @@ class CustomerCancelRejectedE2eTest : E2eScenarioTest() {
         val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, BigDecimal("79.99"))
         val order = E2eSharedSteps.placeOrderUntilShipmentCreated(orderUrl, DockerComposeStack.paymentServiceUrl, product.id, 1)
 
-        val otherCustomerStatusCode = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT2, order.id).extract().statusCode()
-        val courierStatusCode = OrderApi.requestOrderCancellation(orderUrl, TestUser.COURIER1, order.id).extract().statusCode()
+        val otherCustomerResponse = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT2, order.id)
+        val courierResponse = OrderApi.requestOrderCancellation(orderUrl, TestUser.COURIER1, order.id)
 
         // not 403: another customer's order must not even be confirmed to exist
-        assertThat(otherCustomerStatusCode).isEqualTo(HttpURLConnection.HTTP_NOT_FOUND)
-        assertThat(courierStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        assertProblem(otherCustomerResponse, HttpURLConnection.HTTP_NOT_FOUND, "ORDER.ORDER_NOT_FOUND")
+        assertProblem(courierResponse, HttpURLConnection.HTTP_FORBIDDEN, "ORDER.ACCESS_DENIED")
         assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("PROCESSING")
     }
 }

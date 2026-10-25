@@ -2,6 +2,7 @@ package com.hartmann.e2e.scenarios
 
 import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.OrderApi
@@ -25,16 +26,16 @@ class InsufficientStockE2eTest : E2eScenarioTest() {
         val pageSize = 1
         val ordersBefore = OrderApi.findCustomerOrders(orderUrl, TestUser.CLIENT1, firstPage, pageSize).totalElements
 
-        val statusCode = OrderApi.placeOrder(
+        val response = OrderApi.placeOrder(
             orderUrl,
             TestUser.CLIENT1,
             PlaceOrderRequest(
                 items = listOf(OrderItemRequest(productId, requestedQuantity)),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),
-        ).extract().statusCode()
+        )
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
+        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.INSUFFICIENT_STOCK")
 
         val productAfterAttempt = InventoryApi.getProduct(inventoryUrl, productId)
         assertThat(productAfterAttempt.reserved).isEqualTo(product.reserved)

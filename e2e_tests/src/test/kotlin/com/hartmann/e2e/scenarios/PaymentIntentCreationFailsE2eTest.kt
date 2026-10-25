@@ -2,6 +2,7 @@ package com.hartmann.e2e.scenarios
 
 import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.inventory.CreateProductRequest
 import com.hartmann.e2e.support.api.inventory.InventoryApi
@@ -36,16 +37,16 @@ class PaymentIntentCreationFailsE2eTest : E2eScenarioTest() {
             ),
         )
 
-        val statusCode = OrderApi.placeOrder(
+        val response = OrderApi.placeOrder(
             orderUrl,
             TestUser.CLIENT1,
             PlaceOrderRequest(
                 items = listOf(OrderItemRequest(product.id, 1)),
                 address = AddressRequest(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1"),
             ),
-        ).extract().statusCode()
+        )
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
+        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.PAYMENT_REJECTED")
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterFailure = InventoryApi.getProduct(inventoryUrl, product.id)

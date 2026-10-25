@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderResponse
@@ -44,11 +45,10 @@ class CourierCancelsDeliveryE2eTest : E2eScenarioTest() {
         val shipmentId = requireNotNull(order.shipment).id
 
         // only the courier who has the goods may say they couldn't be handed over, and only for a reason of their own
-        val otherCourierStatusCode = ShippingApi.cancel(shippingUrl, TestUser.COURIER2, shipmentId, reason).extract().statusCode()
-        val orderReasonStatusCode =
-            ShippingApi.cancel(shippingUrl, TestUser.COURIER1, shipmentId, "OrderCancelled").extract().statusCode()
-        assertThat(otherCourierStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
-        assertThat(orderReasonStatusCode).isEqualTo(HttpURLConnection.HTTP_BAD_REQUEST)
+        val otherCourierResponse = ShippingApi.cancel(shippingUrl, TestUser.COURIER2, shipmentId, reason)
+        val orderReasonResponse = ShippingApi.cancel(shippingUrl, TestUser.COURIER1, shipmentId, "OrderCancelled")
+        assertProblem(otherCourierResponse, HttpURLConnection.HTTP_FORBIDDEN, "SHIPPING.NOT_ASSIGNED_COURIER")
+        assertProblem(orderReasonResponse, HttpURLConnection.HTTP_BAD_REQUEST, "SHIPPING.INVALID_CANCELLATION_REASON")
 
         val cancelledShipment = ShippingApi.cancelExpectingSuccess(shippingUrl, TestUser.COURIER1, shipmentId, reason)
         assertThat(cancelledShipment.status).isEqualTo("Cancelled")
@@ -117,9 +117,9 @@ class CourierCancelsDeliveryE2eTest : E2eScenarioTest() {
         )
         val shipmentId = requireNotNull(order.shipment).id
 
-        val statusCode = ShippingApi.cancel(shippingUrl, TestUser.COURIER1, shipmentId, "RecipientUnavailable").extract().statusCode()
+        val response = ShippingApi.cancel(shippingUrl, TestUser.COURIER1, shipmentId, "RecipientUnavailable")
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        assertProblem(response, HttpURLConnection.HTTP_FORBIDDEN, "SHIPPING.NOT_ASSIGNED_COURIER")
         assertThat(ShippingApi.getShipment(shippingUrl, TestUser.COURIER1, shipmentId).status).isEqualTo("Created")
     }
 }

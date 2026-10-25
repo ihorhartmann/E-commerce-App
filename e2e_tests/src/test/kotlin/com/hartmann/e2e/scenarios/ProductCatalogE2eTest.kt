@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import org.assertj.core.api.Assertions.assertThat
@@ -36,9 +37,8 @@ class ProductCatalogE2eTest : E2eScenarioTest() {
 
     @Test
     fun `getProducts - rejects a page size above the maximum`() {
-        val statusCode = InventoryApi.doGetProducts(DockerComposeStack.inventoryServiceUrl, 0, 101)
-            .extract().statusCode()
+        val response = InventoryApi.doGetProducts(DockerComposeStack.inventoryServiceUrl, 0, 101)
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_BAD_REQUEST)
+        assertProblem(response, HttpURLConnection.HTTP_BAD_REQUEST, "INVENTORY.INVALID_PAGE")
     }
 }

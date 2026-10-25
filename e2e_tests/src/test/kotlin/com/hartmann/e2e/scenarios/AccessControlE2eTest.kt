@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.order.AddressRequest
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderItemRequest
@@ -28,22 +29,21 @@ class AccessControlE2eTest : E2eScenarioTest() {
 
     @Test
     fun `place order - rejected without a token`() {
-        val statusCode = given()
+        val response = given()
             .contentType(ContentType.JSON)
             .header("Idempotency-Key", UUID.randomUUID().toString())
             .body(placeOrderRequest(3L))
             .post("${DockerComposeStack.orderServiceUrl}/api/v1/orders")
-            .statusCode()
+            .then()
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_UNAUTHORIZED)
+        assertProblem(response, HttpURLConnection.HTTP_UNAUTHORIZED, "ORDER.MISSING_BEARER_TOKEN")
     }
 
     @Test
     fun `place order - forbidden to a courier`() {
-        val statusCode = OrderApi.placeOrder(DockerComposeStack.orderServiceUrl, TestUser.COURIER1, placeOrderRequest(3L))
-            .extract().statusCode()
+        val response = OrderApi.placeOrder(DockerComposeStack.orderServiceUrl, TestUser.COURIER1, placeOrderRequest(3L))
 
-        assertThat(statusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        assertProblem(response, HttpURLConnection.HTTP_FORBIDDEN, "ORDER.ACCESS_DENIED")
     }
 
     @Test
@@ -52,11 +52,11 @@ class AccessControlE2eTest : E2eScenarioTest() {
         val order = E2eSharedSteps.placeOrder(orderUrl, 3L, 1, customer = TestUser.CLIENT1)
 
         val ownerStatusCode = OrderApi.findOrder(orderUrl, TestUser.CLIENT1, order.id).extract().statusCode()
-        val otherCustomerStatusCode = OrderApi.findOrder(orderUrl, TestUser.CLIENT2, order.id).extract().statusCode()
+        val otherCustomerResponse = OrderApi.findOrder(orderUrl, TestUser.CLIENT2, order.id)
 
         assertThat(ownerStatusCode).isEqualTo(HttpURLConnection.HTTP_OK)
         // not 403: another customer's order must not even be confirmed to exist
-        assertThat(otherCustomerStatusCode).isEqualTo(HttpURLConnection.HTTP_NOT_FOUND)
+        assertProblem(otherCustomerResponse, HttpURLConnection.HTTP_NOT_FOUND, "ORDER.ORDER_NOT_FOUND")
     }
 
     @Test
@@ -75,8 +75,8 @@ class AccessControlE2eTest : E2eScenarioTest() {
         val shipmentId = requireNotNull(order.shipment).id
 
         // customers see the shipment in their order, never in the shipping-service
-        val customerStatusCode = ShippingApi.findShipment(shippingUrl, TestUser.CLIENT1, shipmentId).extract().statusCode()
-        assertThat(customerStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        val customerResponse = ShippingApi.findShipment(shippingUrl, TestUser.CLIENT1, shipmentId)
+        assertProblem(customerResponse, HttpURLConnection.HTTP_FORBIDDEN, "SHIPPING.ACCESS_DENIED")
 
         // before pickup every courier sees it - city and postal code only - and finds it among the available ones
         val beforePickup = ShippingApi.getShipment(shippingUrl, TestUser.COURIER2, shipmentId)
@@ -92,12 +92,12 @@ class AccessControlE2eTest : E2eScenarioTest() {
         assertThat(ShippingApi.getCourierActiveShipments(shippingUrl, TestUser.COURIER1, firstPage, pageSize).items.map { it.id }).contains(shipmentId)
         assertThat(ShippingApi.getCourierActiveShipments(shippingUrl, TestUser.COURIER2, firstPage, pageSize).items.map { it.id }).doesNotContain(shipmentId)
 
-        val secondPickupStatusCode = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "pickup")
-            .extract().statusCode()
-        val otherCourierDeliverStatusCode = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "deliver")
-            .extract().statusCode()
-        assertThat(secondPickupStatusCode).isEqualTo(HttpURLConnection.HTTP_CONFLICT)
-        assertThat(otherCourierDeliverStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        val secondPickupResponse = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "pickup")
+        val otherCourierDeliverResponse = ShippingApi.transition(shippingUrl, TestUser.COURIER2, shipmentId, "deliver")
+        // a pickup after the first one is a transition the picked-up shipment doesn't allow; ALREADY_PICKED_UP is
+        // only for the courier who loses a race between two concurrent pickups
+        assertProblem(secondPickupResponse, HttpURLConnection.HTTP_CONFLICT, "SHIPPING.INVALID_STATUS_TRANSITION")
+        assertProblem(otherCourierDeliverResponse, HttpURLConnection.HTTP_FORBIDDEN, "SHIPPING.NOT_ASSIGNED_COURIER")
 
         // a delivered shipment needs nothing more from the courier, so it leaves their list
         val delivered = ShippingApi.deliver(shippingUrl, TestUser.COURIER1, shipmentId)
@@ -108,20 +108,20 @@ class AccessControlE2eTest : E2eScenarioTest() {
     @Test
     fun `internal endpoints - forbidden to a customer calling them directly`() {
         // the order-service calls these with its own token (client credentials), never with a customer's
-        val reservationStatusCode = givenAs(TestUser.CLIENT1)
+        val reservationResponse = givenAs(TestUser.CLIENT1)
             .contentType(ContentType.JSON)
             .header("Idempotency-Key", UUID.randomUUID().toString())
             .body("{}")
             .post("${DockerComposeStack.inventoryServiceUrl}/api/v1/reservations")
-            .statusCode()
-        val paymentStatusCode = givenAs(TestUser.CLIENT1)
+            .then()
+        val paymentResponse = givenAs(TestUser.CLIENT1)
             .contentType(ContentType.JSON)
             .header("Idempotency-Key", UUID.randomUUID().toString())
             .body("{}")
             .post("${DockerComposeStack.paymentServiceUrl}/api/v1/payments")
-            .statusCode()
+            .then()
 
-        assertThat(reservationStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
-        assertThat(paymentStatusCode).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN)
+        assertProblem(reservationResponse, HttpURLConnection.HTTP_FORBIDDEN, "INVENTORY.ACCESS_DENIED")
+        assertProblem(paymentResponse, HttpURLConnection.HTTP_FORBIDDEN, "PAYMENT.ACCESS_DENIED")
     }
 }
