@@ -82,8 +82,9 @@ hold.
 
 ## Tests
 
-Only the ViewModels are unit-tested (`src/jsTest`), following the root CLAUDE.md test rules, with these differences
-forced by the platform:
+The ViewModels are unit-tested (`src/jsTest`), and so is `ensureSuccess` - the one place that reads the services'
+error responses (RFC 9457 problem details), with Ktor's `MockEngine` answering real response bodies. The tests follow
+the root CLAUDE.md test rules, with these differences forced by the platform:
 
 * Mocks are made with [Mokkery](https://mokkery.dev) (`mock<T>()`, `everySuspend`, `verifySuspend(exactly(n))`,
   `verify(not)`): MockK and Mockito rely on the JVM and don't run on Kotlin/JS. Mokkery generates mocks at compile

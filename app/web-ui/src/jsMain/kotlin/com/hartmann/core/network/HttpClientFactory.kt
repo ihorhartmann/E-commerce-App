@@ -35,6 +35,8 @@ fun createHttpClient(): HttpClient = HttpClient(Js) {
     // only a request that didn't get any response is repeated: a 5xx may have been handled already, and the
     // services keep its Idempotency-Key claimed for a while, so a quick retry would only be told it's in progress
     install(HttpRequestRetry) {
+        // the plugin also retries every 5xx by default, which retryOnException alone keeps: noRetry clears it first
+        noRetry()
         retryOnException(maxRetries = 2, retryOnTimeout = true)
         exponentialDelay()
     }

@@ -43,6 +43,7 @@ kotlin {
         jsTest.dependencies {
             implementation("org.jetbrains.kotlin:kotlin-test:2.4.20")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+            implementation("io.ktor:ktor-client-mock:3.6.0")
         }
     }
 }
