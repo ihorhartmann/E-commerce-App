@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"inventoryservice/interfaces/http/auth"
+	"inventoryservice/interfaces/http/httperror"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -91,7 +91,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, generateKey(t), validClaims(uuid.NewString())))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -104,7 +104,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, claims))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -117,7 +117,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, claims))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -130,7 +130,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, claims))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -145,7 +145,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err = verifier.Verify(context.Background(), hmacToken)
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -158,7 +158,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, claims))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -169,7 +169,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), signToken(t, key, validClaims("not-a-uuid")))
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})
@@ -179,7 +179,7 @@ func TestJWKSTokenVerifier_Verify(t *testing.T) {
 
 		_, err := verifier.Verify(context.Background(), "not-a-jwt")
 
-		if !errors.Is(err, auth.ErrInvalidToken) {
+		if !errors.Is(err, httperror.ErrInvalidToken) {
 			t.Errorf("err = %v, want ErrInvalidToken", err)
 		}
 	})

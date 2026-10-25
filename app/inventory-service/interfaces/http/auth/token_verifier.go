@@ -6,6 +6,7 @@ import "context"
 
 // TokenVerifier checks a raw Bearer access token (signature, issuer, expiry) and returns who it belongs to.
 type TokenVerifier interface {
-	// Verify returns ErrInvalidToken (wrapped with the reason) for any token that must not be trusted.
+	// Verify returns httperror.ErrInvalidToken, caused by the reason, for any token that must not
+	// be trusted.
 	Verify(ctx context.Context, rawToken string) (Principal, error)
 }

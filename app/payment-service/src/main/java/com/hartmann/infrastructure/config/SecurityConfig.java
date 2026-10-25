@@ -1,5 +1,9 @@
 package com.hartmann.infrastructure.config;
 
+import com.hartmann.adapter.in.http.security.ProblemAccessDeniedHandler;
+import com.hartmann.adapter.in.http.security.ProblemAuthenticationEntryPoint;
+import com.hartmann.infrastructure.security.RolesClaimGrantedAuthoritiesConverter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +16,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.servlet.HandlerExceptionResolver;
 
 /**
  * OAuth2 resource server. Customers never call this service: everything they need about a payment or refund comes from
@@ -32,8 +37,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            JwtAuthenticationConverter jwtAuthenticationConverter
+            JwtAuthenticationConverter jwtAuthenticationConverter,
+            @Qualifier("handlerExceptionResolver") HandlerExceptionResolver handlerExceptionResolver
     ) {
+        // 401 and 403 get the same ProblemDetail body as every other error response
+        var authenticationEntryPoint = new ProblemAuthenticationEntryPoint(handlerExceptionResolver);
+        var accessDeniedHandler = new ProblemAccessDeniedHandler(handlerExceptionResolver);
         return http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(ERROR_PATH).permitAll()
@@ -45,7 +54,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, REFUNDS_PATH + "/**").hasRole(ADMIN_ROLE)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter))
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
+                .exceptionHandling(exceptionHandling -> exceptionHandling
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 // stateless Bearer-token API: no session, and no cookie a cross-site request could ride on
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(AbstractHttpConfigurer::disable)

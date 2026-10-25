@@ -1,6 +1,7 @@
 package com.hartmann.frameworks.config
 
-import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
+import com.hartmann.frameworks.kafka.RetryableDeadLetterPublishingRecoverer
+import com.hartmann.interfaceadapter.`in`.kafka.isPermanentFailure
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import org.apache.kafka.common.TopicPartition
 import org.springframework.context.annotation.Bean
@@ -11,6 +12,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer
 import org.springframework.kafka.listener.DefaultErrorHandler
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries
 import org.springframework.messaging.MessageHandlingException
+import org.springframework.util.backoff.FixedBackOff
 import java.time.Duration
 
 @Configuration
@@ -27,14 +29,14 @@ class KafkaErrorHandlerConfig {
     @Bean
     fun kafkaErrorHandler(kafkaTemplate: KafkaTemplate<String, String>): CommonErrorHandler {
         return createErrorHandler(kafkaTemplate).apply {
-            // Anything not listed here is treated as transient and retried. Which failures repeat the
-            // same way every time is decided by the consumer, which wraps them in NonRetryableException.
-            addNotRetryableExceptions(
-                NonRetryableException::class.java,
-                // A required header is missing: @Header binding fails inside the framework, before the
-                // consumer runs, so the consumer never gets the chance to classify it.
-                MessageHandlingException::class.java,
-            )
+
+            // A permanent failure - a malformed payload, a business rule rejecting the message, a missing
+            // order - can't succeed on a later attempt, so it gets no retries and is dead-lettered at once.
+            // Any other failure gets the default back-off.
+            setBackOffFunction { _, exception -> if (isPermanentFailure(exception)) FixedBackOff(0, 0) else null }
+            // A required header is missing: @Header binding fails inside the framework, before the
+            // consumer runs, so the failure is no OrderServiceException.
+            addNotRetryableExceptions(MessageHandlingException::class.java)
         }
     }
 

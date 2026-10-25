@@ -1,6 +1,7 @@
 package com.hartmann.entities.value
 
-import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.value.exception.InvalidMoneyAmountException
+import com.hartmann.entities.value.exception.UnsupportedCurrencyException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.*
@@ -13,12 +14,14 @@ import java.util.*
 class Money(amount: BigDecimal, val currency: Currency) {
     val amount: BigDecimal = try {
         amount.setScale(SCALE, RoundingMode.UNNECESSARY)
-    } catch (_: ArithmeticException) {
-        throw IllegalArgumentException("amount $amount must not have more than $SCALE decimal places")
+    } catch (e: ArithmeticException) {
+        throw InvalidMoneyAmountException(amount, e)
     }
 
     init {
-        require(this.amount >= BigDecimal.ZERO) { "amount must not be negative" }
+        if (this.amount < BigDecimal.ZERO) {
+            throw InvalidMoneyAmountException(amount)
+        }
     }
 
     override fun equals(other: Any?): Boolean {
@@ -43,8 +46,8 @@ enum class Currency {
         fun fromCode(code: String): Currency {
             try {
                 return valueOf(code.uppercase(Locale.getDefault()))
-            } catch (_: IllegalArgumentException) {
-                throw DomainException("Unsupported currency: $code")
+            } catch (e: IllegalArgumentException) {
+                throw UnsupportedCurrencyException(code, e)
             }
         }
     }

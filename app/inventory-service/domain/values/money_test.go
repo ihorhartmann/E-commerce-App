@@ -4,8 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"inventoryservice/domain"
-
 	"github.com/shopspring/decimal"
 )
 
@@ -57,24 +55,24 @@ func TestNewMoney(t *testing.T) {
 	t.Run("rejects a negative amount", func(t *testing.T) {
 		_, err := NewMoney(decimal.NewFromInt(-1), EUR)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidMoneyAmount) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidMoneyAmount)
 		}
 	})
 
 	t.Run("rejects an unsupported currency", func(t *testing.T) {
 		_, err := NewMoney(decimal.NewFromInt(10), "JPY")
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrUnsupportedCurrency) {
+			t.Errorf("err = %v, want %v", err, ErrUnsupportedCurrency)
 		}
 	})
 
 	t.Run("rejects an amount with a fraction of a cent", func(t *testing.T) {
 		_, err := NewMoney(decimal.RequireFromString("9.999"), EUR)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidMoneyAmount) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidMoneyAmount)
 		}
 	})
 }

@@ -1,5 +1,6 @@
 package com.hartmann.e2e.scenarios
 
+import com.hartmann.e2e.support.api.common.assertProblem
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.shipping.ShippingApi
@@ -61,8 +62,7 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
         val response = ShippingApi.findShipment(gatewayUrl, TestUser.COURIER1, Long.MAX_VALUE)
 
         // the shipping-service's own answer, not a gateway 404 for an unknown route
-        response.statusCode(HttpURLConnection.HTTP_NOT_FOUND)
-        assertThat(response.extract().path<String>("error")).isEqualTo("shipment not found")
+        assertProblem(response, HttpURLConnection.HTTP_NOT_FOUND, "SHIPPING.SHIPMENT_NOT_FOUND")
     }
 
     @Test

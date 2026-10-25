@@ -52,22 +52,22 @@ func (c *ShipmentKafkaConsumer) handleMessage(ctx context.Context, messageType c
 func (c *ShipmentKafkaConsumer) handleCreateShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.CreateShipmentCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
 	address, err := dto.FromAddressDTO(command.Address)
 	if err != nil {
-		return NonRetryable(err)
+		return err // already ours: ErrInvalidAddress, permanent
 	}
 
 	_, err = c.shipmentService.CreateShipment(ctx, msg, command.OrderID, address)
-	return classify(err)
+	return err
 }
 
 func (c *ShipmentKafkaConsumer) handleCancelShipment(ctx context.Context, msg idempotencydto.KafkaMessageMetadata, payload []byte) error {
 	var command dto.CancelShipmentCommand
 	if err := json.Unmarshal(payload, &command); err != nil {
-		return NonRetryable(err)
+		return malformedPayloadErr(msg, err)
 	}
 
 	cancelled, err := c.shipmentService.CancelByOrder(ctx, msg, command.OrderID)
@@ -75,5 +75,12 @@ func (c *ShipmentKafkaConsumer) handleCancelShipment(ctx context.Context, msg id
 		slog.Info("nothing to cancel: the shipment has already ended, or the command was already handled", "orderId", command.OrderID, "correlationId", msg.CorrelationID)
 	}
 
-	return classify(err)
+	return err
+}
+
+// malformedPayloadErr reports a payload that doesn't decode - permanent, so the message is dead-lettered at once.
+func malformedPayloadErr(msg idempotencydto.KafkaMessageMetadata, err error) error {
+	return ErrMalformedMessage.
+		WithAttrs(slog.String("messageType", msg.MessageType), slog.String("messageID", msg.MessageID.String())).
+		WithCause(err)
 }

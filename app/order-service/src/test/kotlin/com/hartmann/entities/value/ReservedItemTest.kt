@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.InvalidReservedItemException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
@@ -13,16 +14,16 @@ class ReservedItemTest {
 
     @Test
     fun `constructor - rejects a non-positive product id`() {
-        assertThrows<IllegalArgumentException> { reservedItem(productId = 0) }
+        assertThrows<InvalidReservedItemException> { reservedItem(productId = 0) }
     }
 
     @Test
     fun `constructor - rejects a blank name`() {
-        assertThrows<IllegalArgumentException> { reservedItem(name = " ") }
+        assertThrows<InvalidReservedItemException> { reservedItem(name = " ") }
     }
 
     @Test
     fun `constructor - rejects a non-positive quantity`() {
-        assertThrows<IllegalArgumentException> { reservedItem(quantity = 0) }
+        assertThrows<InvalidReservedItemException> { reservedItem(quantity = 0) }
     }
 }

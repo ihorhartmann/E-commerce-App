@@ -43,10 +43,15 @@ class PostgresHttpRequestStore(
             val existing = jpaRepository.findById(idempotencyKey).orElseThrow()
             existing.status = STATUS_COMPLETED
             existing.httpCode = httpCode
-            existing.response = response
+            // NULL, not "": the column is jsonb, and an empty string isn't valid JSON
+            existing.response = response.ifEmpty { null }
             existing.completedAt = Instant.now()
             jpaRepository.save(existing)
         }
+    }
+
+    override fun release(idempotencyKey: String) {
+        transactionTemplate.execute { jpaRepository.deleteInProgress(idempotencyKey) }
     }
 
     override fun deleteExpired(cutoff: Instant, limit: Int): Int =

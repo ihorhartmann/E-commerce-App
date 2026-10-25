@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"inventoryservice/infrastructure/idempotency/store/row"
+	"log/slog"
 	"time"
 
 	"inventoryservice/application/port/out/idempotency"
@@ -41,7 +42,10 @@ func (s *postgresProcessedKafkaMessageStore) MarkProcessed(ctx context.Context, 
 
 	result := tx.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&processedRow)
 	if result.Error != nil {
-		return false, result.Error
+		return false, ErrStoreFailure.
+			WithInternalMessage("mark kafka message processed").
+			WithAttrs(slog.String("messageID", msg.MessageID.String())).
+			WithCause(result.Error)
 	}
 
 	return result.RowsAffected == 0, nil
@@ -52,6 +56,9 @@ func (s *postgresProcessedKafkaMessageStore) DeleteExpired(ctx context.Context, 
 		`DELETE FROM processed_kafka_messages WHERE ctid IN (
 			SELECT ctid FROM processed_kafka_messages WHERE processed_at < ? LIMIT ?
 		)`, cutoff, limit)
+	if result.Error != nil {
+		return 0, ErrStoreFailure.WithInternalMessage("delete expired processed kafka messages").WithCause(result.Error)
+	}
 
-	return result.RowsAffected, result.Error
+	return result.RowsAffected, nil
 }

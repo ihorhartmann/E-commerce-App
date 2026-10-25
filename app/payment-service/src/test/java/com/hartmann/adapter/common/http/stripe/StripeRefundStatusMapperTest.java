@@ -1,5 +1,6 @@
 package com.hartmann.adapter.common.http.stripe;
 
+import com.hartmann.adapter.common.http.stripe.exception.UnknownStripeRefundStatusException;
 import com.hartmann.domain.model.RefundStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -33,8 +34,16 @@ class StripeRefundStatusMapperTest {
 
     @Test
     void fromStripeStatus_throwsOnAnUnknownStatus() {
-        assertThatThrownBy(() -> StripeRefundStatusMapper.fromStripeStatus("unknown_status"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("unknown_status");
+        var stripeStatus = "unknown_status";
+
+        assertThatThrownBy(() -> StripeRefundStatusMapper.fromStripeStatus(stripeStatus))
+                .isInstanceOfSatisfying(UnknownStripeRefundStatusException.class,
+                        exception -> assertThat(exception.attributes()).containsEntry("stripeStatus", stripeStatus));
+    }
+
+    @Test
+    void fromStripeStatus_throwsOnAMissingStatus() {
+        assertThatThrownBy(() -> StripeRefundStatusMapper.fromStripeStatus(null))
+                .isInstanceOf(UnknownStripeRefundStatusException.class);
     }
 }

@@ -53,6 +53,14 @@ public class HttpIdempotencyService {
         store.complete(idempotencyKey, httpCode, response);
     }
 
+    /**
+     * Gives up idempotencyKey's claim after a failure repeating the same request may fix, so a retry with the
+     * same key runs it again at once.
+     */
+    public void release(String idempotencyKey) {
+        store.release(idempotencyKey);
+    }
+
     String hashRequest(RequestFingerprint request) {
         try {
             var digest = MessageDigest.getInstance("SHA-256");

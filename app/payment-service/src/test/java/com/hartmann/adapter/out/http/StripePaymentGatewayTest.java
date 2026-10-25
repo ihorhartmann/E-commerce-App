@@ -1,15 +1,18 @@
 package com.hartmann.adapter.out.http;
 
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.adapter.out.http.exception.PaymentGatewayAuthenticationException;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 import com.stripe.StripeClient;
 import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.AuthenticationException;
 import com.stripe.exception.InvalidRequestException;
+import com.stripe.exception.PermissionException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.net.RequestOptions;
@@ -153,7 +156,19 @@ class StripePaymentGatewayTest {
                 .thenThrow(cause);
 
         assertThatThrownBy(() -> gateway.submitPayment(orderId, money("0.10")))
-                .isInstanceOf(PaymentGatewayException.class)
+                .isInstanceOf(PaymentGatewayRejectedException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void submitPayment_throwsPaymentGatewayAuthenticationExceptionWhenStripeRefusesTheApiKey() throws Exception {
+        var orderId = 42L;
+        var cause = new AuthenticationException("Invalid API Key provided", null, null, 401);
+        when(stripeClient.v1().paymentIntents().create(any(PaymentIntentCreateParams.class), any(RequestOptions.class)))
+                .thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.submitPayment(orderId, money("79.99")))
+                .isInstanceOf(PaymentGatewayAuthenticationException.class)
                 .hasCause(cause);
     }
 
@@ -234,7 +249,17 @@ class StripePaymentGatewayTest {
         when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenThrow(cause);
 
         assertThatThrownBy(() -> gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "999.00")))
-                .isInstanceOf(PaymentGatewayException.class)
+                .isInstanceOf(PaymentGatewayRejectedException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void submitRefund_throwsPaymentGatewayAuthenticationExceptionWhenTheApiKeyLacksThePermission() throws Exception {
+        var cause = new PermissionException("The provided key does not have access to refunds", null, null, 403);
+        when(stripeClient.v1().refunds().create(any(RefundCreateParams.class), any(RequestOptions.class))).thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "40.00")))
+                .isInstanceOf(PaymentGatewayAuthenticationException.class)
                 .hasCause(cause);
     }
 }

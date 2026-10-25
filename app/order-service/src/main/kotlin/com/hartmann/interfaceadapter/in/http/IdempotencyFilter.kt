@@ -1,5 +1,9 @@
 package com.hartmann.interfaceadapter.`in`.http
 
+import com.hartmann.entities.exception.attributesOf
+import com.hartmann.interfaceadapter.`in`.http.exception.IdempotencyKeyReusedException
+import com.hartmann.interfaceadapter.`in`.http.exception.MissingIdempotencyKeyException
+import com.hartmann.interfaceadapter.`in`.http.exception.RequestInProgressException
 import com.hartmann.interfaceadapter.`in`.http.idempotency.HttpIdempotencyService
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestAttempt
 import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestFingerprint
@@ -11,11 +15,13 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletRequestWrapper
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import org.springframework.web.servlet.HandlerExceptionResolver
 import org.springframework.web.util.ContentCachingResponseWrapper
-import tools.jackson.databind.ObjectMapper
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
@@ -28,17 +34,22 @@ private val MUTATING_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
 /**
  * Protects every mutating request (POST/PUT/PATCH/DELETE) with a client-supplied Idempotency-Key:
  * a retried request with the same key and body gets the original response replayed instead of the
- * handler running again. Unlike the Fiber/Gin middleware in the Go services, Spring MVC's
- * @RestControllerAdvice exception handling runs synchronously inside filterChain.doFilter(), so
- * cachedResponse.status here already reflects the true final status (including handled errors) by
- * the time control returns to this filter - a 4xx response is just as safe to cache and replay as
- * a 2xx one, since both are deterministic given the same input. Only a 5xx is left uncached, since
- * that's usually a transient failure rather than a reproducible function of the request.
+ * handler running again. A success and a permanent failure are cached and replayed alike, since the
+ * same request would get the same answer again. Any other failure releases the key at once, so a
+ * retry with the same key runs the request again.
+ *
+ * Unlike the Fiber/Gin middleware in the Go services, Spring MVC's @RestControllerAdvice exception
+ * handling runs synchronously inside filterChain.doFilter(), so the response status here is already
+ * the final one, errors included - and GlobalExceptionHandler gives every permanent failure a 4xx
+ * and every other one a 5xx, so the status alone tells which it was.
+ *
+ * Its own errors go to GlobalExceptionHandler too, through the [handlerExceptionResolver], so they
+ * look like every other error response.
  */
 @Component
 class IdempotencyFilter(
     private val idempotencyService: HttpIdempotencyService,
-    private val objectMapper: ObjectMapper,
+    @Qualifier("handlerExceptionResolver") private val handlerExceptionResolver: HandlerExceptionResolver,
 ) : OncePerRequestFilter() {
     companion object {
         private val LOG = LoggerFactory.getLogger(IdempotencyFilter::class.java)
@@ -56,27 +67,32 @@ class IdempotencyFilter(
 
         val idempotencyKey = request.getHeader(IDEMPOTENCY_KEY_HEADER)
         if (idempotencyKey.isNullOrBlank()) {
-            writeError(response, HttpStatus.BAD_REQUEST, "Missing Idempotency-Key header")
+            writeError(request, response, MissingIdempotencyKeyException())
             return
         }
 
         val cachedRequest = CachedBodyHttpServletRequest(request)
         val requestFingerprint = RequestFingerprint(cachedRequest.method, cachedRequest.requestURI, cachedRequest.bodyBytes())
-        val attempt = idempotencyService.claim(idempotencyKey, requestFingerprint, CLAIM_TTL)
+        val attempt = try {
+            idempotencyService.claim(idempotencyKey, requestFingerprint, CLAIM_TTL)
+        } catch (e: Exception) {
+            writeError(request, response, e)
+            return
+        }
 
         when (attempt.requestResult) {
             RequestResult.CACHED -> {
-                writeCached(response, attempt)
+                replay(response, attempt)
                 return
             }
 
             RequestResult.HASH_MISMATCH -> {
-                writeError(response, HttpStatus.CONFLICT, "Idempotency-Key was already used with a different request")
+                writeError(request, response, IdempotencyKeyReusedException(idempotencyKey))
                 return
             }
 
             RequestResult.IN_PROGRESS -> {
-                writeError(response, HttpStatus.CONFLICT, "A request with this Idempotency-Key is already in progress")
+                writeError(request, response, RequestInProgressException(idempotencyKey))
                 return
             }
 
@@ -84,32 +100,64 @@ class IdempotencyFilter(
         }
 
         val cachedResponse = ContentCachingResponseWrapper(response)
-        filterChain.doFilter(cachedRequest, cachedResponse)
+        try {
+            filterChain.doFilter(cachedRequest, cachedResponse)
+        } catch (e: Exception) {
+            // Not a controller's exception - DispatcherServlet hands every one of those to GlobalExceptionHandler,
+            // which turns it into the response. Only a failure no handler resolved gets here: GlobalExceptionHandler
+            // itself failing, or a filter after this one. There is no response to cache, so the key is released for
+            // a retry.
+            release(idempotencyKey)
+            throw e
+        }
 
-        // Best-effort: the handler already produced the correct response above, so a failure here
-        // must never override it with an error response - it only means this key's replay cache
-        // stays stale (reclaimed like any abandoned IN_PROGRESS record).
-        if (cachedResponse.status < HttpStatus.INTERNAL_SERVER_ERROR.value()) {
+        if (cachedResponse.status >= HttpStatus.INTERNAL_SERVER_ERROR.value()) {
+            release(idempotencyKey)
+        } else {
+            // Best-effort: the handler already produced the correct response above, so a failure here
+            // must never override it with an error response - it only means this key's replay cache
+            // stays stale (reclaimed like any abandoned IN_PROGRESS record).
             try {
                 idempotencyService.complete(idempotencyKey, cachedResponse.status, String(cachedResponse.contentAsByteArray, Charsets.UTF_8))
             } catch (e: Exception) {
-                LOG.error("failed to record idempotent response for key={}", idempotencyKey, e)
+                logFailure("Failed to record idempotent response", idempotencyKey, e)
             }
         }
         cachedResponse.copyBodyToResponse()
     }
 
-    private fun writeCached(response: HttpServletResponse, attempt: RequestAttempt) {
+    /** Sends the cached response as it was first sent: an error response keeps its problem+json content type, and an empty one stays empty. */
+    private fun replay(response: HttpServletResponse, attempt: RequestAttempt) {
         val record = requireNotNull(attempt.record)
-        response.status = record.httpCode ?: HttpStatus.OK.value()
-        response.contentType = "application/json"
-        response.writer.write(record.response ?: "")
+        val httpCode = record.httpCode ?: HttpStatus.OK.value()
+        response.status = httpCode
+        val body = record.response ?: return
+
+        response.contentType = if (httpCode >= HttpStatus.BAD_REQUEST.value()) {
+            MediaType.APPLICATION_PROBLEM_JSON_VALUE
+        } else {
+            MediaType.APPLICATION_JSON_VALUE
+        }
+        response.writer.write(body)
     }
 
-    private fun writeError(response: HttpServletResponse, status: HttpStatus, message: String) {
-        response.status = status.value()
-        response.contentType = "application/json"
-        response.writer.write(objectMapper.writeValueAsString(mapOf("status" to status.value(), "error" to message)))
+    private fun writeError(request: HttpServletRequest, response: HttpServletResponse, exception: Exception) {
+        handlerExceptionResolver.resolveException(request, response, null, exception)
+    }
+
+    // Best-effort, like recording a response: if it fails, the key is reclaimed once its claim expires.
+    private fun release(idempotencyKey: String) {
+        try {
+            idempotencyService.release(idempotencyKey)
+        } catch (e: Exception) {
+            logFailure("Failed to release idempotency key", idempotencyKey, e)
+        }
+    }
+
+    private fun logFailure(message: String, idempotencyKey: String, exception: Exception) {
+        val event = LOG.atError().setCause(exception).setMessage(message).addKeyValue("idempotencyKey", idempotencyKey)
+        attributesOf(exception).forEach { (key, value) -> event.addKeyValue(key, value) }
+        event.log()
     }
 }
 

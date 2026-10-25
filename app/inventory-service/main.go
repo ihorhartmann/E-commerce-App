@@ -78,13 +78,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The order matters - see error_handler_middleware.go.
 	app := fiber.New(fiber.Config{
-		ErrorHandler: middleware.HandleError,
+		ErrorHandler: middleware.HandleMiddlewareError,
 	})
+	app.Use(middleware.Recover)
 	app.Use(middleware.LoggingMiddleware)
 	// before idempotency: a rejected request must not claim its Idempotency-Key
 	app.Use(middleware.NewAuthMiddleware(tokenVerifier).Handle)
 	app.Use(middleware.NewIdempotencyMiddleware(idempotencyService).Handle)
+	// last, right before the routes: a controller's error must be the response by the time it gets
+	// back to the idempotency middleware
+	app.Use(middleware.HandleControllerError)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "ok"})

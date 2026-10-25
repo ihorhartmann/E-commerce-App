@@ -2,8 +2,8 @@ package product
 
 import (
 	"encoding/json"
+	"log/slog"
 
-	"inventoryservice/domain"
 	"inventoryservice/domain/values"
 
 	"github.com/shopspring/decimal"
@@ -24,7 +24,9 @@ func ToMoneyDTO(money values.Money) MoneyDTO {
 func fromMoneyDTO(money MoneyDTO) (values.Money, error) {
 	amount, err := decimal.NewFromString(money.Amount.String())
 	if err != nil {
-		return values.Money{}, domain.ErrInvalidInput
+		return values.Money{}, values.ErrInvalidMoneyAmount.
+			WithAttrs(slog.String("amount", money.Amount.String())).
+			WithCause(err)
 	}
 
 	return values.NewMoney(amount, values.Currency(money.Currency))

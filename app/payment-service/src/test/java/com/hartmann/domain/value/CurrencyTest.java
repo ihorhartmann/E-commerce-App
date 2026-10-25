@@ -1,6 +1,6 @@
 package com.hartmann.domain.value;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.value.exception.UnsupportedCurrencyException;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,16 +25,18 @@ class CurrencyTest {
 
     @Test
     void fromCode_throwsOnANullCode() {
-        assertThatThrownBy(() -> Currency.fromCode(null)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> Currency.fromCode(null)).isInstanceOf(UnsupportedCurrencyException.class);
     }
 
     @Test
     void fromCode_throwsOnAnUnsupportedCode() {
-        assertThatThrownBy(() -> Currency.fromCode("JPY")).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> Currency.fromCode("JPY"))
+                .isInstanceOf(UnsupportedCurrencyException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void fromCode_throwsOnABlankCode() {
-        assertThatThrownBy(() -> Currency.fromCode("")).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> Currency.fromCode("")).isInstanceOf(UnsupportedCurrencyException.class);
     }
 }

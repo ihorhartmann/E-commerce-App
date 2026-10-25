@@ -1,15 +1,16 @@
 package com.hartmann.application.service;
 
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
-import com.hartmann.application.service.exception.IdempotencyKeyReusedException;
+import com.hartmann.application.service.exception.ConflictingRefundNotFoundException;
+import com.hartmann.application.service.exception.RefundIdempotencyKeyReusedException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.model.Refund;
@@ -248,7 +249,7 @@ class RefundServiceImplTest {
         when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey))
                 .thenReturn(Optional.empty(), Optional.of(initiatedRefund));
-        when(refundRepository.create(any())).thenThrow(new DuplicateIdempotencyKeyException("duplicate"));
+        when(refundRepository.create(any())).thenThrow(new DuplicateIdempotencyKeyException(idempotencyKey));
         when(paymentGateway.submitRefund(paymentExternalId, initiatedRefund))
                 .thenReturn(new SubmitRefundResult(externalId, RefundStatus.PENDING));
         when(refundRepository.markPending(initiatedId, initiatedRefund.version(), externalId, RefundStatus.PENDING)).thenReturn(pendingRefund);
@@ -262,6 +263,27 @@ class RefundServiceImplTest {
         verify(paymentGateway, times(1)).submitRefund(paymentExternalId, initiatedRefund);
         verify(refundRepository, times(1)).markPending(initiatedId, initiatedRefund.version(), externalId, RefundStatus.PENDING);
         verifyNoInteractions(paymentKafkaProducer);
+    }
+
+    @Test
+    void submitRefund_reportsARefundThatConflictedOnInsertButCantBeFoundAsAnInternalFailure() {
+        var paymentId = 1L;
+        var idempotencyKey = UUID.randomUUID();
+
+        var payment = testPayment(paymentId, 100L, "0.00");
+        when(paymentRepository.getById(paymentId)).thenReturn(payment);
+        when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
+        var exception = new DuplicateIdempotencyKeyException(idempotencyKey);
+        when(refundRepository.create(any())).thenThrow(exception);
+
+        assertThatThrownBy(() -> refundService.submitRefund(idempotencyKey, "corr-1", paymentId, money("40.00")))
+                .isInstanceOf(ConflictingRefundNotFoundException.class)
+                .hasNoCause()
+                .satisfies(e -> assertThat(e.getSuppressed()).containsExactly(exception));
+        verify(refundRepository, times(2)).findByIdempotencyKey(idempotencyKey);
+        verify(refundRepository, times(1)).create(any());
+        verify(paymentRepository, times(0)).updateRefundedAmount(any());
+        verifyNoInteractions(paymentGateway, paymentKafkaProducer);
     }
 
     @Test
@@ -297,7 +319,7 @@ class RefundServiceImplTest {
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(existingRefund));
 
         assertThatThrownBy(() -> refundService.submitRefund(idempotencyKey, "corr-1", paymentId, money("30.00")))
-                .isInstanceOf(IdempotencyKeyReusedException.class);
+                .isInstanceOf(RefundIdempotencyKeyReusedException.class);
 
         verify(refundRepository, times(0)).create(any());
         verify(refundRepository, times(0)).updateStatus(anyLong(), anyLong(), any());
@@ -312,9 +334,10 @@ class RefundServiceImplTest {
         var amount = "40.00";
         var idempotencyKey = UUID.randomUUID();
 
+        var initiatedId = 1L;
         var payment = testPayment(paymentId, 100L, "0.00");
-        var initiatedRefund = testInitiatedRefund(1L, paymentId, idempotencyKey, amount);
-        var expectedException = new PaymentGatewayUnavailableException("Stripe unavailable", new RuntimeException());
+        var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
+        var expectedException = PaymentGatewayUnavailableException.ofRefund("pi_test", initiatedId, new RuntimeException());
         when(paymentRepository.getById(paymentId)).thenReturn(payment);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(refundRepository.create(any())).thenReturn(initiatedRefund);
@@ -342,7 +365,7 @@ class RefundServiceImplTest {
         var payment = testPayment(paymentId, orderId, "0.00");
         var paymentWithRefund = testPayment(paymentId, orderId, amount);
         var initiatedRefund = testInitiatedRefund(initiatedId, paymentId, idempotencyKey, amount);
-        var expectedException = new PaymentGatewayException("invalid request", new RuntimeException());
+        var expectedException = PaymentGatewayRejectedException.ofRefund("pi_test", initiatedId, new RuntimeException());
         // loaded at the start, when creating the refund, and again when releasing it
         when(paymentRepository.getById(paymentId)).thenReturn(payment, payment, paymentWithRefund);
         when(refundRepository.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());

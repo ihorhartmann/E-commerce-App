@@ -1,15 +1,16 @@
 package com.hartmann.application.service;
 
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
 import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.RefundService;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
-import com.hartmann.application.service.exception.IdempotencyKeyReusedException;
+import com.hartmann.application.service.exception.ConflictingRefundNotFoundException;
+import com.hartmann.application.service.exception.RefundIdempotencyKeyReusedException;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
 import com.hartmann.domain.value.Money;
@@ -68,7 +69,7 @@ public class RefundServiceImpl implements RefundService {
         SubmitRefundResult result;
         try {
             result = paymentGateway.submitRefund(payment.externalId(), refund);
-        } catch (PaymentGatewayException e) {
+        } catch (PaymentGatewayRejectedException e) {
             refund.fail();
             transactionTemplate.executeWithoutResult(_ -> {
                 refundRepository.updateStatus(refund.id(), refund.version(), refund.status());
@@ -104,8 +105,7 @@ public class RefundServiceImpl implements RefundService {
                 .orElseGet(() -> createRefund(paymentId, idempotencyKey, amount));
 
         if (!refund.matchesPaymentIdAndAmount(paymentId, amount)) {
-            throw new IdempotencyKeyReusedException(
-                    "Idempotency key " + idempotencyKey + " was already used for refund " + refund.id());
+            throw new RefundIdempotencyKeyReusedException(idempotencyKey, refund.id());
         }
 
         return refund;
@@ -126,8 +126,13 @@ public class RefundServiceImpl implements RefundService {
             // between the find and the create above - resume that one instead. This transaction rolled
             // back, so its balance change is gone too. The conflicting row is committed by the time
             // create returns and refunds are never deleted, so it's always found.
-            return refundRepository.findByIdempotencyKey(idempotencyKey).orElseThrow(() -> new IllegalStateException(
-                    "Refund with idempotency key " + idempotencyKey + " conflicted on insert but can't be found"));
+            return refundRepository.findByIdempotencyKey(idempotencyKey).orElseThrow(() -> {
+                var notFound = new ConflictingRefundNotFoundException(idempotencyKey);
+                // suppressed, not the cause: as the cause, the conflict would be reported instead of this
+                // internal failure (the error handlers report the outermost exception of ours in the chain)
+                notFound.addSuppressed(e);
+                return notFound;
+            });
         }
     }
 

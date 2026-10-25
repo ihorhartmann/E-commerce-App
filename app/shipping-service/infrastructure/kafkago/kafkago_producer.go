@@ -33,7 +33,9 @@ func (p *kafkaGoMessageProducer) SendBatch(messages []*dto.OutboxMessage) error 
 	slog.Debug("sending kafka message batch", "count", len(messages))
 
 	if err := p.writer.WriteMessages(context.Background(), toLibMessages(messages)...); err != nil {
-		return err
+		return ErrPublishFailure.
+			WithAttrs(slog.String("topic", p.writer.Topic), slog.Int("count", len(messages))).
+			WithCause(err)
 	}
 
 	slog.Info("successfully sent kafka message batch", "count", len(messages))

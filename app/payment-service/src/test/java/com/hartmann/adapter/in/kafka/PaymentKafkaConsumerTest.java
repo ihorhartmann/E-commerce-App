@@ -2,11 +2,11 @@ package com.hartmann.adapter.in.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.adapter.in.kafka.exception.InvalidMessageHeaderException;
-import com.hartmann.adapter.in.kafka.exception.NonRetryableException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.adapter.in.kafka.exception.MalformedPayloadException;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.out.repository.exception.PaymentNotFoundException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
@@ -77,52 +77,50 @@ class PaymentKafkaConsumerTest {
     }
 
     @Test
-    void onMessage_throwsANonRetryableExceptionWithoutCallingEitherServiceWhenThePayloadIsMalformedJson() {
+    void onMessage_throwsAMalformedPayloadExceptionWithoutCallingEitherServiceWhenThePayloadIsMalformedJson() {
         var messageId = UUID.randomUUID().toString();
 
         assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId, "corr-3", "not json"))
-                .isInstanceOf(NonRetryableException.class)
+                .isInstanceOf(MalformedPayloadException.class)
                 .hasCauseInstanceOf(JacksonException.class);
 
         verifyNoInteractions(paymentService, refundService);
     }
 
     @Test
-    void onMessage_throwsANonRetryableExceptionWithoutCallingEitherServiceWhenTheMessageIdIsNotAUuid() {
+    void onMessage_throwsAnInvalidMessageHeaderExceptionWithoutCallingEitherServiceWhenTheMessageIdIsNotAUuid() {
         var payload = "{\"orderId\":100,\"amount\":40.00,\"currency\":\"USD\"}";
         var messageId = "msg-4";
 
         assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId, "corr-4", payload))
-                .isInstanceOf(NonRetryableException.class)
-                .hasCauseInstanceOf(InvalidMessageHeaderException.class);
+                .isInstanceOf(InvalidMessageHeaderException.class);
 
         verifyNoInteractions(paymentService, refundService);
     }
 
     @Test
-    void onMessage_wrapsANonRetryableServiceFailureInANonRetryableException() {
+    void onMessage_rethrowsAPermanentServiceFailureAsItIs() {
         var orderId = 100L;
         var payload = "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}";
-        var cause = new ObjectNotFoundException("no payment for order " + orderId);
-        when(paymentService.getByOrderId(orderId)).thenThrow(cause);
+        var expectedException = PaymentNotFoundException.withOrderId(orderId);
+        when(paymentService.getByOrderId(orderId)).thenThrow(expectedException);
 
         assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, UUID.randomUUID().toString(), "corr-5", payload))
-                .isInstanceOf(NonRetryableException.class)
-                .hasCause(cause);
+                .isSameAs(expectedException);
 
         verify(paymentService, times(1)).getByOrderId(orderId);
         verifyNoInteractions(refundService);
     }
 
     @Test
-    void onMessage_rethrowsARetryableServiceFailureUnwrapped() {
+    void onMessage_rethrowsARetryableServiceFailureAsItIs() {
         var paymentId = 1L;
         var orderId = 100L;
         var amount = new Money(new BigDecimal("40.00"), Currency.USD);
         var payload = "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}";
         var messageId = UUID.randomUUID();
         var correlationId = "corr-6";
-        var expectedException = new PaymentGatewayUnavailableException("Stripe unavailable", new RuntimeException());
+        var expectedException = PaymentGatewayUnavailableException.ofRefund("pi_test", paymentId, new RuntimeException());
         when(paymentService.getByOrderId(orderId)).thenReturn(testPayment(paymentId, orderId));
         when(refundService.submitRefund(messageId, correlationId, paymentId, amount)).thenThrow(expectedException);
 

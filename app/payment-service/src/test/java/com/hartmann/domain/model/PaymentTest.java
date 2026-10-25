@@ -1,8 +1,14 @@
 package com.hartmann.domain.model;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.model.exception.InconsistentPaymentException;
+import com.hartmann.domain.model.exception.InvalidPaymentOrderIdException;
+import com.hartmann.domain.model.exception.PaymentInvariantViolatedException;
+import com.hartmann.domain.model.exception.PaymentNotRefundableException;
+import com.hartmann.domain.model.exception.PaymentTransitionNotAllowedException;
+import com.hartmann.domain.model.exception.RefundExceedsBalanceException;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
+import com.hartmann.domain.value.exception.CurrencyMismatchException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -41,7 +47,7 @@ class PaymentTest {
     // --- constructor validation ---
 
     @Test
-    void constructor_createsAPaymentWithTheGivenFields() {
+    void createExisting_createsAPaymentWithTheGivenFields() {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "0.00");
 
         assertThat(payment.orderId()).isEqualTo(100L);
@@ -50,31 +56,31 @@ class PaymentTest {
     }
 
     @Test
-    void constructor_rejectsANonPositiveOrderId() {
+    void createExisting_rejectsANonPositiveOrderId() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 0L, "pi_test", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsANullExternalIdWhenNotInitiated() {
+    void createExisting_rejectsANullExternalIdWhenNotInitiated() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsABlankExternalIdWhenNotInitiated() {
+    void createExisting_rejectsABlankExternalIdWhenNotInitiated() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "  ", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_allowsANullExternalIdWhenInitiated() {
+    void createExisting_allowsANullExternalIdWhenInitiated() {
         var now = Instant.now();
         var payment = Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
                 PaymentStatus.INITIATED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
@@ -83,7 +89,7 @@ class PaymentTest {
     }
 
     @Test
-    void constructor_allowsANullExternalIdWhenExpired() {
+    void createExisting_allowsANullExternalIdWhenExpired() {
         var now = Instant.now();
         var payment = Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
                 PaymentStatus.EXPIRED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
@@ -92,7 +98,7 @@ class PaymentTest {
     }
 
     @Test
-    void constructor_allowsANullExternalIdWhenFailed() {
+    void createExisting_allowsANullExternalIdWhenFailed() {
         var now = Instant.now();
         var payment = Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
                 PaymentStatus.FAILED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
@@ -101,45 +107,45 @@ class PaymentTest {
     }
 
     @Test
-    void constructor_rejectsANullAmount() {
+    void createExisting_rejectsANullAmount() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "pi_test", null,
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsANullStatus() {
+    void createExisting_rejectsANullStatus() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "pi_test", money("10.00", Currency.USD),
                 null, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsANullRefundedAmount() {
+    void createExisting_rejectsANullRefundedAmount() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "pi_test", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, null, 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsARefundedAmountInAnotherCurrency() {
+    void createExisting_rejectsARefundedAmountInAnotherCurrency() {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(1L, 100L, "pi_test", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.EUR), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsARefundedAmountAboveTheAmount() {
+    void createExisting_rejectsARefundedAmountAboveTheAmount() {
         assertThatThrownBy(() -> testPayment(PaymentStatus.CONFIRMED, "10.00", "10.01"))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsNullCreatedAt() {
+    void createExisting_rejectsNullCreatedAt() {
         var now = Instant.now();
         var id = 1L;
         var orderId = 100L;
@@ -148,11 +154,11 @@ class PaymentTest {
         var status = PaymentStatus.CONFIRMED;
         var refundedAmount = money("0.00", Currency.USD);
         assertThatThrownBy(() -> Payment.createExisting(id, orderId, externalId, amount, status, refundedAmount, 0L, null, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_rejectsNullExpiresAt() {
+    void createExisting_rejectsNullExpiresAt() {
         var now = Instant.now();
         var id = 1L;
         var orderId = 100L;
@@ -161,11 +167,11 @@ class PaymentTest {
         var status = PaymentStatus.CONFIRMED;
         var refundedAmount = money("0.00", Currency.USD);
         assertThatThrownBy(() -> Payment.createExisting(id, orderId, externalId, amount, status, refundedAmount, 0L, now, now, null))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     @Test
-    void constructor_allowsNullUpdatedAt() {
+    void createExisting_allowsNullUpdatedAt() {
         var now = Instant.now();
         var payment = Payment.createExisting(1L, 100L, "pi_test", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, null, now.plusSeconds(EXPIRES_IN_SECONDS));
@@ -188,6 +194,18 @@ class PaymentTest {
         assertThat(payment.expiresAt()).isAfter(Instant.now());
     }
 
+    @Test
+    void createNew_rejectsANonPositiveOrderIdAsAnInvalidRequest() {
+        assertThatThrownBy(() -> Payment.createNew(0L, money("10.00", Currency.USD)))
+                .isInstanceOf(InvalidPaymentOrderIdException.class);
+    }
+
+    @Test
+    void createNew_rejectsAMissingAmountAsAViolatedInvariant() {
+        assertThatThrownBy(() -> Payment.createNew(100L, null))
+                .isInstanceOf(PaymentInvariantViolatedException.class);
+    }
+
     // --- createExisting ---
 
     @Test
@@ -202,7 +220,7 @@ class PaymentTest {
         var now = Instant.now();
         assertThatThrownBy(() -> Payment.createExisting(0L, 100L, "pi_test", money("10.00", Currency.USD),
                 PaymentStatus.CONFIRMED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS)))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentPaymentException.class);
     }
 
     // --- requestRefund ---
@@ -213,7 +231,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", refundedAmount);
 
         assertThatThrownBy(() -> payment.requestRefund(money("10.00", Currency.USD), UUID.randomUUID()))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(PaymentNotRefundableException.class);
         assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
@@ -222,7 +240,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "0.00");
 
         assertThatThrownBy(() -> payment.requestRefund(money("10.00", Currency.EUR), UUID.randomUUID()))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(CurrencyMismatchException.class);
     }
 
     @Test
@@ -257,7 +275,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", refundedAmount);
 
         assertThatThrownBy(() -> payment.requestRefund(money("60.01", Currency.USD), UUID.randomUUID()))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(RefundExceedsBalanceException.class);
         assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
@@ -278,7 +296,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", refundedAmount);
         var refund = testRefund(payment.id(), "40.00", RefundStatus.PENDING);
 
-        assertThatThrownBy(() -> payment.releaseRefund(refund)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> payment.releaseRefund(refund)).isInstanceOf(PaymentInvariantViolatedException.class);
         assertThat(payment.refundedAmount()).isEqualTo(money(refundedAmount, Currency.USD));
     }
 
@@ -287,7 +305,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "70.00");
         var refund = testRefund(payment.id() + 1, "40.00", RefundStatus.FAILED);
 
-        assertThatThrownBy(() -> payment.releaseRefund(refund)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> payment.releaseRefund(refund)).isInstanceOf(PaymentInvariantViolatedException.class);
     }
 
     // --- wasSubmitted ---
@@ -320,14 +338,14 @@ class PaymentTest {
     void markPending_throwsWhenThePaymentIsNotInitiated() {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
 
-        assertThatThrownBy(() -> payment.markPending("pi_new")).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> payment.markPending("pi_new")).isInstanceOf(PaymentTransitionNotAllowedException.class);
     }
 
     @Test
     void markPending_throwsForABlankExternalIdLeavingThePaymentInitiated() {
         var payment = testInitiatedPayment();
 
-        assertThatThrownBy(() -> payment.markPending(" ")).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> payment.markPending(" ")).isInstanceOf(PaymentInvariantViolatedException.class);
         assertThat(payment.status()).isEqualTo(PaymentStatus.INITIATED);
         assertThat(payment.externalId()).isNull();
     }
@@ -347,7 +365,7 @@ class PaymentTest {
     void fail_throwsWhenThePaymentIsNotInitiated() {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
 
-        assertThatThrownBy(payment::fail).isInstanceOf(DomainException.class);
+        assertThatThrownBy(payment::fail).isInstanceOf(PaymentTransitionNotAllowedException.class);
         assertThat(payment.status()).isEqualTo(PaymentStatus.PENDING);
     }
 
@@ -378,7 +396,7 @@ class PaymentTest {
             var payment = testPayment(status, "100.00", "0.00");
 
             assertThatThrownBy(() -> payment.applyGatewayStatus(PaymentStatus.CONFIRMED))
-                    .isInstanceOf(DomainException.class);
+                    .isInstanceOf(PaymentTransitionNotAllowedException.class);
             assertThat(payment.status()).isEqualTo(status);
         }
     }
@@ -396,7 +414,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "0.00");
 
         assertThatThrownBy(() -> payment.applyGatewayStatus(PaymentStatus.ATTEMPT_DECLINED))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(PaymentTransitionNotAllowedException.class);
     }
 
     @Test
@@ -404,7 +422,7 @@ class PaymentTest {
         var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
 
         assertThatThrownBy(() -> payment.applyGatewayStatus(PaymentStatus.EXPIRED))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(PaymentInvariantViolatedException.class);
     }
 
     // --- equals ---

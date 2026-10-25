@@ -2,7 +2,6 @@ package transaction
 
 import (
 	"context"
-	"errors"
 
 	"gorm.io/gorm"
 )
@@ -26,7 +25,7 @@ func FromWithDefault(ctx context.Context, defTx *gorm.DB) *gorm.DB {
 func From(ctx context.Context) (*gorm.DB, error) {
 	tx, ok := ctx.Value(txKey).(*gorm.DB)
 	if !ok {
-		return nil, errors.New("tx key not found in context")
+		return nil, ErrNoTransaction.WithInternalMessage("tx key not found in context")
 	}
 	return tx, nil
 }

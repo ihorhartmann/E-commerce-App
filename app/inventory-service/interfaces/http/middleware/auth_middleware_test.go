@@ -9,6 +9,7 @@ import (
 
 	"inventoryservice/interfaces/http/auth"
 	"inventoryservice/interfaces/http/auth/mocks"
+	"inventoryservice/interfaces/http/httperror"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -26,7 +27,7 @@ const (
 // newAuthTestApp registers the middleware ahead of handlers on the service's real routes that answer 200 and report
 // the principal they saw.
 func newAuthTestApp(verifier auth.TokenVerifier) *fiber.App {
-	app := fiber.New(fiber.Config{ErrorHandler: HandleError})
+	app := fiber.New(fiber.Config{ErrorHandler: HandleMiddlewareError})
 	app.Use(NewAuthMiddleware(verifier).Handle)
 	handler := func(c *fiber.Ctx) error {
 		principal, _ := c.Locals(principalLocalsKey).(auth.Principal)
@@ -167,7 +168,7 @@ func TestAuthMiddleware_Handle(t *testing.T) {
 		verifier := mocks.NewMockTokenVerifier(ctrl)
 		token := "expired-token"
 		verifier.EXPECT().Verify(gomock.Any(), token).
-			Return(auth.Principal{}, errors.Join(auth.ErrInvalidToken, errors.New("token is expired"))).Times(1)
+			Return(auth.Principal{}, httperror.ErrInvalidToken.WithCause(errors.New("token is expired"))).Times(1)
 
 		resp := doRequest(t, newAuthTestApp(verifier), http.MethodPut, productPath, "Bearer "+token)
 

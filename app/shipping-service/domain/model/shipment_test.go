@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"shippingservice/domain"
 	"shippingservice/domain/value"
 
 	"github.com/google/uuid"
@@ -81,8 +80,8 @@ func TestNewShipment(t *testing.T) {
 	t.Run("rejects a zero orderId", func(t *testing.T) {
 		_, err := NewShipment(0, testAddress(t))
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidShipment) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidShipment)
 		}
 	})
 }
@@ -125,24 +124,24 @@ func TestNewExistingShipment(t *testing.T) {
 	t.Run("rejects a zero id", func(t *testing.T) {
 		_, err := NewExistingShipment(0, 100, uuid.Nil, testAddress(t), Created, HolderInventory, NoCancellationReason, now, now, 0)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentShipment) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentShipment)
 		}
 	})
 
 	t.Run("rejects a zero orderId", func(t *testing.T) {
 		_, err := NewExistingShipment(1, 0, uuid.Nil, testAddress(t), Created, HolderInventory, NoCancellationReason, now, now, 0)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentShipment) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentShipment)
 		}
 	})
 
 	t.Run("rejects a state a shipment can't be in", func(t *testing.T) {
 		_, err := NewExistingShipment(1, 100, uuid.Nil, testAddress(t), InDelivery, HolderCourier, NoCancellationReason, now, now, 0)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentShipment) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentShipment)
 		}
 	})
 }

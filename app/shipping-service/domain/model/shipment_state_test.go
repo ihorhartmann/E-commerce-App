@@ -4,8 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"shippingservice/domain"
-
 	"github.com/google/uuid"
 )
 
@@ -95,8 +93,8 @@ func TestNewShipmentState(t *testing.T) {
 		}
 		for _, testCase := range testCases {
 			_, err := newShipmentState(testCase.status, testCase.holder, testCase.courierID, testCase.cancellationReason)
-			if !errors.Is(err, domain.ErrInvalidInput) {
-				t.Errorf("%s: err = %v, want %v", testCase.name, err, domain.ErrInvalidInput)
+			if !errors.Is(err, ErrInconsistentShipment) {
+				t.Errorf("%s: err = %v, want %v", testCase.name, err, ErrInconsistentShipment)
 			}
 		}
 	})
@@ -132,7 +130,7 @@ func TestShipmentState_StartDelivery(t *testing.T) {
 
 		err := state.startDelivery(uuid.Nil)
 
-		assertRejected(t, err, domain.ErrInvalidInput, state, before)
+		assertRejected(t, err, ErrMissingCourier, state, before)
 	})
 
 	t.Run("rejects a shipment that is not Created, leaving the state unchanged", func(t *testing.T) {
@@ -224,7 +222,7 @@ func TestShipmentState_Cancel(t *testing.T) {
 
 		err := state.cancel(RecipientRefused)
 
-		assertRejected(t, err, domain.ErrInvalidInput, state, before)
+		assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 	})
 
 	t.Run("rejects a missing or unknown reason, leaving the state unchanged", func(t *testing.T) {
@@ -234,7 +232,7 @@ func TestShipmentState_Cancel(t *testing.T) {
 
 			err := state.cancel(reason)
 
-			assertRejected(t, err, domain.ErrInvalidInput, state, before)
+			assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 		}
 	})
 
@@ -327,7 +325,7 @@ func TestShipmentState_Change(t *testing.T) {
 
 		err := state.change(InDelivery, HolderInventory, uuid.Nil, NoCancellationReason)
 
-		assertRejected(t, err, domain.ErrInvalidInput, state, before)
+		assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 	})
 }
 

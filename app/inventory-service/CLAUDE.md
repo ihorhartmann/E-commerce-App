@@ -134,7 +134,8 @@ Contains entry points to the service and invoke the business logic in the `Appli
 
 This layer may depend on the `Application` and `Domain` layers.
 
-HTTP error handling must be declared in an `errors.go` file located next to the controller where it is used.
+A controller returns an error as it is - it never maps it to a status; see [Error handling](#error-handling). Only an
+error that isn't ours yet gets a sentinel there, e.g. `c.BodyParser`'s as `httperror.ErrMalformedRequestBody`.
 
 Each controller must provide a `RegisterRoutes` function responsible for registering all controller routes. See the
 [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for controller/consumer naming conventions.
@@ -147,7 +148,7 @@ Packages are grouped by transport or technology type.
 interfaces/
 ├── http/
 │   ├── dto/
-│   ├── errors/
+│   ├── httperror/
 │   ├── idempotency/
 │   └── middleware/
 ├── kafka/
@@ -179,3 +180,53 @@ rows, implemented by `infrastructure/idempotency`) but owns all of the actual de
 branches on what a conflict or a stale record means. `HTTPIdempotencyService` lives here, not in `Application`,
 because its whole purpose is specific to the HTTP idempotency-key pattern (an `Interfaces`-owned concern, same
 reasoning as `interfaces/kafka/kafkago` above), not to orchestrating domain behavior.
+
+## Error handling
+
+Every error is a `domain/apperror.Error`: a sentinel declared once, as a package-level variable in the `errors.go`
+next to the code that returns it, or an occurrence of it made by the sentinel's `With*` methods.
+
+```go
+var ErrInsufficientStock = apperror.New("INSUFFICIENT_STOCK", apperror.CategoryConflict, "Insufficient stock")
+
+return ErrInsufficientStock.
+	WithInternalMessage("cannot reserve product stock").
+	WithAttrs(slog.Uint64("productID", id), slog.Uint64("available", available))
+```
+
+* The code (`INVENTORY.INSUFFICIENT_STOCK` - `New` adds the service prefix) and the title are public and the same for
+  every occurrence; keep codes specific (`PRODUCT_NOT_FOUND`, not `NOT_FOUND`). The category alone decides the HTTP
+  status, whether a Kafka message is retried or dead-lettered at once (permanent categories: invalid, not found,
+  conflict), and whether the idempotency middleware caches the response or releases the key.
+* The internal message and the attrs never leave the service; keep the internal message constant and put every value
+  in the attrs. The external message (`WithExternalMessage`) is the only per-occurrence text a caller sees.
+* An error gets its sentinel where it first enters this service's code: a domain rule, a Postgres repository turning
+  a gorm error into its `ErrDatabaseFailure.WithCause(err)`, a controller turning a `BodyParser` error into
+  `httperror.ErrMalformedRequestBody.WithCause(err)`. An error that already is one of ours is returned as it is -
+  giving it to `WithCause` of another sentinel replaces its code; do that only on purpose.
+* A sentinel lives where the root CLAUDE.md puts errors: next to a port only if the port's callers branch on it
+  (`repository.ErrProductNotFound`, `repository.ErrConcurrentUpdate`), otherwise next to the adapter that returns it
+  (`infrastructure/repository.ErrDatabaseFailure`, `infrastructure/idempotency/store.ErrStoreFailure`,
+  `infrastructure/gorm/transaction.ErrTransactionFailure`).
+* Stored data that breaks a domain rule is corrupted, not an invalid request: the `NewExisting*` constructors and the
+  entity mappers report it as `ErrInconsistentProduct`/`ErrInconsistentReservation` (internal).
+* A rule only this service's own code can break - a call no caller should make, e.g. applying another product's
+  reservation to a product - is a bug, neither corrupted data nor a request to reject: `ErrProductInvariantViolated`
+  (internal), with an internal message saying which rule. Keep it apart from `ErrInconsistent*`, so the code tells
+  whether to look at the data or at the code.
+* Keep errors in variables and results of type `error`, never `*apperror.Error`: a nil `*Error` returned as an `error`
+  is not a nil error.
+* Log an error once, where it is handled - `httperror.Write`, the Kafka consumer, a sweep - with
+  `apperror.LogAttr(err)`, not `"error", err`.
+
+HTTP error responses are RFC 9457 problem details, written only by `httperror.Write`. It is called at two points of
+the middleware chain, in this order in `main.go` (see `interfaces/http/middleware/error_handler_middleware.go`):
+`Recover` -> `LoggingMiddleware` -> `AuthMiddleware` -> `IdempotencyMiddleware` -> `HandleControllerError` -> routes,
+with `HandleMiddlewareError` as Fiber's `ErrorHandler`. `HandleControllerError` writes a controller's error right after
+it, so `IdempotencyMiddleware` sees the final response; `HandleMiddlewareError` writes the errors of the middleware
+above it. A status that differs from the category's default (401, 403, 405, 413, 422) is listed in
+`httperror.StatusOf`.
+
+A panic is recovered - in a controller by `HandleControllerError`, in a middleware by `Recover`, in a Kafka handler by
+the consumer, in a sweep by the sweep itself - and becomes an `apperror.ErrInternal` occurrence via
+`apperror.FromPanic`.

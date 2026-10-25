@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"inventoryservice/domain"
 	"inventoryservice/domain/values"
 
 	"github.com/shopspring/decimal"
@@ -54,8 +53,8 @@ func TestNewProduct(t *testing.T) {
 
 	t.Run("rejects a blank name", func(t *testing.T) {
 		_, err := NewProduct(1, "  ", "a widget", testMoney(t), 10)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductName) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductName)
 		}
 	})
 
@@ -66,8 +65,8 @@ func TestNewProduct(t *testing.T) {
 		}
 
 		_, err = NewProduct(1, "Widget", "a widget", price, 10)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductPrice) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductPrice)
 		}
 	})
 
@@ -100,22 +99,22 @@ func TestNewExistingProduct(t *testing.T) {
 
 	t.Run("rejects a zero id", func(t *testing.T) {
 		_, err := NewExistingProduct(0, "Widget", "a widget", testMoney(t), 10, 0, 0)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentProduct) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}
 	})
 
-	t.Run("rejects more reserved than on hand", func(t *testing.T) {
+	t.Run("reports more reserved than on hand as an inconsistent product", func(t *testing.T) {
 		_, err := NewExistingProduct(1, "Widget", "a widget", testMoney(t), 5, 6, 0)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentProduct) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}
 	})
 
-	t.Run("rejects a blank name even with an id set", func(t *testing.T) {
+	t.Run("reports a stored blank name as an inconsistent product", func(t *testing.T) {
 		_, err := NewExistingProduct(1, "", "a widget", testMoney(t), 10, 0, 0)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentProduct) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}
 	})
 }
@@ -183,8 +182,8 @@ func TestProduct_Update(t *testing.T) {
 		product := newTestProduct(t, 10, 4)
 
 		err := product.Update(" ", "a widget", testMoney(t), 10)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductName) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductName)
 		}
 	})
 
@@ -197,8 +196,8 @@ func TestProduct_Update(t *testing.T) {
 		}
 
 		err = product.Update("Gadget", "a gadget", zeroPrice, 20)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductPrice) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductPrice)
 		}
 		if !product.Price().Equal(price) {
 			t.Errorf("Price() = %+v, want %+v (unchanged)", product.Price(), price)
@@ -301,8 +300,8 @@ func TestProduct_ReleaseReservation(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID()+1, 100, 4, ReservationHolderBuyer)
 
 		err := product.ReleaseReservation(reservation)
-		if !errors.Is(err, ErrForeignReservation) {
-			t.Errorf("err = %v, want %v", err, ErrForeignReservation)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 		if product.Reserved() != reserved {
 			t.Errorf("Reserved() = %d, want %d (unchanged)", product.Reserved(), reserved)
@@ -314,8 +313,8 @@ func TestProduct_ReleaseReservation(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
 
 		err := product.ReleaseReservation(reservation)
-		if !errors.Is(err, ErrReservedQuantityMismatch) {
-			t.Errorf("err = %v, want %v", err, ErrReservedQuantityMismatch)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 }
@@ -340,8 +339,8 @@ func TestProduct_Fulfill(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID()+1, 100, 4, ReservationHolderCourier)
 
 		err := product.Fulfill(reservation)
-		if !errors.Is(err, ErrForeignReservation) {
-			t.Errorf("err = %v, want %v", err, ErrForeignReservation)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 
@@ -350,8 +349,8 @@ func TestProduct_Fulfill(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderCourier)
 
 		err := product.Fulfill(reservation)
-		if !errors.Is(err, ErrReservedQuantityMismatch) {
-			t.Errorf("err = %v, want %v", err, ErrReservedQuantityMismatch)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 

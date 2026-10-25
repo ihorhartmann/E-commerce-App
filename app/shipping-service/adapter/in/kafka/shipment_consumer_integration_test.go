@@ -5,7 +5,6 @@ package kafka_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -19,7 +18,6 @@ import (
 	servicemocks "shippingservice/application/port/in/mocks"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
 	outboxdto "shippingservice/application/port/out/outbox/dto"
-	"shippingservice/domain"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 	"shippingservice/infrastructure/kafkago"
@@ -312,7 +310,7 @@ func TestShipmentKafkaConsumer_Integration(t *testing.T) {
 		shipmentService := servicemocks.NewMockShipmentService(gomock.NewController(t))
 		shipmentService.EXPECT().
 			CreateShipment(gomock.Any(), gomock.Any(), orderID, wantAddress).
-			Return(nil, fmt.Errorf("create shipment: %w", domain.ErrInvalidInput)).
+			Return(nil, model.ErrInvalidShipment.WithInternalMessage("rejected by the domain")).
 			Times(1)
 
 		consumer := kafkago.NewKafkaGoMessageConsumer([]string{brokerAddr}, topic, group)

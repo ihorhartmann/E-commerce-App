@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.InvalidAddressException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -31,17 +32,17 @@ class AddressTest {
 
     @Test
     fun `constructor - rejects a blank city`() {
-        assertThrows<IllegalArgumentException> { testAddress(city = "") }
+        assertThrows<InvalidAddressException> { testAddress(city = "") }
     }
 
     @Test
     fun `constructor - rejects a blank postal code`() {
-        assertThrows<IllegalArgumentException> { testAddress(postalCode = "") }
+        assertThrows<InvalidAddressException> { testAddress(postalCode = "") }
     }
 
     @Test
     fun `constructor - rejects a blank line1`() {
-        assertThrows<IllegalArgumentException> { testAddress(line1 = "") }
+        assertThrows<InvalidAddressException> { testAddress(line1 = "") }
     }
 
     @Test

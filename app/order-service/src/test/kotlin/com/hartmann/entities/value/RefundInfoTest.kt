@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.RefundTransitionNotAllowedException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -37,7 +38,7 @@ class RefundInfoTest {
     fun `confirm - throws when already confirmed`() {
         val refund = RefundInfo.request().confirm(testAmount())
 
-        assertThrows<IllegalStateException> { refund.confirm(testAmount()) }
+        assertThrows<RefundTransitionNotAllowedException> { refund.confirm(testAmount()) }
     }
 
     @Test
@@ -52,6 +53,6 @@ class RefundInfoTest {
     fun `markFailed - throws when already confirmed`() {
         val refund = RefundInfo.request().confirm(testAmount())
 
-        assertThrows<IllegalStateException> { refund.markFailed() }
+        assertThrows<RefundTransitionNotAllowedException> { refund.markFailed() }
     }
 }

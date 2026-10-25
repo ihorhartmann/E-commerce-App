@@ -13,13 +13,14 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/mock/gomock"
 
+	"inventoryservice/application"
 	"inventoryservice/application/dto"
 	"inventoryservice/application/port/in/mocks"
 	"inventoryservice/application/port/out/repository"
-	"inventoryservice/domain"
+	"inventoryservice/domain/apperror"
 	"inventoryservice/domain/model"
 	"inventoryservice/domain/values"
-	httperrors "inventoryservice/interfaces/http/errors"
+	"inventoryservice/interfaces/http/httperror"
 	"inventoryservice/interfaces/http/middleware"
 
 	"github.com/shopspring/decimal"
@@ -44,7 +45,8 @@ func testProduct(t *testing.T, id uint64, quantity, reserved uint) *model.Produc
 }
 
 func newProductTestApp(productService *mocks.MockProductService) *fiber.App {
-	app := fiber.New(fiber.Config{ErrorHandler: middleware.HandleError})
+	app := fiber.New(fiber.Config{ErrorHandler: middleware.HandleMiddlewareError})
+	app.Use(middleware.HandleControllerError)
 	NewProductController(productService).RegisterRoutes(app)
 	return app
 }
@@ -111,8 +113,8 @@ func TestProductController_CreateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != httperrors.ErrInvalidRequestBody.Error() {
-			t.Errorf("error = %v, want %q", body["error"], httperrors.ErrInvalidRequestBody.Error())
+		if body["code"] != httperror.ErrMalformedRequestBody.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrMalformedRequestBody.Code())
 		}
 	})
 
@@ -133,8 +135,8 @@ func TestProductController_CreateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != domain.ErrInvalidInput.Error() {
-			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		if body["code"] != model.ErrInvalidProductName.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrInvalidProductName.Code())
 		}
 	})
 
@@ -155,8 +157,8 @@ func TestProductController_CreateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != "product price must be in EUR: got USD" {
-			t.Errorf("error = %v, want the unsupported currency", body["error"])
+		if body["code"] != model.ErrUnsupportedPriceCurrency.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrUnsupportedPriceCurrency.Code())
 		}
 	})
 
@@ -212,8 +214,8 @@ func TestProductController_CreateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != domain.ErrInvalidInput.Error() {
-			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		if body["code"] != values.ErrInvalidMoneyAmount.Code() {
+			t.Errorf("code = %v, want %q", body["code"], values.ErrInvalidMoneyAmount.Code())
 		}
 	})
 
@@ -234,8 +236,8 @@ func TestProductController_CreateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != apperror.ErrInternal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }
@@ -287,8 +289,8 @@ func TestProductController_UpdateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != httperrors.ErrInvalidProductID.Error() {
-			t.Errorf("error = %v, want %q", body["error"], httperrors.ErrInvalidProductID.Error())
+		if body["code"] != httperror.ErrInvalidPathParam.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrInvalidPathParam.Code())
 		}
 	})
 
@@ -309,8 +311,8 @@ func TestProductController_UpdateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 409", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != model.ErrQuantityBelowReserved.Error() {
-			t.Errorf("error = %v, want %q", body["error"], model.ErrQuantityBelowReserved.Error())
+		if body["code"] != model.ErrQuantityBelowReserved.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrQuantityBelowReserved.Code())
 		}
 	})
 
@@ -332,8 +334,8 @@ func TestProductController_UpdateProduct(t *testing.T) {
 		}
 		// like every 5xx, it only tells the client something went wrong, not what
 		body := decodeBody(t, resp.Body)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != repository.ErrConcurrentUpdate.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrConcurrentUpdate.Code())
 		}
 	})
 
@@ -354,8 +356,8 @@ func TestProductController_UpdateProduct(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != repository.ErrProductNotFound.Error() {
-			t.Errorf("error = %v, want %q", body["error"], repository.ErrProductNotFound.Error())
+		if body["code"] != repository.ErrProductNotFound.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrProductNotFound.Code())
 		}
 	})
 }
@@ -408,8 +410,8 @@ func TestProductController_GetProduct(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != repository.ErrProductNotFound.Error() {
-			t.Errorf("error = %v, want %q", body["error"], repository.ErrProductNotFound.Error())
+		if body["code"] != repository.ErrProductNotFound.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrProductNotFound.Code())
 		}
 	})
 }
@@ -511,8 +513,8 @@ func TestProductController_GetProducts(t *testing.T) {
 				t.Errorf("%s: status = %d, want 400", query, resp.StatusCode)
 			}
 			body := decodeBody(t, resp.Body)
-			if body["error"] != httperrors.ErrInvalidPageParam.Error() {
-				t.Errorf("%s: error = %v, want %q", query, body["error"], httperrors.ErrInvalidPageParam.Error())
+			if body["code"] != httperror.ErrInvalidQueryParam.Code() {
+				t.Errorf("%s: code = %v, want %q", query, body["code"], httperror.ErrInvalidQueryParam.Code())
 			}
 		}
 	})
@@ -520,7 +522,7 @@ func TestProductController_GetProducts(t *testing.T) {
 	t.Run("returns 400 when the service rejects the page", func(t *testing.T) {
 		size := 101
 		productService := mocks.NewMockProductService(gomock.NewController(t))
-		productService.EXPECT().GetProducts(gomock.Any(), 0, size).Return(nil, domain.ErrInvalidInput).Times(1)
+		productService.EXPECT().GetProducts(gomock.Any(), 0, size).Return(nil, application.ErrInvalidPage).Times(1)
 		app := newProductTestApp(productService)
 
 		req := httptest.NewRequest("GET", "/products?size=101", nil)
@@ -533,8 +535,8 @@ func TestProductController_GetProducts(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != domain.ErrInvalidInput.Error() {
-			t.Errorf("error = %v, want %q", body["error"], domain.ErrInvalidInput.Error())
+		if body["code"] != application.ErrInvalidPage.Code() {
+			t.Errorf("code = %v, want %q", body["code"], application.ErrInvalidPage.Code())
 		}
 	})
 }
@@ -573,8 +575,8 @@ func TestProductController_DeleteProduct(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != repository.ErrProductNotFound.Error() {
-			t.Errorf("error = %v, want %q", body["error"], repository.ErrProductNotFound.Error())
+		if body["code"] != repository.ErrProductNotFound.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrProductNotFound.Code())
 		}
 	})
 
@@ -594,8 +596,8 @@ func TestProductController_DeleteProduct(t *testing.T) {
 			t.Errorf("status = %d, want 409", resp.StatusCode)
 		}
 		body := decodeBody(t, resp.Body)
-		if body["error"] != model.ErrProductReserved.Error() {
-			t.Errorf("error = %v, want %q", body["error"], model.ErrProductReserved.Error())
+		if body["code"] != model.ErrProductReserved.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrProductReserved.Code())
 		}
 	})
 }

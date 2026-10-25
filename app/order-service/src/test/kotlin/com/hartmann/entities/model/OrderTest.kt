@@ -1,12 +1,19 @@
 package com.hartmann.entities.model
 
-import com.hartmann.entities.exception.DomainException
-import com.hartmann.entities.exception.OrderNotCancellableException
+import com.hartmann.entities.model.exception.InconsistentOrderException
+import com.hartmann.entities.model.exception.OrderInvariantViolatedException
+import com.hartmann.entities.model.exception.OrderNotCancellableException
+import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
+import com.hartmann.entities.model.exception.RefundAmountMismatchException
+import com.hartmann.entities.model.exception.RefundNotRequestedException
+import com.hartmann.entities.model.exception.ShipmentNotCreatedException
+import com.hartmann.entities.model.exception.UnrequestedShipmentCancellationException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.ReservedItem
 import com.hartmann.entities.value.ShipmentCancellationReason
+import com.hartmann.entities.value.exception.ShipmentTransitionNotAllowedException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -76,13 +83,13 @@ class OrderTest {
     // --- constructor ---
 
     @Test
-    fun `constructor - rejects an empty item list`() {
-        assertThrows<IllegalArgumentException> { placedOrder(items = emptyList()) }
+    fun `createExisting - reports an empty item list as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> { placedOrder(items = emptyList()) }
     }
 
     @Test
-    fun `constructor - rejects items with mismatched currencies`() {
-        assertThrows<IllegalArgumentException> {
+    fun `createExisting - reports items with mismatched currencies as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> {
             placedOrder(
                 items = listOf(
                     testItem(currency = Currency.USD),
@@ -121,11 +128,23 @@ class OrderTest {
 
     @Test
     fun `createNew - rejects an order without an id`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<OrderInvariantViolatedException> {
             Order.createNew(
                 id = 0,
                 customerId = UUID.randomUUID(),
                 reservedItems = listOf(testReservedItem()),
+                address = testAddress(),
+            )
+        }
+    }
+
+    @Test
+    fun `createNew - rejects an order without items`() {
+        assertThrows<OrderInvariantViolatedException> {
+            Order.createNew(
+                id = 1,
+                customerId = UUID.randomUUID(),
+                reservedItems = emptyList(),
                 address = testAddress(),
             )
         }
@@ -154,7 +173,7 @@ class OrderTest {
 
     @Test
     fun `createExisting - throws when id is not positive`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<InconsistentOrderException> {
             Order.createExisting(
                 id = 0,
                 customerId = UUID.randomUUID(),
@@ -209,7 +228,7 @@ class OrderTest {
 
     @Test
     fun `failPayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().apply { failPayment() } }
+        assertThrows<OrderTransitionNotAllowedException> { processingOrder().apply { failPayment() } }
     }
 
     @Test
@@ -222,7 +241,7 @@ class OrderTest {
 
     @Test
     fun `expirePayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().apply { expirePayment() } }
+        assertThrows<OrderTransitionNotAllowedException> { processingOrder().apply { expirePayment() } }
     }
 
     // --- confirmPayment ---
@@ -237,7 +256,7 @@ class OrderTest {
 
     @Test
     fun `confirmPayment - throws when order is not placed`() {
-        assertThrows<DomainException> { processingOrder().apply { confirmPayment() } }
+        assertThrows<OrderTransitionNotAllowedException> { processingOrder().apply { confirmPayment() } }
     }
 
     // --- requestCancellation ---
@@ -328,12 +347,12 @@ class OrderTest {
 
     @Test
     fun `createShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().apply { createShipment(5L) } }
+        assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { createShipment(5L) } }
     }
 
     @Test
     fun `createShipment - throws once the cancellation is confirmed`() {
-        assertThrows<DomainException> { cancelRequestedBeforePickup().apply { createShipment(6L) } }
+        assertThrows<OrderTransitionNotAllowedException> { cancelRequestedBeforePickup().apply { createShipment(6L) } }
     }
 
     @Test
@@ -354,17 +373,17 @@ class OrderTest {
 
     @Test
     fun `startDelivery - throws when order has no shipment`() {
-        assertThrows<IllegalArgumentException> { processingOrder().apply { startDelivery() } }
+        assertThrows<ShipmentNotCreatedException> { processingOrder().apply { startDelivery() } }
     }
 
     @Test
     fun `startDelivery - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().apply { startDelivery() } }
+        assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { startDelivery() } }
     }
 
     @Test
     fun `startDelivery - throws once the cancellation is confirmed`() {
-        assertThrows<DomainException> { cancelRequestedBeforePickup().apply { startDelivery() } }
+        assertThrows<OrderTransitionNotAllowedException> { cancelRequestedBeforePickup().apply { startDelivery() } }
     }
 
     @Test
@@ -386,12 +405,12 @@ class OrderTest {
 
     @Test
     fun `deliver - throws when the shipment was never picked up`() {
-        assertThrows<IllegalStateException> { orderWithShipment().apply { deliver() } }
+        assertThrows<ShipmentTransitionNotAllowedException> { orderWithShipment().apply { deliver() } }
     }
 
     @Test
     fun `deliver - throws once the cancellation is confirmed`() {
-        assertThrows<DomainException> { cancelRequestedAfterPickup().apply { deliver() } }
+        assertThrows<OrderTransitionNotAllowedException> { cancelRequestedAfterPickup().apply { deliver() } }
     }
 
     // --- loseShipment / cancelShipment (-> CANCEL_REQUESTED with a refund requested) ---
@@ -416,12 +435,12 @@ class OrderTest {
 
     @Test
     fun `loseShipment - throws when order is not processing`() {
-        assertThrows<DomainException> { placedOrder().apply { loseShipment() } }
+        assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { loseShipment() } }
     }
 
     @Test
     fun `loseShipment - throws once the cancellation is confirmed`() {
-        assertThrows<DomainException> { cancelRequestedAfterPickup().apply { loseShipment() } }
+        assertThrows<OrderTransitionNotAllowedException> { cancelRequestedAfterPickup().apply { loseShipment() } }
     }
 
     @Test
@@ -448,7 +467,7 @@ class OrderTest {
     fun `cancelShipment - rejects a cancellation for the order when nobody asked to cancel it, leaving it unchanged`() {
         val order = orderInDelivery()
 
-        assertThrows<DomainException> { order.cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED) }
+        assertThrows<UnrequestedShipmentCancellationException> { order.cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED) }
 
         assertEquals(OrderStatus.PROCESSING, order.status)
         assertNull(order.cancellationReason)
@@ -476,14 +495,14 @@ class OrderTest {
 
     @Test
     fun `cancelShipment - throws when order is not processing`() {
-        assertThrows<DomainException> {
+        assertThrows<OrderTransitionNotAllowedException> {
             placedOrder().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
         }
     }
 
     @Test
     fun `cancelShipment - throws once the cancellation is confirmed`() {
-        assertThrows<DomainException> {
+        assertThrows<OrderTransitionNotAllowedException> {
             cancelRequestedAfterPickup().apply { cancelShipment(ShipmentCancellationReason.ORDER_CANCELLED) }
         }
     }
@@ -549,7 +568,7 @@ class OrderTest {
 
     @Test
     fun `markRefundFailed - throws when there is no refund request`() {
-        assertThrows<IllegalArgumentException> { awaitingShipmentCancellation().apply { markRefundFailed() } }
+        assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { markRefundFailed() } }
     }
 
     // --- confirmRefund / returnToStock, both orderings must finalize the same way ---
@@ -599,7 +618,7 @@ class OrderTest {
     fun `confirmRefund - throws when the refunded amount differs from the requested one, leaving the order unchanged`() {
         val order = cancelRequestedBeforePickup()
 
-        assertThrows<DomainException> { order.confirmRefund(Money(BigDecimal("9.99"), Currency.EUR)) }
+        assertThrows<RefundAmountMismatchException> { order.confirmRefund(Money(BigDecimal("9.99"), Currency.EUR)) }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertFalse(order.refund!!.isConfirmed)
@@ -607,14 +626,14 @@ class OrderTest {
 
     @Test
     fun `confirmRefund - throws when there is no refund request`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<RefundNotRequestedException> {
             awaitingShipmentCancellation().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
         }
     }
 
     @Test
     fun `confirmRefund - throws when order is not cancel-requested`() {
-        assertThrows<DomainException> {
+        assertThrows<OrderTransitionNotAllowedException> {
             placedOrder().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
         }
     }
@@ -623,17 +642,17 @@ class OrderTest {
     fun `returnToStock - throws when order has no shipment`() {
         val order = processingOrder().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
 
-        assertThrows<IllegalArgumentException> { order.returnToStock() }
+        assertThrows<ShipmentNotCreatedException> { order.returnToStock() }
     }
 
     @Test
     fun `returnToStock - throws while the requested cancellation awaits shipping`() {
-        assertThrows<IllegalArgumentException> { awaitingShipmentCancellation().apply { returnToStock() } }
+        assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { returnToStock() } }
     }
 
     @Test
     fun `returnToStock - throws when order is not cancel-requested`() {
-        assertThrows<DomainException> { placedOrder().apply { returnToStock() } }
+        assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { returnToStock() } }
     }
 
     // --- wasPickedUp ---

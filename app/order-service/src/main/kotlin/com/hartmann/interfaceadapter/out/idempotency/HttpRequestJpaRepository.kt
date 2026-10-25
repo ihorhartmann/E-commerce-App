@@ -50,4 +50,12 @@ interface HttpRequestJpaRepository : JpaRepository<HttpRequestRow, String> {
         nativeQuery = true,
     )
     fun reclaim(id: String, claimedAt: Instant, cutoff: Instant): Int
+
+    /** Only an IN_PROGRESS row: a completed one holds a response that must stay replayable. */
+    @Modifying
+    @Query(
+        value = "DELETE FROM orders.idempotent_http_requests WHERE id = :id AND status = 'IN_PROGRESS'",
+        nativeQuery = true,
+    )
+    fun deleteInProgress(id: String): Int
 }

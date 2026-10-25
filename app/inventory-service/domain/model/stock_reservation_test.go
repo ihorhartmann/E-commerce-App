@@ -3,8 +3,6 @@ package model
 import (
 	"errors"
 	"testing"
-
-	"inventoryservice/domain"
 )
 
 func TestNewStockReservation(t *testing.T) {
@@ -37,29 +35,29 @@ func TestNewStockReservation(t *testing.T) {
 
 	t.Run("rejects a zero productId", func(t *testing.T) {
 		_, err := NewStockReservation(1, 0, 100, 5, ReservationHolderBuyer)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidReservation)
 		}
 	})
 
 	t.Run("rejects a zero orderId", func(t *testing.T) {
 		_, err := NewStockReservation(1, 10, 0, 5, ReservationHolderBuyer)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidReservation)
 		}
 	})
 
 	t.Run("rejects a zero quantity", func(t *testing.T) {
 		_, err := NewStockReservation(1, 10, 100, 0, ReservationHolderBuyer)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidReservation)
 		}
 	})
 
 	t.Run("rejects an invalid holder", func(t *testing.T) {
 		_, err := NewStockReservation(1, 10, 100, 5, "SOMEWHERE_ELSE")
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidReservation)
 		}
 	})
 }
@@ -80,15 +78,15 @@ func TestNewExistingStockReservation(t *testing.T) {
 
 	t.Run("rejects a zero id", func(t *testing.T) {
 		_, err := NewExistingStockReservation(0, 10, 100, 5, ReservationHolderBuyer, 0)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentReservation)
 		}
 	})
 
-	t.Run("rejects a zero quantity, like a new reservation", func(t *testing.T) {
+	t.Run("reports a stored zero quantity as an inconsistent reservation", func(t *testing.T) {
 		_, err := NewExistingStockReservation(1, 10, 100, 0, ReservationHolderBuyer, 0)
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInconsistentReservation) {
+			t.Errorf("err = %v, want %v", err, ErrInconsistentReservation)
 		}
 	})
 }

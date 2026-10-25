@@ -15,11 +15,13 @@ import (
 
 	inhttp "shippingservice/adapter/in/http"
 	"shippingservice/adapter/in/http/auth"
+	"shippingservice/adapter/in/http/httperror"
 	"shippingservice/adapter/in/http/middleware"
 	"shippingservice/application/port/in/dto"
 	mocks "shippingservice/application/port/in/mocks"
 	"shippingservice/application/port/out/repository"
 	"shippingservice/application/service"
+	"shippingservice/domain/apperror"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 )
@@ -53,11 +55,11 @@ func testShipment(t *testing.T, id uint64, status model.ShipmentStatus, holder m
 func newShipmentTestApp(shipmentService *mocks.MockShipmentService, principal *auth.Principal) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(middleware.ErrorHandlerMiddleware(), func(c *gin.Context) {
+	router.Use(middleware.HandleMiddlewareError, func(c *gin.Context) {
 		if principal != nil {
 			c.Set(auth.PrincipalContextKey, *principal)
 		}
-	})
+	}, middleware.HandleControllerError)
 	inhttp.NewShipmentController(shipmentService).RegisterRoutes(router.Group("/api/v1"))
 	return router
 }
@@ -149,8 +151,8 @@ func TestShipmentController_GetShipment(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != repository.ErrShipmentNotFound.Error() {
-			t.Errorf("error = %v, want %q", body["error"], repository.ErrShipmentNotFound.Error())
+		if body["code"] != repository.ErrShipmentNotFound.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrShipmentNotFound.Code())
 		}
 	})
 
@@ -167,8 +169,8 @@ func TestShipmentController_GetShipment(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != inhttp.ErrInvalidShipmentID.Error() {
-			t.Errorf("error = %v, want %q", body["error"], inhttp.ErrInvalidShipmentID.Error())
+		if body["code"] != httperror.ErrInvalidPathParam.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrInvalidPathParam.Code())
 		}
 	})
 
@@ -185,8 +187,8 @@ func TestShipmentController_GetShipment(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != auth.ErrMissingPrincipal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }
@@ -272,8 +274,8 @@ func TestShipmentController_GetAvailableShipments(t *testing.T) {
 				t.Errorf("%s: status = %d, want 400", query, resp.Code)
 			}
 			body := decodeShipmentBody(t, resp)
-			if body["error"] != inhttp.ErrInvalidPageParam.Error() {
-				t.Errorf("%s: error = %v, want %q", query, body["error"], inhttp.ErrInvalidPageParam.Error())
+			if body["code"] != httperror.ErrInvalidQueryParam.Code() {
+				t.Errorf("%s: code = %v, want %q", query, body["code"], httperror.ErrInvalidQueryParam.Code())
 			}
 		}
 	})
@@ -292,8 +294,8 @@ func TestShipmentController_GetAvailableShipments(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != service.ErrInvalidPage.Error() {
-			t.Errorf("error = %v, want %q", body["error"], service.ErrInvalidPage.Error())
+		if body["code"] != service.ErrInvalidPage.Code() {
+			t.Errorf("code = %v, want %q", body["code"], service.ErrInvalidPage.Code())
 		}
 	})
 }
@@ -343,8 +345,8 @@ func TestShipmentController_GetCourierActiveShipments(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != inhttp.ErrInvalidPageParam.Error() {
-			t.Errorf("error = %v, want %q", body["error"], inhttp.ErrInvalidPageParam.Error())
+		if body["code"] != httperror.ErrInvalidQueryParam.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrInvalidQueryParam.Code())
 		}
 	})
 
@@ -361,8 +363,8 @@ func TestShipmentController_GetCourierActiveShipments(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != auth.ErrMissingPrincipal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }
@@ -408,8 +410,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want 400", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != inhttp.ErrInvalidShipmentID.Error() {
-			t.Errorf("error = %v, want %q", body["error"], inhttp.ErrInvalidShipmentID.Error())
+		if body["code"] != httperror.ErrInvalidPathParam.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrInvalidPathParam.Code())
 		}
 	})
 
@@ -428,8 +430,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want 404", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != repository.ErrShipmentNotFound.Error() {
-			t.Errorf("error = %v, want %q", body["error"], repository.ErrShipmentNotFound.Error())
+		if body["code"] != repository.ErrShipmentNotFound.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrShipmentNotFound.Code())
 		}
 	})
 
@@ -451,8 +453,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want 409", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != model.ErrInvalidStatusTransition.Error() {
-			t.Errorf("error = %v, want %q", body["error"], model.ErrInvalidStatusTransition.Error())
+		if body["code"] != model.ErrInvalidStatusTransition.Code() {
+			t.Errorf("code = %v, want %q", body["code"], model.ErrInvalidStatusTransition.Code())
 		}
 	})
 
@@ -471,8 +473,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusConflict)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != service.ErrAlreadyPickedUp.Error() {
-			t.Errorf("error = %v, want %q", body["error"], service.ErrAlreadyPickedUp.Error())
+		if body["code"] != service.ErrAlreadyPickedUp.Code() {
+			t.Errorf("code = %v, want %q", body["code"], service.ErrAlreadyPickedUp.Code())
 		}
 	})
 
@@ -491,8 +493,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusServiceUnavailable)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != repository.ErrConcurrentUpdate.Code() {
+			t.Errorf("code = %v, want %q", body["code"], repository.ErrConcurrentUpdate.Code())
 		}
 	})
 
@@ -511,8 +513,8 @@ func TestShipmentController_Pickup(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != apperror.ErrInternal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }
@@ -554,8 +556,8 @@ func TestShipmentController_Deliver(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusForbidden)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != service.ErrNotAssignedCourier.Error() {
-			t.Errorf("error = %v, want %q", body["error"], service.ErrNotAssignedCourier.Error())
+		if body["code"] != service.ErrNotAssignedCourier.Code() {
+			t.Errorf("code = %v, want %q", body["code"], service.ErrNotAssignedCourier.Code())
 		}
 	})
 
@@ -572,8 +574,8 @@ func TestShipmentController_Deliver(t *testing.T) {
 			t.Errorf("status = %d, want 500", resp.Code)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != middleware.InternalServerErrorMessage {
-			t.Errorf("error = %v, want %q", body["error"], middleware.InternalServerErrorMessage)
+		if body["code"] != auth.ErrMissingPrincipal.Code() {
+			t.Errorf("code = %v, want %q", body["code"], apperror.ErrInternal.Code())
 		}
 	})
 }
@@ -650,8 +652,8 @@ func TestShipmentController_Cancel(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusBadRequest)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != service.ErrInvalidCancellationReason.Error() {
-			t.Errorf("error = %v, want %q", body["error"], service.ErrInvalidCancellationReason.Error())
+		if body["code"] != service.ErrInvalidCancellationReason.Code() {
+			t.Errorf("code = %v, want %q", body["code"], service.ErrInvalidCancellationReason.Code())
 		}
 	})
 
@@ -668,8 +670,8 @@ func TestShipmentController_Cancel(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusBadRequest)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != inhttp.ErrInvalidRequestBody.Error() {
-			t.Errorf("error = %v, want %q", body["error"], inhttp.ErrInvalidRequestBody.Error())
+		if body["code"] != httperror.ErrMalformedRequestBody.Code() {
+			t.Errorf("code = %v, want %q", body["code"], httperror.ErrMalformedRequestBody.Code())
 		}
 	})
 
@@ -689,8 +691,8 @@ func TestShipmentController_Cancel(t *testing.T) {
 			t.Errorf("status = %d, want %d", resp.Code, http.StatusForbidden)
 		}
 		body := decodeShipmentBody(t, resp)
-		if body["error"] != service.ErrNotAssignedCourier.Error() {
-			t.Errorf("error = %v, want %q", body["error"], service.ErrNotAssignedCourier.Error())
+		if body["code"] != service.ErrNotAssignedCourier.Code() {
+			t.Errorf("code = %v, want %q", body["code"], service.ErrNotAssignedCourier.Code())
 		}
 	})
 }

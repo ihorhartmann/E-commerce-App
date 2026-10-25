@@ -93,9 +93,19 @@ public class PostgresHttpRequestStore implements HttpRequestStore {
         dsl.transaction(configuration -> configuration.dsl().update(IDEMPOTENT_HTTP_REQUESTS)
                 .set(STATUS, STATUS_COMPLETED)
                 .set(HTTP_CODE, httpCode)
-                .set(RESPONSE, response == null ? null : JSONB.valueOf(response))
+                // NULL, not "": the column is jsonb, and an empty string isn't valid JSON
+                .set(RESPONSE, response == null || response.isEmpty() ? null : JSONB.valueOf(response))
                 .set(COMPLETED_AT, OffsetDateTime.now(ZoneOffset.UTC))
                 .where(ID.eq(idempotencyKey))
+                .execute());
+    }
+
+    /** Only an IN_PROGRESS row: a completed one holds a response that must stay replayable. */
+    @Override
+    public void release(String idempotencyKey) {
+        dsl.transaction(configuration -> configuration.dsl().deleteFrom(IDEMPOTENT_HTTP_REQUESTS)
+                .where(ID.eq(idempotencyKey))
+                .and(STATUS.eq(STATUS_IN_PROGRESS))
                 .execute());
     }
 

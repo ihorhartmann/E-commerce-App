@@ -1,6 +1,7 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
-import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.exception.attributesOf
+import com.hartmann.entities.exception.outermostOf
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
@@ -9,11 +10,10 @@ import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentCancelledEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.ShipmentStatusChangedEvent
 import com.hartmann.interfaceadapter.`in`.kafka.dto.fromShipmentCancelledEvent
 import com.hartmann.interfaceadapter.`in`.kafka.exception.InvalidMessageHeaderException
-import com.hartmann.interfaceadapter.`in`.kafka.exception.NonRetryableException
+import com.hartmann.interfaceadapter.`in`.kafka.exception.MalformedPayloadException
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
-import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import org.slf4j.LoggerFactory
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.messaging.handler.annotation.Header
@@ -30,20 +30,6 @@ class OrderKafkaConsumer(
 ) {
     companion object {
         private val LOG = LoggerFactory.getLogger(OrderKafkaConsumer::class.java)
-
-        // These fail the same way on every attempt, so they're wrapped in NonRetryableException and go
-        // straight to the DLT. Anything else (database errors, ...) is transient and retried.
-        private val NON_RETRYABLE_EXCEPTIONS = listOf(
-            JacksonException::class, // payload is not valid JSON / doesn't match the event
-            // The domain model rejects an invalid state transition or invalid value: DomainException
-            // for a disallowed order transition or unsupported currency, IllegalStateException /
-            // IllegalArgumentException from its check()/require() guards.
-            DomainException::class,
-            IllegalStateException::class,
-            IllegalArgumentException::class,
-            OrderNotFoundException::class, // the order the event refers to doesn't exist
-            InvalidMessageHeaderException::class, // a header is present but unusable (messageId isn't a UUID)
-        )
     }
 
     @KafkaListener(topics = [KafkaConst.PAYMENT_EVENTS_TOPIC], groupId = "\${spring.kafka.consumer.group-id}")
@@ -56,28 +42,28 @@ class OrderKafkaConsumer(
         handleMessage(KafkaConst.PAYMENT_EVENTS_TOPIC, messageType, messageId, correlationId) { message ->
             when (messageType) {
                 KafkaConst.PAYMENT_COMPLETED_EVENT -> {
-                    saga.onPaymentCompleted(message, objectMapper.readValue(payload, OrderIdEvent::class.java).orderId)
+                    saga.onPaymentCompleted(message, parse<OrderIdEvent>(messageType, payload).orderId)
                     true
                 }
 
                 KafkaConst.PAYMENT_FAILED_EVENT -> {
-                    saga.onPaymentFailed(message, objectMapper.readValue(payload, OrderIdEvent::class.java).orderId)
+                    saga.onPaymentFailed(message, parse<OrderIdEvent>(messageType, payload).orderId)
                     true
                 }
 
                 KafkaConst.PAYMENT_EXPIRED_EVENT -> {
-                    saga.onPaymentExpired(message, objectMapper.readValue(payload, OrderIdEvent::class.java).orderId)
+                    saga.onPaymentExpired(message, parse<OrderIdEvent>(messageType, payload).orderId)
                     true
                 }
 
                 KafkaConst.REFUND_COMPLETED_EVENT -> {
-                    val event = objectMapper.readValue(payload, RefundCompletedEvent::class.java)
+                    val event = parse<RefundCompletedEvent>(messageType, payload)
                     saga.onRefundCompleted(message, event.orderId, Money(event.amount, Currency.fromCode(event.currency)))
                     true
                 }
 
                 KafkaConst.REFUND_FAILED_EVENT -> {
-                    saga.onRefundFailed(message, objectMapper.readValue(payload, OrderIdEvent::class.java).orderId)
+                    saga.onRefundFailed(message, parse<OrderIdEvent>(messageType, payload).orderId)
                     true
                 }
 
@@ -96,37 +82,37 @@ class OrderKafkaConsumer(
         handleMessage(KafkaConst.SHIPPING_EVENTS_TOPIC, messageType, messageId, correlationId) { message ->
             when (messageType) {
                 KafkaConst.SHIPMENT_CREATED_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    val event = parse<ShipmentStatusChangedEvent>(messageType, payload)
                     saga.onShipmentCreated(message, event.orderId, event.shipmentId)
                     true
                 }
 
                 KafkaConst.SHIPMENT_IN_DELIVERY_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    val event = parse<ShipmentStatusChangedEvent>(messageType, payload)
                     saga.onShipmentInDelivery(message, event.orderId)
                     true
                 }
 
                 KafkaConst.SHIPMENT_DELIVERED_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    val event = parse<ShipmentStatusChangedEvent>(messageType, payload)
                     saga.onShipmentDelivered(message, event.orderId)
                     true
                 }
 
                 KafkaConst.SHIPMENT_CANCELLED_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentCancelledEvent::class.java)
+                    val event = parse<ShipmentCancelledEvent>(messageType, payload)
                     saga.onShipmentCancelled(message, event.orderId, fromShipmentCancelledEvent(event))
                     true
                 }
 
                 KafkaConst.SHIPMENT_LOST_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    val event = parse<ShipmentStatusChangedEvent>(messageType, payload)
                     saga.onShipmentLost(message, event.orderId)
                     true
                 }
 
                 KafkaConst.SHIPMENT_RETURNED_TO_INVENTORY_EVENT -> {
-                    val event = objectMapper.readValue(payload, ShipmentStatusChangedEvent::class.java)
+                    val event = parse<ShipmentStatusChangedEvent>(messageType, payload)
                     saga.onShipmentReturnedToInventory(message, event.orderId)
                     true
                 }
@@ -137,9 +123,10 @@ class OrderKafkaConsumer(
     }
 
     /**
-     * Centralizes the receive/dispatch/success logging and the failure classification shared by every
-     * listener in this class, so each `@KafkaListener` method only has to describe its own message-type
-     * routing.
+     * Centralizes the receive/dispatch/success logging and the failure logging shared by every listener in
+     * this class, so each `@KafkaListener` method only has to describe its own message-type routing. A
+     * failure is rethrown as it is: the error handler (KafkaErrorHandlerConfig) retries it or dead-letters it
+     * at once, decided by [isPermanentFailure].
      */
     private fun handleMessage(
         topic: String,
@@ -153,7 +140,8 @@ class OrderKafkaConsumer(
         val handled = try {
             dispatch(KafkaMessageMetadata(parseMessageId(messageId), correlationId, messageType))
         } catch (e: Exception) {
-            throw classify(e)
+            logFailure(topic, messageType, correlationId, e)
+            throw e
         }
 
         if (!handled) {
@@ -168,17 +156,31 @@ class OrderKafkaConsumer(
         try {
             UUID.fromString(messageId)
         } catch (e: IllegalArgumentException) {
-            throw InvalidMessageHeaderException("messageId $messageId is not a UUID", e)
+            throw InvalidMessageHeaderException(KafkaConst.MESSAGE_ID, messageId, e)
         }
 
-    /**
-     * Wraps e in NonRetryableException if it, or any exception in its cause chain, is one of
-     * NON_RETRYABLE_EXCEPTIONS, and returns it unchanged otherwise.
-     */
-    private fun classify(e: Exception): Exception {
-        val nonRetryable = generateSequence<Throwable>(e) { it.cause }
-            .any { cause -> NON_RETRYABLE_EXCEPTIONS.any { it.isInstance(cause) } }
+    private inline fun <reified T> parse(messageType: String, payload: String): T =
+        try {
+            objectMapper.readValue(payload, T::class.java)
+        } catch (e: JacksonException) {
+            throw MalformedPayloadException(messageType, e)
+        }
 
-        return if (nonRetryable) NonRetryableException(e) else e
+    // Logged on every attempt, as the attempt is made. A permanent failure as a warning, since the
+    // message is only dead-lettered; anything else as an error with its stack trace.
+    private fun logFailure(topic: String, messageType: String, correlationId: String, exception: Exception) {
+        val event = if (isPermanentFailure(exception)) {
+            LOG.atWarn().setMessage("Message rejected")
+        } else {
+            LOG.atError().setCause(exception).setMessage("Message handling failed")
+        }
+
+        event.addKeyValue("topic", topic)
+            .addKeyValue("messageType", messageType)
+            .addKeyValue("correlationId", correlationId)
+            .addKeyValue("exceptionMessage", exception.message)
+        outermostOf(exception)?.let { event.addKeyValue("code", it.code.code) }
+        attributesOf(exception).forEach { (key, value) -> event.addKeyValue(key, value) }
+        event.log()
     }
 }

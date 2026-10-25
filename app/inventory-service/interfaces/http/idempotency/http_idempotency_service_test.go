@@ -272,3 +272,28 @@ func TestHTTPIdempotencyService_Complete(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPIdempotencyService_Release(t *testing.T) {
+	t.Run("delegates to the store", func(t *testing.T) {
+		idempotencyKey := "key-1"
+		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
+		store.EXPECT().Release(gomock.Any(), idempotencyKey).Return(nil).Times(1)
+		service := NewHTTPIdempotencyService(store)
+
+		if err := service.Release(context.Background(), idempotencyKey); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("propagates an error from the store", func(t *testing.T) {
+		idempotencyKey := "key-1"
+		wantErr := errors.New("db down")
+		store := mocks.NewMockHTTPRequestStore(gomock.NewController(t))
+		store.EXPECT().Release(gomock.Any(), idempotencyKey).Return(wantErr).Times(1)
+		service := NewHTTPIdempotencyService(store)
+
+		if err := service.Release(context.Background(), idempotencyKey); !errors.Is(err, wantErr) {
+			t.Fatalf("Release() error = %v, want %v", err, wantErr)
+		}
+	})
+}

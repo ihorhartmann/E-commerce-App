@@ -3,7 +3,7 @@ package http
 import (
 	"inventoryservice/application/port/in"
 	dto "inventoryservice/interfaces/http/dto/reservation"
-	"inventoryservice/interfaces/http/errors"
+	"inventoryservice/interfaces/http/httperror"
 	"net/http"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,17 +25,17 @@ func (rc *ReservationController) RegisterRoutes(router fiber.Router) {
 func (rc *ReservationController) CreateReservation(c *fiber.Ctx) error {
 	var request dto.CreateReservationRequest
 	if err := c.BodyParser(&request); err != nil {
-		return errors.HandleReservationError(errors.ErrInvalidRequestBody)
+		return httperror.ErrMalformedRequestBody.WithInternalMessage("parse reservation request body").WithCause(err)
 	}
 
 	reservationDTOs, err := dto.FromCreateReservationRequest(request)
 	if err != nil {
-		return errors.HandleReservationError(err)
+		return err
 	}
 
 	reservedItems, err := rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDTOs)
 	if err != nil {
-		return errors.HandleReservationError(err)
+		return err
 	}
 
 	return c.Status(http.StatusCreated).JSON(dto.ToCreateReservationResponse(reservedItems))

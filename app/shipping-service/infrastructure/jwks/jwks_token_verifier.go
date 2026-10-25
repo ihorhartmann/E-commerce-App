@@ -2,11 +2,11 @@ package jwks
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	"shippingservice/adapter/in/http/auth"
+	"shippingservice/adapter/in/http/httperror"
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
@@ -16,8 +16,6 @@ import (
 // signingAlgorithm is the only algorithm accepted - Keycloak signs access tokens with RS256 by default, and pinning it
 // rules out algorithm-confusion attacks ("alg": "none", HS256 with the public key as the secret).
 const signingAlgorithm = "RS256"
-
-var errMissingSubject = errors.New("token has no sub claim")
 
 // JWKSTokenVerifier verifies Keycloak access tokens against the realm's public keys (JWKS). The keys are cached and
 // refreshed in the background, and re-fetched when a token carries an unknown key id (key rotation), so a request
@@ -55,18 +53,18 @@ func newJWKSTokenVerifier(keyfunc jwt.Keyfunc, issuer, rolesClaim string) *JWKST
 func (v *JWKSTokenVerifier) Verify(_ context.Context, rawToken string) (auth.Principal, error) {
 	claims := jwt.MapClaims{}
 	if _, err := v.parser.ParseWithClaims(rawToken, claims, v.keyfunc); err != nil {
-		return auth.Principal{}, fmt.Errorf("%w: %w", auth.ErrInvalidToken, err)
+		return auth.Principal{}, httperror.ErrInvalidToken.WithInternalMessage("parse access token").WithCause(err)
 	}
 
 	subject, err := claims.GetSubject()
 	if err != nil || subject == "" {
-		return auth.Principal{}, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errMissingSubject)
+		return auth.Principal{}, httperror.ErrInvalidToken.WithInternalMessage("access token has no sub claim")
 	}
 
 	// Keycloak user ids are UUIDs - anything else means the token can't name a customer or courier
 	userID, err := uuid.Parse(subject)
 	if err != nil {
-		return auth.Principal{}, fmt.Errorf("%w: sub is not a UUID: %w", auth.ErrInvalidToken, err)
+		return auth.Principal{}, httperror.ErrInvalidToken.WithInternalMessage("access token sub is not a UUID").WithCause(err)
 	}
 
 	return auth.Principal{UserID: userID, Roles: v.roles(claims)}, nil

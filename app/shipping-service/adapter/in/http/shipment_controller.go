@@ -6,6 +6,7 @@ import (
 
 	"shippingservice/adapter/in/http/auth"
 	"shippingservice/adapter/in/http/dto"
+	"shippingservice/adapter/in/http/httperror"
 	portin "shippingservice/application/port/in"
 	"shippingservice/domain/model"
 
@@ -42,18 +43,18 @@ func (sc *ShipmentController) RegisterRoutes(router *gin.RouterGroup) {
 func (sc *ShipmentController) GetAvailableShipments(c *gin.Context) {
 	page, err := parseIntQuery(c, "page", 0)
 	if err != nil {
-		HandleError(c, ErrInvalidPageParam)
+		_ = c.Error(err)
 		return
 	}
 	size, err := parseIntQuery(c, "size", defaultPageSize)
 	if err != nil {
-		HandleError(c, ErrInvalidPageParam)
+		_ = c.Error(err)
 		return
 	}
 
 	shipmentPage, err := sc.shipmentService.GetAvailableShipments(c.Request.Context(), page, size)
 	if err != nil {
-		HandleError(c, err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -64,23 +65,23 @@ func (sc *ShipmentController) GetAvailableShipments(c *gin.Context) {
 func (sc *ShipmentController) GetCourierActiveShipments(c *gin.Context) {
 	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
 	if !ok {
-		HandleError(c, auth.ErrMissingPrincipal)
+		_ = c.Error(auth.ErrMissingPrincipal)
 		return
 	}
 	page, err := parseIntQuery(c, "page", 0)
 	if err != nil {
-		HandleError(c, ErrInvalidPageParam)
+		_ = c.Error(err)
 		return
 	}
 	size, err := parseIntQuery(c, "size", defaultPageSize)
 	if err != nil {
-		HandleError(c, ErrInvalidPageParam)
+		_ = c.Error(err)
 		return
 	}
 
 	shipmentPage, err := sc.shipmentService.GetCourierActiveShipments(c.Request.Context(), principal.UserID, page, size)
 	if err != nil {
-		HandleError(c, err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -91,18 +92,18 @@ func (sc *ShipmentController) GetCourierActiveShipments(c *gin.Context) {
 func (sc *ShipmentController) GetShipment(c *gin.Context) {
 	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
 	if !ok {
-		HandleError(c, auth.ErrMissingPrincipal)
+		_ = c.Error(auth.ErrMissingPrincipal)
 		return
 	}
 	id, err := parseIDParam(c, "id")
 	if err != nil {
-		HandleError(c, ErrInvalidShipmentID)
+		_ = c.Error(err)
 		return
 	}
 
 	shipment, err := sc.shipmentService.GetByID(c.Request.Context(), id)
 	if err != nil {
-		HandleError(c, err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -130,7 +131,7 @@ func (sc *ShipmentController) Lose(c *gin.Context) {
 func (sc *ShipmentController) Cancel(c *gin.Context) {
 	var request dto.CancelShipmentRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		HandleError(c, ErrInvalidRequestBody)
+		_ = c.Error(httperror.ErrMalformedRequestBody.WithInternalMessage("parse cancel shipment request body").WithCause(err))
 		return
 	}
 
@@ -152,7 +153,7 @@ func (sc *ShipmentController) handleCourierTransition(
 ) {
 	principal, ok := c.Value(auth.PrincipalContextKey).(auth.Principal)
 	if !ok {
-		HandleError(c, auth.ErrMissingPrincipal)
+		_ = c.Error(auth.ErrMissingPrincipal)
 		return
 	}
 
@@ -165,13 +166,13 @@ func (sc *ShipmentController) handleCourierTransition(
 func (sc *ShipmentController) handleTransition(c *gin.Context, transition func(ctx context.Context, id uint64) (*model.Shipment, error)) {
 	id, err := parseIDParam(c, "id")
 	if err != nil {
-		HandleError(c, ErrInvalidShipmentID)
+		_ = c.Error(err)
 		return
 	}
 
 	shipment, err := transition(c.Request.Context(), id)
 	if err != nil {
-		HandleError(c, err)
+		_ = c.Error(err)
 		return
 	}
 

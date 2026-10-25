@@ -13,7 +13,6 @@ import (
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
 	idempotencymocks "inventoryservice/application/port/out/idempotency/mocks"
 	"inventoryservice/application/port/out/repository/mocks"
-	"inventoryservice/domain"
 	"inventoryservice/domain/model"
 
 	"github.com/google/uuid"
@@ -107,8 +106,8 @@ func TestProductServiceImpl_Get(t *testing.T) {
 
 		_, err := service.Get(context.Background(), 0)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductID) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductID)
 		}
 	})
 
@@ -172,8 +171,8 @@ func TestProductServiceImpl_GetProducts(t *testing.T) {
 
 			_, err := service.GetProducts(context.Background(), invalidPage.page, invalidPage.size)
 
-			if !errors.Is(err, domain.ErrInvalidInput) {
-				t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+			if !errors.Is(err, ErrInvalidPage) {
+				t.Errorf("err = %v, want %v", err, ErrInvalidPage)
 			}
 		})
 	}
@@ -203,8 +202,8 @@ func TestProductServiceImpl_Delete(t *testing.T) {
 
 		err := service.Delete(context.Background(), 0)
 
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidProductID) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidProductID)
 		}
 	})
 }

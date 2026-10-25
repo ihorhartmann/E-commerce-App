@@ -1,7 +1,7 @@
 package value
 
 import (
-	"shippingservice/domain"
+	"log/slog"
 	"strings"
 )
 
@@ -14,7 +14,7 @@ type Address struct {
 
 func NewAddress(city, postalCode, line1, line2 string) (Address, error) {
 	if strings.TrimSpace(city) == "" || strings.TrimSpace(postalCode) == "" || strings.TrimSpace(line1) == "" {
-		return Address{}, domain.ErrInvalidInput
+		return Address{}, ErrInvalidAddress.WithAttrs(slog.String("city", city), slog.String("postalCode", postalCode))
 	}
 
 	return Address{

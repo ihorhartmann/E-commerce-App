@@ -1,9 +1,6 @@
 package model
 
-import (
-	"fmt"
-	"inventoryservice/domain"
-)
+import "log/slog"
 
 // ReservationHolder identifies who the reserved stock is currently being held for.
 type ReservationHolder string
@@ -35,7 +32,14 @@ type StockReservation struct {
 
 func NewStockReservation(id, productId, orderId uint64, quantity uint, holder ReservationHolder) (*StockReservation, error) {
 	if productId == 0 || orderId == 0 || quantity == 0 || !holder.isValid() {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInvalidReservation.
+			WithAttrs(
+				slog.Uint64("productID", productId),
+				slog.Uint64("orderID", orderId),
+				slog.Uint64("quantity", uint64(quantity)),
+				slog.String("holder", string(holder)),
+			).
+			WithExternalMessage("productId, orderId and quantity must be positive")
 	}
 
 	return &StockReservation{
@@ -47,14 +51,22 @@ func NewStockReservation(id, productId, orderId uint64, quantity uint, holder Re
 	}, nil
 }
 
+// NewExistingStockReservation restores a stored reservation. Stored data that breaks the
+// reservation's rules is corrupted, so every rule it breaks is reported as
+// ErrInconsistentReservation, not as a request to reject.
 func NewExistingStockReservation(id, productId, orderId uint64, quantity uint, holder ReservationHolder, version uint64) (*StockReservation, error) {
 	if id == 0 {
-		return nil, domain.ErrInvalidInput
+		return nil, ErrInconsistentReservation.
+			WithInternalMessage("stored reservation has no id").
+			WithAttrs(slog.Uint64("orderID", orderId))
 	}
 
 	reservation, err := NewStockReservation(id, productId, orderId, quantity, holder)
 	if err != nil {
-		return nil, err
+		return nil, ErrInconsistentReservation.
+			WithInternalMessage("stored reservation breaks its invariants").
+			WithAttrs(slog.Uint64("reservationID", id)).
+			WithCause(err)
 	}
 	reservation.version = version
 
@@ -89,7 +101,9 @@ func (sr *StockReservation) Version() uint64 {
 // stock now awaits courier pickup. Only a reservation still held for the buyer can be handed over.
 func (sr *StockReservation) HoldByCourier() error {
 	if sr.holder != ReservationHolderBuyer {
-		return fmt.Errorf("%w: reservation %d is held by %s, not %s", ErrInvalidHolderTransition, sr.id, sr.holder, ReservationHolderBuyer)
+		return ErrInvalidHolderTransition.
+			WithInternalMessage("cannot hand over a reservation not held by the buyer").
+			WithAttrs(slog.Uint64("reservationID", sr.id), slog.String("holder", string(sr.holder)))
 	}
 
 	sr.holder = ReservationHolderCourier

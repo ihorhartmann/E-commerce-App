@@ -1,7 +1,8 @@
 package com.hartmann.entities.value
 
-import com.hartmann.entities.exception.DomainException
+import com.hartmann.entities.value.exception.UnsupportedCurrencyException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
@@ -26,11 +27,13 @@ class CurrencyTest {
 
     @Test
     fun `fromCode - throws on an unsupported code`() {
-        assertThrows<DomainException> { Currency.fromCode("JPY") }
+        val exception = assertThrows<UnsupportedCurrencyException> { Currency.fromCode("JPY") }
+
+        assertTrue(exception.cause is IllegalArgumentException)
     }
 
     @Test
     fun `fromCode - throws on a blank code`() {
-        assertThrows<DomainException> { Currency.fromCode("") }
+        assertThrows<UnsupportedCurrencyException> { Currency.fromCode("") }
     }
 }

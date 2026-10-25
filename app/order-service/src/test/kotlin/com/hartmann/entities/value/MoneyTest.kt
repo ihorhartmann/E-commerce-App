@@ -1,7 +1,9 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.InvalidMoneyAmountException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
@@ -36,12 +38,14 @@ class MoneyTest {
 
     @Test
     fun `constructor - rejects an amount with more than two decimal places`() {
-        assertThrows<IllegalArgumentException> { Money(BigDecimal("10.001"), Currency.USD) }
+        val exception = assertThrows<InvalidMoneyAmountException> { Money(BigDecimal("10.001"), Currency.USD) }
+
+        assertTrue(exception.cause is ArithmeticException)
     }
 
     @Test
     fun `constructor - rejects a negative amount`() {
-        assertThrows<IllegalArgumentException> { Money(BigDecimal("-10.00"), Currency.USD) }
+        assertThrows<InvalidMoneyAmountException> { Money(BigDecimal("-10.00"), Currency.USD) }
     }
 
     @Test

@@ -1,12 +1,12 @@
 package com.hartmann.application.service;
 
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.domain.model.Payment;
@@ -58,7 +58,7 @@ public class PaymentServiceImpl implements PaymentService {
     private SubmitPaymentResult submitToGateway(long orderId, Money amount, Payment payment) {
         try {
             return paymentGateway.submitPayment(orderId, amount);
-        } catch (PaymentGatewayUnavailableException | PaymentGatewayException e) {
+        } catch (PaymentGatewayUnavailableException | PaymentGatewayRejectedException e) {
             // order-service already learns about this synchronously (the exception propagates
             // straight back through the HTTP call) and cancels the reservation itself, so no Kafka
             // event is published here.

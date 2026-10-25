@@ -1,5 +1,6 @@
 package com.hartmann.entities.value
 
+import com.hartmann.entities.value.exception.ShipmentTransitionNotAllowedException
 import java.time.Instant
 
 data class ShipmentInfo(
@@ -9,18 +10,24 @@ data class ShipmentInfo(
     val returnedAt: Instant? = null,
 ) {
     fun pickUp(): ShipmentInfo {
-        check(pickedUpAt == null) { "shipment already picked up" }
+        requireAllowed(pickedUpAt == null, "pick up")
         return copy(pickedUpAt = Instant.now())
     }
 
     fun deliver(): ShipmentInfo {
-        check(pickedUpAt != null) { "cannot deliver a shipment that was never picked up" }
+        requireAllowed(pickedUpAt != null, "deliver")
         return copy(deliveredAt = Instant.now())
     }
 
     fun returnToInventory(): ShipmentInfo {
-        check(returnedAt == null) { "shipment already marked returned" }
+        requireAllowed(returnedAt == null, "return to inventory")
         return copy(returnedAt = Instant.now())
+    }
+
+    private fun requireAllowed(allowed: Boolean, action: String) {
+        if (!allowed) {
+            throw ShipmentTransitionNotAllowedException(shipmentId, action)
+        }
     }
 
     companion object {

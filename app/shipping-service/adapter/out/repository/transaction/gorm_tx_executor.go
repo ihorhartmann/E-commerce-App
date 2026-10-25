@@ -16,10 +16,13 @@ func NewGormTxManager(db *gorm.DB) transaction.Executor {
 	return &gormTxExecutor{db: db}
 }
 
+// Transaction runs action in a transaction. An error of action is ours already and is returned as it
+// is - giving it to WithCause would replace its code; only the transaction's own failures get
+// ErrTransactionFailure.
 func (m *gormTxExecutor) Transaction(ctx context.Context, action func(ctx context.Context) error) error {
 	tx := m.db.Begin()
 	if tx.Error != nil {
-		return tx.Error
+		return ErrTransactionFailure.WithInternalMessage("begin transaction").WithCause(tx.Error)
 	}
 
 	ctx = withTx(ctx, tx)
@@ -29,5 +32,9 @@ func (m *gormTxExecutor) Transaction(ctx context.Context, action func(ctx contex
 		return err
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return ErrTransactionFailure.WithInternalMessage("commit transaction").WithCause(err)
+	}
+
+	return nil
 }

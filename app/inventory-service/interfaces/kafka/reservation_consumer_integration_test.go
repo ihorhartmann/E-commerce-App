@@ -5,7 +5,6 @@ package kafka_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -16,7 +15,7 @@ import (
 	commonkafka "inventoryservice/application/port/common/kafka"
 	"inventoryservice/application/port/in/mocks"
 	idempotencydto "inventoryservice/application/port/out/idempotency/dto"
-	"inventoryservice/domain"
+	"inventoryservice/domain/model"
 	producerkafkago "inventoryservice/infrastructure/kafkago"
 	inventorykafka "inventoryservice/interfaces/kafka"
 	kafkadto "inventoryservice/interfaces/kafka/dto"
@@ -313,7 +312,7 @@ func TestReservationKafkaConsumer_Integration(t *testing.T) {
 		reservationService := mocks.NewMockReservationService(gomock.NewController(t))
 		reservationService.EXPECT().
 			Cancel(gomock.Any(), gomock.Any(), orderID).
-			Return(fmt.Errorf("cancel reservation: %w", domain.ErrInvalidInput)).
+			Return(model.ErrInvalidHolderTransition.WithInternalMessage("cannot hand over")).
 			Times(1)
 		productService := mocks.NewMockProductService(gomock.NewController(t))
 

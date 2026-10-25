@@ -3,11 +3,11 @@ package kafkago
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"shippingservice/adapter/common/kafka"
 	inkafka "shippingservice/adapter/in/kafka"
+	"shippingservice/domain/apperror"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -120,16 +120,16 @@ func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, m
 func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Message, handle messageHandler) bool {
 	messageType, messageID, correlationID, err := parseHeaders(message.Headers)
 	if err != nil {
-		slog.Error("kafka message header validation error", "error", err)
-		return c.sendDeadLetter(ctx, message, inkafka.NonRetryable(err))
+		slog.Error("kafka message header validation error", apperror.LogAttr(err))
+		return c.sendDeadLetter(ctx, message, err)
 	}
 
 	slog.Debug("received kafka message", "messageType", messageType, "messageId", messageID, "correlationId", correlationID)
 
 	err = runWithRetry(ctx, c.retryDelays, func() error {
-		err := handle(context.Background(), messageType, messageID, correlationID, message.Value)
+		err = handleSafely(handle, messageType, messageID, correlationID, message.Value)
 		if err != nil {
-			slog.Warn("kafka message handling error", "messageType", messageType, "correlationId", correlationID, "error", err)
+			slog.Warn("kafka message handling error", "messageType", messageType, "correlationId", correlationID, apperror.LogAttr(err))
 		}
 		return err
 	})
@@ -144,6 +144,18 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 	return c.sendDeadLetter(ctx, message, err)
 }
 
+// handleSafely runs handle for one message, turning a panic in it into an internal error - retried
+// and then dead-lettered like any other - instead of a crashed consumer.
+func handleSafely(handle messageHandler, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = apperror.FromPanic(recovered)
+		}
+	}()
+
+	return handle(context.Background(), messageType, messageID, correlationID, payload)
+}
+
 // sendDeadLetter publishes message to its dead-letter topic - c.deadLetterProducer keeps retrying on its
 // own until that succeeds, so the message is never skipped: a dead-letter topic that is down (or
 // missing) blocks the partition instead of losing messages. It returns false if ctx is done first.
@@ -154,7 +166,7 @@ func (c *kafkaGoMessageConsumer) sendDeadLetter(ctx context.Context, message kaf
 		return false
 	}
 
-	slog.Error("kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, "error", cause)
+	slog.Error("kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, apperror.LogAttr(cause))
 	return true
 }
 
@@ -227,18 +239,21 @@ func parseHeaders(headers []kafkago.Header) (messageType kafka.MessageType, mess
 	}
 
 	if messageType == "" {
-		return "", uuid.Nil, "", errors.New("missing messageType header")
+		return "", uuid.Nil, "", inkafka.ErrInvalidMessageHeaders.WithInternalMessage("missing messageType header")
 	}
 	if rawMessageID == "" {
-		return "", uuid.Nil, "", errors.New("missing messageID header")
+		return "", uuid.Nil, "", inkafka.ErrInvalidMessageHeaders.WithInternalMessage("missing messageId header")
 	}
 	if correlationID == "" {
-		return "", uuid.Nil, "", errors.New("missing correlationId header")
+		return "", uuid.Nil, "", inkafka.ErrInvalidMessageHeaders.WithInternalMessage("missing correlationId header")
 	}
 
 	messageID, err = uuid.Parse(rawMessageID)
 	if err != nil {
-		return "", uuid.Nil, "", fmt.Errorf("messageId %q is not a UUID: %w", rawMessageID, err)
+		return "", uuid.Nil, "", inkafka.ErrInvalidMessageHeaders.
+			WithInternalMessage("messageId is not a UUID").
+			WithAttrs(slog.String("messageID", rawMessageID)).
+			WithCause(err)
 	}
 
 	return messageType, messageID, correlationID, nil

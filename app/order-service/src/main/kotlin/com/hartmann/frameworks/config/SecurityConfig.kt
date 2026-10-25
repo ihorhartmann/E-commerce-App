@@ -1,5 +1,9 @@
 package com.hartmann.frameworks.config
 
+import com.hartmann.frameworks.security.RolesClaimGrantedAuthoritiesConverter
+import com.hartmann.interfaceadapter.`in`.http.security.ProblemAccessDeniedHandler
+import com.hartmann.interfaceadapter.`in`.http.security.ProblemAuthenticationEntryPoint
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -12,6 +16,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.web.servlet.HandlerExceptionResolver
 
 /**
  * OAuth2 resource server: every request carries a Keycloak access token (relayed by the gateway or sent by a Bearer
@@ -30,7 +35,11 @@ class SecurityConfig {
     fun securityFilterChain(
         http: HttpSecurity,
         jwtAuthenticationConverter: JwtAuthenticationConverter,
+        @Qualifier("handlerExceptionResolver") handlerExceptionResolver: HandlerExceptionResolver,
     ): SecurityFilterChain {
+        // 401 and 403 get the same ProblemDetail body as every other error response
+        val authenticationEntryPoint = ProblemAuthenticationEntryPoint(handlerExceptionResolver)
+        val accessDeniedHandler = ProblemAccessDeniedHandler(handlerExceptionResolver)
         http {
             authorizeHttpRequests {
                 authorize(ERROR_PATH, permitAll)
@@ -41,6 +50,12 @@ class SecurityConfig {
             }
             oauth2ResourceServer {
                 jwt { this.jwtAuthenticationConverter = jwtAuthenticationConverter }
+                this.authenticationEntryPoint = authenticationEntryPoint
+                this.accessDeniedHandler = accessDeniedHandler
+            }
+            exceptionHandling {
+                this.authenticationEntryPoint = authenticationEntryPoint
+                this.accessDeniedHandler = accessDeniedHandler
             }
             // stateless Bearer-token API: no session, and no cookie a cross-site request could ride on
             sessionManagement { sessionCreationPolicy = SessionCreationPolicy.STATELESS }

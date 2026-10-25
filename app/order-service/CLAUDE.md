@@ -20,7 +20,9 @@ This layer must not depend on any other layer.
 entities/
 ├── exception/
 ├── model/
+│   └── exception/
 └── value/
+    └── exception/
 ```
 
 ##### entities/model
@@ -45,8 +47,10 @@ Examples:
 
 ##### entities/exception
 
-Exceptions raised by domain objects themselves (as opposed to exceptions raised by a specific use case or adapter), for
-example `DomainException`.
+Only the base of every exception this service raises on purpose - `OrderServiceException`, its kinds and `ErrorCode`;
+see [Error handling](#error-handling). The exceptions the domain objects themselves raise live next to them, with
+their codes: `entities/model/exception` (`OrderErrorCode`, e.g. `OrderNotCancellableException`) and
+`entities/value/exception` (`ValueErrorCode`, e.g. `InvalidMoneyAmountException`).
 
 ---
 
@@ -67,11 +71,11 @@ usecase/
 │   │   ├── saga/
 │   │   │   └── event/
 │   │   └── usecase/
-│   │       └── dto/
+│   │       ├── dto/
+│   │       └── exception/
 │   └── out/
 │       ├── internal/
-│       │   ├── dto/
-│       │   └── exception/
+│       │   └── dto/
 │       ├── kafka/
 │       │   └── dto/
 │       └── repository/
@@ -145,16 +149,29 @@ This layer may depend on the `Use cases` and `Entities` layers.
 interfaceadapter/
 ├── in/
 │   ├── http/
-│   │   └── dto/
+│   │   ├── dto/
+│   │   ├── exception/
+│   │   ├── idempotency/
+│   │   └── security/
 │   ├── kafka/
-│   │   └── dto/
+│   │   ├── dto/
+│   │   └── exception/
 │   └── scheduled/
 └── out/
     ├── http/
-    │   └── dto/
+    │   ├── common/
+    │   │   └── dto/
+    │   ├── inventory/
+    │   │   ├── dto/
+    │   │   └── exception/
+    │   └── payment/
+    │       ├── dto/
+    │       └── exception/
     ├── kafka/
     │   └── dto/
     └── repository/
+        ├── entity/
+        └── exception/
 ```
 
 ##### interfaceadapter/in
@@ -189,6 +206,10 @@ business port, the same role a Kafka consumer or REST controller plays for its o
 Outbound adapters that implement interfaces defined in `usecase/port/out`. See the
 [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming) for naming conventions.
 
+`interfaceadapter/out/http` has a package per sibling service - `inventory`, `payment` - each with its clients and
+its own `dto` and `exception` (with its `InventoryErrorCode`/`PaymentErrorCode`), plus `common` for what the clients
+share: the retry and circuit-breaker config, the logging interceptor and `dto.ProblemResponse`.
+
 ---
 
 ### Frameworks
@@ -211,5 +232,64 @@ These implementations do not contain business-specific logic and are therefore i
 
 ```text
 frameworks/
-└── config/
+├── config/
+├── kafka/
+└── security/
 ```
+
+`frameworks/config` holds only `@Configuration` classes. The framework glue they wire in lives next to them, in a
+package per framework: `frameworks/kafka` (e.g. `RetryableDeadLetterPublishingRecoverer`), `frameworks/security`
+(e.g. `RolesClaimGrantedAuthoritiesConverter`). A class that turns a framework event into one of this service's own
+types is an interface adapter, not glue, even if a framework calls it: Spring Security's entry point and
+access-denied handler, which turn a rejected request into this service's exceptions, live in
+`interfaceadapter.in.http.security`.
+
+## Error handling
+
+Every exception this service raises on purpose extends `entities.exception.OrderServiceException` through one of its
+kinds - `InvalidException`, `NotFoundException`, `ConflictException`, `TransientException`, `UnavailableException` -
+or directly, for an internal failure. A concrete exception passes its code, a constant internal message and its data
+as attributes right in its class header:
+
+```kotlin
+class OrderNotFoundException(val orderId: Long) :
+    NotFoundException(RepositoryErrorCode.ORDER_NOT_FOUND, "Order not found", mapOf("orderId" to orderId))
+```
+
+* The code (`ORDER.ORDER_NOT_FOUND` - `ErrorCode` adds the service prefix) and its title are public and the same for
+  every occurrence; each layer declares its codes as an enum implementing `ErrorCode`, next to the exceptions that use
+  them (`OrderErrorCode`, `RepositoryErrorCode`, `InventoryErrorCode`, ...). Keep codes specific (`ORDER_NOT_FOUND`,
+  not `NOT_FOUND`). The kind alone decides the HTTP status, whether a Kafka message is retried or dead-lettered at
+  once (`permanent`: invalid, not found, conflict), and whether `IdempotencyFilter` caches the response or releases the
+  key.
+* The internal message and the attributes never leave the service; keep the internal message constant and put every
+  value in the attributes. The external message is the only per-occurrence text a caller sees.
+* An exception gets its code where it first enters this service's code: a domain rule, `PostgresOrderRepository`
+  turning a JPA exception into `DatabaseFailureException`, `HttpInventoryClient` turning an error response into
+  `InsufficientStockException`. An exception that already is one of ours is rethrown as it is; wrapping it as the cause
+  of another one replaces its code - do that only on purpose (e.g. `InconsistentOrderException`).
+* An exception lives where the root CLAUDE.md puts exceptions: next to a port only if the port's callers need it
+  (`OrderNotFoundException`, `ConcurrentUpdateException`, `InvalidPageException`), otherwise next to the adapter that
+  throws it (`interfaceadapter.out.http.inventory.exception`, `interfaceadapter.out.repository.exception`).
+* The domain has no `require`/`check`: every rule it enforces throws an exception of ours, and which one depends on
+  who can break the rule, not on the rule:
+    * a request or a message - an `InvalidException`/`ConflictException` (e.g. `InvalidAddressException`);
+    * stored data - `InconsistentOrderException` (internal), thrown by `createExisting` and by `fromOrderEntity` for
+      a value the stored data fails to build;
+    * only this service's own code - a bug - `OrderInvariantViolatedException` (internal), e.g. `createNew` without
+      items.
+
+  An entity's `createNew` and `createExisting` check the same rules (a shared `findBrokenRule`), each reporting a broken
+  one its own way. The two internal codes are kept apart, so a log tells whether to look at the data or at the code.
+* Log an exception once, where it is handled - `GlobalExceptionHandler`, `OrderKafkaConsumer` - with every attribute
+  of `attributesOf(exception)` as a key-value pair of its own.
+
+HTTP error responses are RFC 9457 problem details (`type` `urn:ecommerce:error:<code>`, `title`, `status`, `detail` =
+the external message, `instance`, and the members `code` and `retryable`), written only by `GlobalExceptionHandler`.
+Spring MVC calls it for the exceptions of the controllers; `IdempotencyFilter` and Spring Security's
+`ProblemAuthenticationEntryPoint`/`ProblemAccessDeniedHandler` hand theirs to it through the `handlerExceptionResolver`
+bean. A status that differs from the kind's default (401, 403, 409 for a request in progress, 422) is listed in its
+`statusOf`. A transient or unavailable failure also gets `Retry-After`.
+
+Kafka: `OrderKafkaConsumer` rethrows every failure as it is, and `KafkaErrorHandlerConfig` gives a permanent one
+(`isPermanentFailure`) no retries, so it is dead-lettered at once; any other failure is retried.

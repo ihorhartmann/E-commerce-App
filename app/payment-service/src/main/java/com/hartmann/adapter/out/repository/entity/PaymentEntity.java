@@ -1,7 +1,9 @@
 package com.hartmann.adapter.out.repository.entity;
 
+import com.hartmann.domain.exception.InvalidException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
+import com.hartmann.domain.model.exception.InconsistentPaymentException;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 
@@ -38,7 +40,21 @@ public record PaymentEntity(
         );
     }
 
+    /**
+     * A stored payment that breaks one of the payment's own rules is corrupted data, not a request to reject, so it is
+     * reported as InconsistentPaymentException. Payment.createExisting already throws that for the payment's own
+     * rules; what is caught here is a value built on the way - a negative amount - rejected as invalid, which on its
+     * own would read as the caller's fault, or an unknown status or currency valueOf rejected.
+     */
     public static Payment toPayment(PaymentEntity entity) {
+        try {
+            return buildPayment(entity);
+        } catch (InvalidException | IllegalArgumentException e) {
+            throw new InconsistentPaymentException(entity.id(), e);
+        }
+    }
+
+    private static Payment buildPayment(PaymentEntity entity) {
         var currency = Currency.valueOf(entity.currency());
         return Payment.createExisting(
                 entity.id(),

@@ -17,6 +17,7 @@ import (
 	kafkamocks "shippingservice/application/port/out/kafka/mocks"
 	"shippingservice/application/port/out/repository"
 	repomocks "shippingservice/application/port/out/repository/mocks"
+	"shippingservice/domain/apperror"
 	"shippingservice/domain/model"
 	"shippingservice/domain/value"
 
@@ -355,8 +356,12 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 
 		_, err := service.StartDelivery(context.Background(), id, uuid.New())
 
-		if !errors.Is(err, ErrAlreadyPickedUp) {
-			t.Errorf("err = %v, want %v", err, ErrAlreadyPickedUp)
+		// the outermost sentinel decides how the error is reported, and the concurrent update stays in the chain
+		if !apperror.OutermostError(err).Is(ErrAlreadyPickedUp) {
+			t.Errorf("err = %v, want %v outermost", err, ErrAlreadyPickedUp)
+		}
+		if !errors.Is(err, repository.ErrConcurrentUpdate) {
+			t.Errorf("err = %v, want it to wrap %v", err, repository.ErrConcurrentUpdate)
 		}
 	})
 

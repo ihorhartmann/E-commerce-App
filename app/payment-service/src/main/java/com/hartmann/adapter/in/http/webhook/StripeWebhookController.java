@@ -1,10 +1,10 @@
 package com.hartmann.adapter.in.http.webhook;
 
 import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
+import com.hartmann.adapter.in.http.webhook.exception.InvalidWebhookSignatureException;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.exception.PaymentServiceException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.model.Refund;
@@ -15,13 +15,14 @@ import com.stripe.net.Webhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import static com.hartmann.domain.exception.Attributes.attributesOf;
 
 @RestController
 @RequestMapping("/api/v1/webhooks/stripe")
@@ -51,8 +52,7 @@ public class StripeWebhookController {
         try {
             event = Webhook.constructEvent(payload, signatureHeader, webhookSecret);
         } catch (SignatureVerificationException e) {
-            LOG.warn("Rejected Stripe webhook: invalid signature", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            throw new InvalidWebhookSignatureException(e);
         }
 
         switch (event.getType()) {
@@ -87,13 +87,8 @@ public class StripeWebhookController {
                     "Payment updated from webhook: eventId={}, paymentId={}, orderId={}, externalId={}, status={}",
                     event.getId(), payment.id(), payment.orderId(), paymentIntent.getId(), status
             );
-        } catch (ObjectNotFoundException e) {
-            LOG.warn("Received webhook for unknown PaymentIntent {}: {}", paymentIntent.getId(), e.getMessage());
-        } catch (DomainException e) {
-            // Acknowledged anyway: Stripe would only redeliver the same event, which the payment
-            // would reject again (e.g. a confirmation arriving after the payment already expired).
-            LOG.warn("Ignoring webhook {} the payment rejects for PaymentIntent {}: {}",
-                    event.getId(), paymentIntent.getId(), e.getMessage());
+        } catch (PaymentServiceException e) {
+            acknowledgeIfPermanent(event, e);
         }
     }
 
@@ -113,20 +108,35 @@ public class StripeWebhookController {
     }
 
     private void updateRefundStatus(Event event, com.stripe.model.Refund stripeRefund) {
-        var status = StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus());
         try {
+            var status = StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus());
             Refund refund = refundService.updateStatusByExternalId(stripeRefund.getId(), status);
             LOG.info(
                     "Refund updated from webhook: eventId={}, refundId={}, paymentId={}, externalId={}, status={}",
                     event.getId(), refund.id(), refund.paymentId(), stripeRefund.getId(), status
             );
-        } catch (ObjectNotFoundException e) {
-            LOG.warn("Received webhook for unknown Refund {}: {}", stripeRefund.getId(), e.getMessage());
-        } catch (DomainException e) {
-            // Acknowledged anyway: Stripe would only redeliver the same event, which the refund
-            // would reject again (e.g. a change to a refund that already reached a terminal status).
-            LOG.warn("Ignoring webhook {} the refund rejects for Refund {}: {}",
-                    event.getId(), stripeRefund.getId(), e.getMessage());
+        } catch (PaymentServiceException e) {
+            acknowledgeIfPermanent(event, e);
         }
+    }
+
+    /**
+     * A permanent failure - an unknown PaymentIntent or Refund, a status change the payment or refund rejects, e.g.
+     * a confirmation arriving after the payment already expired - is acknowledged anyway: Stripe would only
+     * redeliver the same event, which would fail the same way again. Any other failure is rethrown, so the
+     * webhook answers with a 5xx and Stripe redelivers the event later.
+     */
+    private static void acknowledgeIfPermanent(Event event, PaymentServiceException exception) {
+        if (!exception.isPermanent()) {
+            throw exception;
+        }
+
+        var logBuilder = LOG.atWarn().setMessage("Stripe webhook event rejected, acknowledged anyway")
+                .addKeyValue("eventId", event.getId())
+                .addKeyValue("eventType", event.getType())
+                .addKeyValue("code", exception.code().code())
+                .addKeyValue("exceptionMessage", exception.getMessage());
+        attributesOf(exception).forEach(logBuilder::addKeyValue);
+        logBuilder.log();
     }
 }

@@ -2,6 +2,7 @@ package outbox
 
 import (
 	"context"
+	"log/slog"
 	kafkadto "shippingservice/adapter/out/outbox/dto"
 
 	kafkaconst "shippingservice/adapter/common/kafka"
@@ -52,7 +53,10 @@ func (p *ShipmentKafkaProducer) insert(ctx context.Context, messageType kafkacon
 	)
 
 	if err != nil {
-		return err
+		return ErrOutboxFailure.
+			WithInternalMessage("build outbox message").
+			WithAttrs(slog.String("messageType", messageType.String()), slog.Uint64("orderID", orderID)).
+			WithCause(err)
 	}
 
 	return p.repository.Insert(ctx, message)

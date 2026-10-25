@@ -3,8 +3,6 @@ package value
 import (
 	"errors"
 	"testing"
-
-	"shippingservice/domain"
 )
 
 func TestNewAddress(t *testing.T) {
@@ -34,22 +32,22 @@ func TestNewAddress(t *testing.T) {
 
 	t.Run("rejects a blank city", func(t *testing.T) {
 		_, err := NewAddress("  ", "01001", "Khreshchatyk 1", "")
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidAddress) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidAddress)
 		}
 	})
 
 	t.Run("rejects a blank postal code", func(t *testing.T) {
 		_, err := NewAddress("Kyiv", "  ", "Khreshchatyk 1", "")
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidAddress) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidAddress)
 		}
 	})
 
 	t.Run("rejects a blank line1", func(t *testing.T) {
 		_, err := NewAddress("Kyiv", "01001", "  ", "")
-		if !errors.Is(err, domain.ErrInvalidInput) {
-			t.Errorf("err = %v, want %v", err, domain.ErrInvalidInput)
+		if !errors.Is(err, ErrInvalidAddress) {
+			t.Errorf("err = %v, want %v", err, ErrInvalidAddress)
 		}
 	})
 

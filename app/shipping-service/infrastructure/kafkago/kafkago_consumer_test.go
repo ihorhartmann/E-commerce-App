@@ -233,19 +233,41 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		}
 	})
 
-	t.Run("dead-letters a non-retryable failure after a single attempt", func(t *testing.T) {
+	t.Run("dead-letters a failure of a permanent category after a single attempt", func(t *testing.T) {
 		producer := &mockDeadLetterProducer{}
 		gotHandlerCalls := 0
 
 		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
 			gotHandlerCalls++
-			return inkafka.NonRetryable(errors.New("permanent failure"))
+			return inkafka.ErrMalformedMessage.WithCause(errors.New("permanent failure"))
 		})
 
 		if !got {
 			t.Error("process = false, want true")
 		}
 		if wantHandlerCalls := 1; gotHandlerCalls != wantHandlerCalls {
+			t.Errorf("handler calls = %d, want %d", gotHandlerCalls, wantHandlerCalls)
+		}
+		if wantPublishCalls := 1; producer.calls != wantPublishCalls {
+			t.Errorf("dead-letter publishes = %d, want %d", producer.calls, wantPublishCalls)
+		}
+	})
+
+	t.Run("retries and then dead-letters a handler that panics, as an internal failure", func(t *testing.T) {
+		producer := &mockDeadLetterProducer{}
+		consumer := newConsumer(producer)
+		consumer.retryDelays = []time.Duration{time.Millisecond}
+		gotHandlerCalls := 0
+
+		got := consumer.process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
+			gotHandlerCalls++
+			panic("boom")
+		})
+
+		if !got {
+			t.Error("process = false, want true")
+		}
+		if wantHandlerCalls := 2; gotHandlerCalls != wantHandlerCalls {
 			t.Errorf("handler calls = %d, want %d", gotHandlerCalls, wantHandlerCalls)
 		}
 		if wantPublishCalls := 1; producer.calls != wantPublishCalls {
@@ -306,7 +328,7 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		producer := &mockDeadLetterProducer{failFirst: 1 << 30}
 
 		got := newConsumer(producer).process(context.Background(), validMessage(), func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
-			return inkafka.NonRetryable(errors.New("permanent failure"))
+			return inkafka.ErrMalformedMessage.WithCause(errors.New("permanent failure"))
 		})
 
 		if got {

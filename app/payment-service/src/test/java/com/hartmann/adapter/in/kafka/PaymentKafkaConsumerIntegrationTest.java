@@ -1,10 +1,10 @@
 package com.hartmann.adapter.in.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.RefundService;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.out.repository.exception.PaymentNotFoundException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
@@ -271,10 +271,10 @@ class PaymentKafkaConsumerIntegrationTest {
     }
 
     @Test
-    void aNonRetryableApplicationFailureIsDeadLetteredAfterASingleAttempt() {
+    void aPermanentApplicationFailureIsDeadLetteredAfterASingleAttempt() {
         var orderId = 104L;
         var correlationId = UUID.randomUUID().toString();
-        when(paymentService.getByOrderId(orderId)).thenThrow(new ObjectNotFoundException("no payment for order " + orderId));
+        when(paymentService.getByOrderId(orderId)).thenThrow(PaymentNotFoundException.withOrderId(orderId));
 
         send(commandRecord(KafkaConst.REFUND_REQUESTED_COMMAND, correlationId,
                 "{\"orderId\":" + orderId + ",\"amount\":5.00,\"currency\":\"USD\"}"));
@@ -284,8 +284,8 @@ class PaymentKafkaConsumerIntegrationTest {
         verifyNoInteractions(refundService);
     }
 
-    // PaymentGatewayUnavailableException is an ApplicationException like the non-retryable
-    // ObjectNotFoundException above, but is deliberately absent from the not-retryable list.
+    // PaymentGatewayUnavailableException is a PaymentServiceException like the PaymentNotFoundException
+    // above, but an unavailable dependency, not a permanent failure.
     @Test
     void aRetryableApplicationFailureIsRetriedFiveTimesThenDeadLettered() {
         var paymentId = 5L;
@@ -295,7 +295,7 @@ class PaymentKafkaConsumerIntegrationTest {
         var correlationId = UUID.randomUUID().toString();
         when(paymentService.getByOrderId(orderId)).thenReturn(testPayment(paymentId, orderId));
         when(refundService.submitRefund(any(), any(), eq(paymentId), eq(amount)))
-                .thenThrow(new PaymentGatewayUnavailableException("gateway unavailable", new RuntimeException("stripe is down")));
+                .thenThrow(PaymentGatewayUnavailableException.ofRefund("pi_test", paymentId, new RuntimeException("stripe is down")));
 
         send(commandRecord(KafkaConst.REFUND_REQUESTED_COMMAND, correlationId,
                 "{\"orderId\":" + orderId + ",\"amount\":" + amountValue + ",\"currency\":\"USD\"}"));

@@ -1,6 +1,7 @@
 package com.hartmann.domain.value;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.value.exception.CurrencyMismatchException;
+import com.hartmann.domain.value.exception.InvalidMoneyAmountException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -14,13 +15,17 @@ public record Money(BigDecimal amount, Currency currency) {
     private static final int SCALE = 2;
 
     public Money {
+        // e.g. a request or a message without an amount
+        if (amount == null) {
+            throw new InvalidMoneyAmountException(null);
+        }
         try {
             amount = amount.setScale(SCALE, RoundingMode.UNNECESSARY);
         } catch (ArithmeticException e) {
-            throw new DomainException("Amount " + amount + " must not have more than " + SCALE + " decimal places");
+            throw new InvalidMoneyAmountException(amount, e);
         }
         if (amount.compareTo(BigDecimal.ZERO) < 0) {
-            throw new DomainException("Amount must not be negative");
+            throw new InvalidMoneyAmountException(amount);
         }
     }
 
@@ -45,7 +50,7 @@ public record Money(BigDecimal amount, Currency currency) {
 
     public void requireSameCurrency(Money other) {
         if (currency != other.currency) {
-            throw new DomainException("Currency mismatch: " + currency + " vs " + other.currency);
+            throw new CurrencyMismatchException(currency, other.currency);
         }
     }
 }

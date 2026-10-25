@@ -54,6 +54,14 @@ class HttpIdempotencyService(
         store.complete(idempotencyKey, httpCode, response)
     }
 
+    /**
+     * Gives up idempotencyKey's claim after a failure repeating the same request may fix, so a retry with the
+     * same key runs it again at once.
+     */
+    fun release(idempotencyKey: String) {
+        store.release(idempotencyKey)
+    }
+
     // internal (not private) so HttpIdempotencyServiceTest can exercise it directly.
     internal fun hashRequest(request: RequestFingerprint): String {
         val digest = MessageDigest.getInstance("SHA-256")
