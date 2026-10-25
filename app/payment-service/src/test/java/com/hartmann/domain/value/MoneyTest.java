@@ -1,6 +1,7 @@
 package com.hartmann.domain.value;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.value.exception.CurrencyMismatchException;
+import com.hartmann.domain.value.exception.InvalidMoneyAmountException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -40,13 +41,20 @@ class MoneyTest {
     @Test
     void constructor_rejectsAnAmountWithMoreThanTwoDecimalPlaces() {
         assertThatThrownBy(() -> new Money(new BigDecimal("10.001"), Currency.USD))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InvalidMoneyAmountException.class)
+                .hasCauseInstanceOf(ArithmeticException.class);
+    }
+
+    @Test
+    void constructor_rejectsAMissingAmount() {
+        assertThatThrownBy(() -> new Money(null, Currency.USD))
+                .isInstanceOf(InvalidMoneyAmountException.class);
     }
 
     @Test
     void constructor_rejectsANegativeAmount() {
         assertThatThrownBy(() -> new Money(new BigDecimal("-1"), Currency.USD))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InvalidMoneyAmountException.class);
     }
 
     @Test
@@ -77,7 +85,7 @@ class MoneyTest {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 
-        assertThatThrownBy(() -> usd.add(eur)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> usd.add(eur)).isInstanceOf(CurrencyMismatchException.class);
     }
 
     @Test
@@ -93,7 +101,7 @@ class MoneyTest {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 
-        assertThatThrownBy(() -> usd.subtract(eur)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> usd.subtract(eur)).isInstanceOf(CurrencyMismatchException.class);
     }
 
     @Test
@@ -111,6 +119,6 @@ class MoneyTest {
         var usd = new Money(new BigDecimal("10.00"), Currency.USD);
         var eur = new Money(new BigDecimal("5.00"), Currency.EUR);
 
-        assertThatThrownBy(() -> usd.isGreaterThan(eur)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> usd.isGreaterThan(eur)).isInstanceOf(CurrencyMismatchException.class);
     }
 }

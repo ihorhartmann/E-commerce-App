@@ -210,6 +210,10 @@ return ErrInsufficientStock.
   `infrastructure/gorm/transaction.ErrTransactionFailure`).
 * Stored data that breaks a domain rule is corrupted, not an invalid request: the `NewExisting*` constructors and the
   entity mappers report it as `ErrInconsistentProduct`/`ErrInconsistentReservation` (internal).
+* A rule only this service's own code can break - a call no caller should make, e.g. applying another product's
+  reservation to a product - is a bug, neither corrupted data nor a request to reject: `ErrProductInvariantViolated`
+  (internal), with an internal message saying which rule. Keep it apart from `ErrInconsistent*`, so the code tells
+  whether to look at the data or at the code.
 * Keep errors in variables and results of type `error`, never `*apperror.Error`: a nil `*Error` returned as an `error`
   is not a nil error.
 * Log an error once, where it is handled - `httperror.Write`, the Kafka consumer, a sweep - with

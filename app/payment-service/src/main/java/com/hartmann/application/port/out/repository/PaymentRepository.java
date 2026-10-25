@@ -18,6 +18,13 @@ public interface PaymentRepository {
 
     Payment getByExternalId(String externalId);
 
+    /**
+     * Stores the payment's refunded amount - a running total, though it could be summed from the refunds - under
+     * the payment's version. That version check is what stops concurrent refunds from together exceeding the
+     * amount: summed from the refunds, two requests would each see the old balance and both insert their refund,
+     * since the refund rows don't conflict with each other. The loser gets a ConcurrentUpdateException and its
+     * transaction, the refund included, is rolled back. Write it in the same transaction as the refund it counts.
+     */
     Payment updateRefundedAmount(Payment payment);
 
     /**

@@ -1,8 +1,10 @@
 package com.hartmann.interfaceadapter.out.repository.entity
 
+import com.hartmann.entities.exception.InvalidException
 import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderStatus
+import com.hartmann.entities.model.exception.InconsistentOrderException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
@@ -19,8 +21,6 @@ import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 import org.hibernate.annotations.BatchSize
-import com.hartmann.entities.exception.OrderServiceException
-import com.hartmann.interfaceadapter.out.repository.exception.InconsistentOrderException
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
@@ -105,13 +105,15 @@ fun toOrderEntity(order: Order): OrderEntity {
 }
 
 /**
- * A stored order that breaks one of the order's own rules - a negative amount, a blank address field - is
- * corrupted data, not a request to reject, so it is reported as InconsistentOrderException.
+ * A stored order that breaks one of the order's own rules is corrupted data, not a request to reject, so it is
+ * reported as InconsistentOrderException. Order.createExisting already throws that for the order's own rules; what
+ * is caught here is a value built on the way - a negative amount, a blank address field - rejected as invalid, which
+ * on its own would read as the caller's fault, or a missing column requireNotNull rejected.
  */
 fun fromOrderEntity(entity: OrderEntity): Order =
     try {
         buildOrder(entity)
-    } catch (e: OrderServiceException) {
+    } catch (e: InvalidException) {
         throw InconsistentOrderException(entity.id, e)
     } catch (e: IllegalArgumentException) {
         throw InconsistentOrderException(entity.id, e)

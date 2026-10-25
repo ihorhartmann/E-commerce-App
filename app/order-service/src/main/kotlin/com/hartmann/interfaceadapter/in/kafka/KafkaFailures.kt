@@ -1,6 +1,6 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
-import com.hartmann.entities.exception.OrderServiceException
+import com.hartmann.entities.exception.outermostOf
 
 /**
  * Whether a message whose handling failed with [exception] can't succeed on any later attempt, so it is
@@ -8,4 +8,4 @@ import com.hartmann.entities.exception.OrderServiceException
  * the top of the chain is the listener container's own wrapper. A failure without one is retried.
  */
 fun isPermanentFailure(exception: Throwable): Boolean =
-    generateSequence(exception) { it.cause }.filterIsInstance<OrderServiceException>().firstOrNull()?.permanent == true
+    outermostOf(exception)?.permanent == true

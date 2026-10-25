@@ -1,5 +1,7 @@
 package com.hartmann.entities.model
 
+import com.hartmann.entities.model.exception.InconsistentOrderException
+import com.hartmann.entities.model.exception.OrderInvariantViolatedException
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -26,31 +28,31 @@ private fun existingItem(id: Long = 1, orderId: Long = 1, quantity: Int = 1) = O
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class OrderItemTest {
 
-    // --- constructor ---
+    // --- createNew rules ---
 
     @Test
-    fun `constructor - rejects a zero productId`() {
-        assertThrows<IllegalArgumentException> { newItem(productId = 0) }
+    fun `createNew - rejects a zero productId`() {
+        assertThrows<OrderInvariantViolatedException> { newItem(productId = 0) }
     }
 
     @Test
-    fun `constructor - rejects a negative productId`() {
-        assertThrows<IllegalArgumentException> { newItem(productId = -1) }
+    fun `createNew - rejects a negative productId`() {
+        assertThrows<OrderInvariantViolatedException> { newItem(productId = -1) }
     }
 
     @Test
-    fun `constructor - rejects a blank productName`() {
-        assertThrows<IllegalArgumentException> { newItem(productName = " ") }
+    fun `createNew - rejects a blank productName`() {
+        assertThrows<OrderInvariantViolatedException> { newItem(productName = " ") }
     }
 
     @Test
-    fun `constructor - rejects a zero quantity`() {
-        assertThrows<IllegalArgumentException> { newItem(quantity = 0) }
+    fun `createNew - rejects a zero quantity`() {
+        assertThrows<OrderInvariantViolatedException> { newItem(quantity = 0) }
     }
 
     @Test
-    fun `constructor - rejects a negative quantity`() {
-        assertThrows<IllegalArgumentException> { newItem(quantity = -1) }
+    fun `createNew - rejects a negative quantity`() {
+        assertThrows<OrderInvariantViolatedException> { newItem(quantity = -1) }
     }
 
     // --- createNew ---
@@ -102,12 +104,17 @@ class OrderItemTest {
 
     @Test
     fun `createExisting - throws when id is not positive`() {
-        assertThrows<IllegalArgumentException> { existingItem(id = 0) }
+        assertThrows<InconsistentOrderException> { existingItem(id = 0) }
     }
 
     @Test
     fun `createExisting - throws when orderId is not positive`() {
-        assertThrows<IllegalArgumentException> { existingItem(orderId = 0) }
+        assertThrows<InconsistentOrderException> { existingItem(orderId = 0) }
+    }
+
+    @Test
+    fun `createExisting - reports a stored item that breaks the item's own rules as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> { existingItem(quantity = 0) }
     }
 
     // --- equals ---

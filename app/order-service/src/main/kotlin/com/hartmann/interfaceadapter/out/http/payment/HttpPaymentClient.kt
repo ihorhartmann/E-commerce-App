@@ -1,18 +1,26 @@
 package com.hartmann.interfaceadapter.out.http.payment
 
 import com.hartmann.entities.value.Money
+import com.hartmann.interfaceadapter.out.http.common.dto.toProblemResponse
 import com.hartmann.interfaceadapter.out.http.payment.dto.SubmitPaymentRequest
 import com.hartmann.interfaceadapter.out.http.payment.dto.SubmitPaymentResponse
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentFailureException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentGatewayUnavailableException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentRejectedException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentRequestRejectedException
+import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentServiceUnavailableException
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.toEntity
+
+/** Payment's code for a payment the gateway rejected outright. */
+private const val PAYMENT_GATEWAY_REJECTED_CODE = "PAYMENT.PAYMENT_GATEWAY_REJECTED"
+
+/** Payment's code for a gateway that is temporarily unavailable. */
+private const val PAYMENT_GATEWAY_UNAVAILABLE_CODE = "PAYMENT.PAYMENT_GATEWAY_UNAVAILABLE"
 
 /**
  * Transport-level failures (a ResourceAccessException) are deliberately left to propagate as-is:
@@ -41,15 +49,19 @@ class HttpPaymentClient(private val restClient: RestClient) : PaymentClient {
     }
 
     /**
-     * Maps an error response by its status alone, unlike HttpInventoryClient: the payment service doesn't send
-     * error codes yet. A 409 is the gateway rejecting the payment and a 503 the gateway being unavailable; any
-     * other failure is this service's own, not the caller's.
+     * Maps an error response by payment's code, never by the status alone: a 409 is a rejected payment as well
+     * as a request still in progress, a 503 the gateway being unavailable as well as a concurrent update. Whatever
+     * else payment asks to retry is reported as the payment service being unavailable, so the caller is asked to
+     * retry too; any other failure is this service's own, not the caller's.
      */
-    private fun fromErrorResponse(orderId: Long, e: HttpStatusCodeException): RuntimeException =
-        when {
-            e.statusCode == HttpStatus.CONFLICT -> PaymentRejectedException(orderId, e)
-            e.statusCode == HttpStatus.SERVICE_UNAVAILABLE -> PaymentGatewayUnavailableException(orderId, e)
-            e.statusCode.is5xxServerError -> PaymentFailureException(orderId, e.statusCode.value(), e)
-            else -> PaymentRequestRejectedException(orderId, e.statusCode.value(), e)
+    private fun fromErrorResponse(orderId: Long, e: HttpStatusCodeException): RuntimeException {
+        val problem = toProblemResponse(e)
+        return when {
+            problem?.code == PAYMENT_GATEWAY_REJECTED_CODE -> PaymentRejectedException(orderId, e)
+            problem?.code == PAYMENT_GATEWAY_UNAVAILABLE_CODE -> PaymentGatewayUnavailableException(orderId, e)
+            problem?.retryable == true -> PaymentServiceUnavailableException(orderId, e)
+            e.statusCode.is5xxServerError -> PaymentFailureException(orderId, e.statusCode.value(), problem?.code, e)
+            else -> PaymentRequestRejectedException(orderId, e.statusCode.value(), problem?.code, e)
         }
+    }
 }

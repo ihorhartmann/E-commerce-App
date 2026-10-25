@@ -1,6 +1,6 @@
 package com.hartmann.domain.value;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.value.exception.UnsupportedCurrencyException;
 
 public enum Currency {
     EUR,
@@ -8,13 +8,14 @@ public enum Currency {
     GBP;
 
     public static Currency fromCode(String code) {
+        // e.g. a request or a message without a currency
         if (code == null) {
-            throw new DomainException("Currency code must not be null");
+            throw new UnsupportedCurrencyException(null, null);
         }
         try {
             return Currency.valueOf(code.toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new DomainException("Unsupported currency: " + code);
+            throw new UnsupportedCurrencyException(code, e);
         }
     }
 }

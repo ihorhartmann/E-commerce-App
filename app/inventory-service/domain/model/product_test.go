@@ -300,8 +300,8 @@ func TestProduct_ReleaseReservation(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID()+1, 100, 4, ReservationHolderBuyer)
 
 		err := product.ReleaseReservation(reservation)
-		if !errors.Is(err, ErrForeignReservation) {
-			t.Errorf("err = %v, want %v", err, ErrForeignReservation)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 		if product.Reserved() != reserved {
 			t.Errorf("Reserved() = %d, want %d (unchanged)", product.Reserved(), reserved)
@@ -313,8 +313,8 @@ func TestProduct_ReleaseReservation(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderBuyer)
 
 		err := product.ReleaseReservation(reservation)
-		if !errors.Is(err, ErrReservedQuantityMismatch) {
-			t.Errorf("err = %v, want %v", err, ErrReservedQuantityMismatch)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 }
@@ -339,8 +339,8 @@ func TestProduct_Fulfill(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID()+1, 100, 4, ReservationHolderCourier)
 
 		err := product.Fulfill(reservation)
-		if !errors.Is(err, ErrForeignReservation) {
-			t.Errorf("err = %v, want %v", err, ErrForeignReservation)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 
@@ -349,8 +349,8 @@ func TestProduct_Fulfill(t *testing.T) {
 		reservation, _ := NewStockReservation(1, product.ID(), 100, 4, ReservationHolderCourier)
 
 		err := product.Fulfill(reservation)
-		if !errors.Is(err, ErrReservedQuantityMismatch) {
-			t.Errorf("err = %v, want %v", err, ErrReservedQuantityMismatch)
+		if !errors.Is(err, ErrProductInvariantViolated) {
+			t.Errorf("err = %v, want %v", err, ErrProductInvariantViolated)
 		}
 	})
 

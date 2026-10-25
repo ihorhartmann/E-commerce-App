@@ -22,7 +22,9 @@ type shipmentState struct {
 
 func newShipmentState(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID, cancellationReason CancellationReason) (shipmentState, error) {
 	if !isValidState(status, holder, courierID, cancellationReason) {
-		return shipmentState{}, invalidStateError(status, holder, courierID, cancellationReason)
+		return shipmentState{}, ErrInconsistentShipment.
+			WithInternalMessage("stored shipment state breaks the shipment's rules").
+			WithAttrs(stateAttrs(status, holder, courierID, cancellationReason)...)
 	}
 
 	return shipmentState{status: status, holder: holder, courierID: courierID, cancellationReason: cancellationReason}, nil
@@ -117,10 +119,13 @@ func (s *shipmentState) isOpen() bool {
 }
 
 // change moves to the new state only if it's one a shipment can be in, so every transition is checked by the same
-// rules as a state loaded from the database.
+// rules as a state loaded from the database. The service checks every request before it reaches a transition, so a
+// state change the rules reject is a bug.
 func (s *shipmentState) change(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID, cancellationReason CancellationReason) error {
 	if !isValidState(status, holder, courierID, cancellationReason) {
-		return invalidStateError(status, holder, courierID, cancellationReason)
+		return ErrShipmentInvariantViolated.
+			WithInternalMessage("transition into a state no shipment can be in").
+			WithAttrs(stateAttrs(status, holder, courierID, cancellationReason)...)
 	}
 
 	s.status = status
@@ -140,15 +145,12 @@ func (s *shipmentState) requireStatus(action string, expected ...ShipmentStatus)
 		WithAttrs(slog.String("action", action), slog.String("expectedStatuses", fmt.Sprint(expected)), slog.String("status", string(s.status)))
 }
 
-// invalidStateError reports a state no shipment can be in - stored data that is corrupted, or a transition that
-// should never produce it - so it is internal, not a request to reject.
-func invalidStateError(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID, cancellationReason CancellationReason) error {
-	return ErrInconsistentShipment.
-		WithInternalMessage("shipment state breaks the shipment's rules").
-		WithAttrs(
-			slog.String("status", string(status)),
-			slog.String("holder", string(holder)),
-			slog.String("courierID", courierID.String()),
-			slog.String("cancellationReason", string(cancellationReason)),
-		)
+// stateAttrs describes a state no shipment can be in, for the error that reports it.
+func stateAttrs(status ShipmentStatus, holder ShipmentHolder, courierID uuid.UUID, cancellationReason CancellationReason) []slog.Attr {
+	return []slog.Attr{
+		slog.String("status", string(status)),
+		slog.String("holder", string(holder)),
+		slog.String("courierID", courierID.String()),
+		slog.String("cancellationReason", string(cancellationReason)),
+	}
 }

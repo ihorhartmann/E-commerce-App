@@ -1,5 +1,7 @@
 package com.hartmann.entities.model
 
+import com.hartmann.entities.model.exception.InconsistentOrderException
+import com.hartmann.entities.model.exception.OrderInvariantViolatedException
 import com.hartmann.entities.value.Money
 
 class OrderItem private constructor(
@@ -10,12 +12,6 @@ class OrderItem private constructor(
     val quantity: Int,
     val price: Money,
 ) {
-    init {
-        require(productId > 0) { "productId must be positive" }
-        require(productName.isNotBlank()) { "productName must not be blank" }
-        require(quantity > 0) { "quantity must be positive" }
-    }
-
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is OrderItem) return false
@@ -31,6 +27,9 @@ class OrderItem private constructor(
     companion object {
         /** [productName] and [price] are the product's as it was reserved - they no longer follow the catalog. */
         fun createNew(productId: Long, productName: String, quantity: Int, price: Money): OrderItem {
+            findBrokenRule(productId, productName, quantity)?.let {
+                throw OrderInvariantViolatedException(it, mapOf("productId" to productId))
+            }
             return OrderItem(
                 id = 0,
                 orderId = 0,
@@ -41,6 +40,7 @@ class OrderItem private constructor(
             )
         }
 
+        /** An item is stored as part of its order, so stored data that breaks its rules makes the order inconsistent. */
         fun createExisting(
             id: Long,
             orderId: Long,
@@ -49,8 +49,12 @@ class OrderItem private constructor(
             quantity: Int,
             price: Money,
         ): OrderItem {
-            require(id > 0) { "id must be positive" }
-            require(orderId > 0) { "orderId must be positive" }
+            val brokenRule = when {
+                id <= 0 -> "item id must be positive"
+                orderId <= 0 -> "item orderId must be positive"
+                else -> findBrokenRule(productId, productName, quantity)
+            }
+            brokenRule?.let { throw InconsistentOrderException(orderId, it) }
             return OrderItem(
                 id = id,
                 orderId = orderId,
@@ -59,6 +63,17 @@ class OrderItem private constructor(
                 quantity = quantity,
                 price = price,
             )
+        }
+
+        /**
+         * The first of the item's own rules its data breaks, or null. The same rules hold for a new and for a stored
+         * item; only what breaking them means differs - a bug in [createNew], corrupted data in [createExisting].
+         */
+        private fun findBrokenRule(productId: Long, productName: String, quantity: Int): String? = when {
+            productId <= 0 -> "item productId must be positive"
+            productName.isBlank() -> "item productName must not be blank"
+            quantity <= 0 -> "item quantity must be positive"
+            else -> null
         }
     }
 }

@@ -1,7 +1,8 @@
 package com.hartmann.infrastructure.config;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
-import com.hartmann.adapter.in.kafka.exception.NonRetryableException;
+import com.hartmann.adapter.in.kafka.KafkaFailures;
+import com.hartmann.infrastructure.kafka.RetryableDeadLetterPublishingRecoverer;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +12,7 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.ExponentialBackOffWithMaxRetries;
 import org.springframework.messaging.MessageHandlingException;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.time.Duration;
 
@@ -27,14 +29,14 @@ public class KafkaErrorHandlerConfig {
     public CommonErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> kafkaTemplate) {
         var errorHandler = createErrorHandler(kafkaTemplate);
 
-        // Anything not listed here is treated as transient and retried. Which failures repeat the same
-        // way every time is decided by the consumer, which wraps them in NonRetryableException.
-        errorHandler.addNotRetryableExceptions(
-                NonRetryableException.class,
-                // A required header is missing: @Header binding fails inside the framework, before the
-                // consumer runs, so the consumer never gets the chance to classify it.
-                MessageHandlingException.class
-        );
+        // A permanent failure - a malformed payload, a business rule rejecting the message, a missing
+        // payment - can't succeed on a later attempt, so it gets no retries and is dead-lettered at once.
+        // Any other failure gets the default back-off.
+        errorHandler.setBackOffFunction((_, exception) ->
+                KafkaFailures.isPermanentFailure(exception) ? new FixedBackOff(0, 0) : null);
+        // A required header is missing: @Header binding fails inside the framework, before the
+        // consumer runs, so the failure is no PaymentServiceException.
+        errorHandler.addNotRetryableExceptions(MessageHandlingException.class);
         return errorHandler;
     }
 

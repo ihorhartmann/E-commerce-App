@@ -1,6 +1,8 @@
 package com.hartmann.entities.exception
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 
@@ -51,5 +53,30 @@ class OrderServiceExceptionAttributesTest {
         val actual = attributesOf(IllegalStateException("connection refused"))
 
         assertEquals(emptyMap<String, Any?>(), actual)
+    }
+
+    @Test
+    fun `outermostOf - returns the exception itself when it is an OrderServiceException`() {
+        val exception = TestUnavailableException(4, TestNotFoundException(7, 3))
+
+        val actual = outermostOf(exception)
+
+        assertSame(exception, actual)
+    }
+
+    @Test
+    fun `outermostOf - returns the outermost OrderServiceException in the cause chain`() {
+        val expected = TestUnavailableException(4, TestNotFoundException(7, 3))
+
+        val actual = outermostOf(IllegalStateException(expected))
+
+        assertSame(expected, actual)
+    }
+
+    @Test
+    fun `outermostOf - returns null for a chain without an OrderServiceException`() {
+        val actual = outermostOf(IllegalStateException(RuntimeException("connection refused")))
+
+        assertNull(actual)
     }
 }

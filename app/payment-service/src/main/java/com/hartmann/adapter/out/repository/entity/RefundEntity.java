@@ -1,7 +1,9 @@
 package com.hartmann.adapter.out.repository.entity;
 
+import com.hartmann.domain.exception.InvalidException;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
+import com.hartmann.domain.model.exception.InconsistentRefundException;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 
@@ -37,7 +39,21 @@ public record RefundEntity(
         );
     }
 
+    /**
+     * A stored refund that breaks one of the refund's own rules is corrupted data, not a request to reject, so it is
+     * reported as InconsistentRefundException. Refund.createExisting already throws that for the refund's own rules;
+     * what is caught here is a value built on the way - a negative amount - rejected as invalid, which on its own
+     * would read as the caller's fault, or an unknown status or currency valueOf rejected.
+     */
     public static Refund toRefund(RefundEntity entity) {
+        try {
+            return buildRefund(entity);
+        } catch (InvalidException | IllegalArgumentException e) {
+            throw new InconsistentRefundException(entity.id(), e);
+        }
+    }
+
+    private static Refund buildRefund(RefundEntity entity) {
         return Refund.createExisting(
                 entity.id(),
                 entity.paymentId(),

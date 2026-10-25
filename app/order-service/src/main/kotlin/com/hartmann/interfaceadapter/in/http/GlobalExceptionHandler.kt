@@ -8,6 +8,7 @@ import com.hartmann.entities.exception.OrderServiceException
 import com.hartmann.entities.exception.TransientException
 import com.hartmann.entities.exception.UnavailableException
 import com.hartmann.entities.exception.attributesOf
+import com.hartmann.entities.exception.outermostOf
 import com.hartmann.interfaceadapter.`in`.http.exception.AccessForbiddenException
 import com.hartmann.interfaceadapter.`in`.http.exception.HttpErrorCode
 import com.hartmann.interfaceadapter.`in`.http.exception.IdempotencyKeyReusedException
@@ -77,7 +78,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
      */
     @ExceptionHandler(Exception::class)
     fun unexpected(exception: Exception, request: HttpServletRequest): ResponseEntity<ProblemDetail> {
-        val found = generateSequence(exception.cause) { it.cause }.filterIsInstance<OrderServiceException>().firstOrNull()
+        val found = outermostOf(exception)
         if (found != null) {
             return render(exception, found, request)
         }
@@ -102,7 +103,9 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     }
 
     // Every Spring MVC exception ResponseEntityExceptionHandler handles ends up here: give its
-    // ProblemDetail the same members as ours, and log it.
+    // ProblemDetail the same members as ours, and log it. The ProblemDetail is taken from the response super
+    // builds, not from body: Spring's own handlers pass a null body and super creates the ProblemDetail from the
+    // exception; only an override of ours (handleMethodArgumentNotValid) passes a ready one.
     override fun handleExceptionInternal(
         exception: Exception,
         body: Any?,
@@ -112,13 +115,15 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     ): ResponseEntity<Any>? {
         val code = codeOf(exception, statusCode)
         logFailure(exception, code, statusCode, (request as? ServletWebRequest)?.request)
-        if (body is ProblemDetail) {
-            body.type = URI.create(TYPE_URN_PREFIX + code.code)
-            body.title = code.title
-            body.setProperty(CODE_PROPERTY, code.code)
-            body.setProperty(RETRYABLE_PROPERTY, false)
+        val response = super.handleExceptionInternal(exception, body, headers, statusCode, request)
+        val problem = response?.body as? ProblemDetail
+        if (problem != null) {
+            problem.type = URI.create(TYPE_URN_PREFIX + code.code)
+            problem.title = code.title
+            problem.setProperty(CODE_PROPERTY, code.code)
+            problem.setProperty(RETRYABLE_PROPERTY, false)
         }
-        return super.handleExceptionInternal(exception, body, headers, statusCode, request)
+        return response
     }
 
     /** [exception] is what was thrown; [found] is ours - the same exception, or the one it wraps. */

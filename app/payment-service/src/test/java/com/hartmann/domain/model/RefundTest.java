@@ -1,6 +1,8 @@
 package com.hartmann.domain.model;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.model.exception.InconsistentRefundException;
+import com.hartmann.domain.model.exception.RefundInvariantViolatedException;
+import com.hartmann.domain.model.exception.RefundTransitionNotAllowedException;
 import com.hartmann.domain.value.Currency;
 import com.hartmann.domain.value.Money;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,7 @@ class RefundTest {
     }
 
     @Test
-    void constructor_createsARefundWithTheGivenFields() {
+    void createExisting_createsARefundWithTheGivenFields() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
         var version = 7L;
@@ -35,7 +37,7 @@ class RefundTest {
     }
 
     @Test
-    void constructor_allowsANullExternalId() {
+    void createExisting_allowsANullExternalId() {
         var now = Instant.now();
         var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), null, testAmount(), RefundStatus.PENDING, 0L, now, now);
 
@@ -43,38 +45,38 @@ class RefundTest {
     }
 
     @Test
-    void constructor_rejectsANonPositivePaymentId() {
+    void createExisting_rejectsANonPositivePaymentId() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
         assertThatThrownBy(() -> Refund.createExisting(1L, 0L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     @Test
-    void constructor_rejectsANullIdempotencyKey() {
+    void createExisting_rejectsANullIdempotencyKey() {
         var now = Instant.now();
         assertThatThrownBy(() -> Refund.createExisting(1L, 100L, null, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     @Test
-    void constructor_rejectsANullAmount() {
+    void createExisting_rejectsANullAmount() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
         assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", null, RefundStatus.PENDING, 0L, now, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     @Test
-    void constructor_rejectsANullStatus() {
+    void createExisting_rejectsANullStatus() {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
         assertThatThrownBy(() -> Refund.createExisting(1L, 100L, idempotencyKey, "re_test", testAmount(), null, 0L, now, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     @Test
-    void constructor_rejectsNullCreatedAt() {
+    void createExisting_rejectsNullCreatedAt() {
         var now = Instant.now();
         var id = 1L;
         var paymentId = 100L;
@@ -83,11 +85,11 @@ class RefundTest {
         var amount = testAmount();
         var status = RefundStatus.PENDING;
         assertThatThrownBy(() -> Refund.createExisting(id, paymentId, idempotencyKey, externalId, amount, status, 0L, null, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     @Test
-    void constructor_allowsNullUpdatedAt() {
+    void createExisting_allowsNullUpdatedAt() {
         var now = Instant.now();
         var refund = Refund.createExisting(1L, 100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING, 0L, now, null);
 
@@ -111,6 +113,12 @@ class RefundTest {
         assertThat(refund.status()).isEqualTo(status);
     }
 
+    @Test
+    void createNew_reportsABrokenRuleAsAViolatedInvariant() {
+        assertThatThrownBy(() -> Refund.createNew(100L, null, null, testAmount(), RefundStatus.INITIATED))
+                .isInstanceOf(RefundInvariantViolatedException.class);
+    }
+
     // --- createExisting ---
 
     @Test
@@ -127,7 +135,7 @@ class RefundTest {
         var now = Instant.now();
         var idempotencyKey = UUID.randomUUID();
         assertThatThrownBy(() -> Refund.createExisting(0L, 100L, idempotencyKey, "re_test", testAmount(), RefundStatus.PENDING, 0L, now, now))
-                .isInstanceOf(DomainException.class);
+                .isInstanceOf(InconsistentRefundException.class);
     }
 
     // --- matches ---
@@ -204,14 +212,14 @@ class RefundTest {
     void submit_throwsWhenTheRefundWasAlreadySubmitted() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING);
 
-        assertThatThrownBy(() -> refund.submit("re_new", RefundStatus.PENDING)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.submit("re_new", RefundStatus.PENDING)).isInstanceOf(RefundTransitionNotAllowedException.class);
     }
 
     @Test
     void submit_throwsWithoutAnExternalId() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
-        assertThatThrownBy(() -> refund.submit(" ", RefundStatus.PENDING)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.submit(" ", RefundStatus.PENDING)).isInstanceOf(RefundInvariantViolatedException.class);
         assertThat(refund.status()).isEqualTo(RefundStatus.INITIATED);
     }
 
@@ -219,7 +227,7 @@ class RefundTest {
     void submit_throwsWhenTheReportedStatusIsInitiated() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
-        assertThatThrownBy(() -> refund.submit("re_new", RefundStatus.INITIATED)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.submit("re_new", RefundStatus.INITIATED)).isInstanceOf(RefundInvariantViolatedException.class);
         assertThat(refund.externalId()).isNull();
     }
 
@@ -238,7 +246,7 @@ class RefundTest {
     void fail_throwsWhenTheRefundWasAlreadySubmitted() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING);
 
-        assertThatThrownBy(refund::fail).isInstanceOf(DomainException.class);
+        assertThatThrownBy(refund::fail).isInstanceOf(RefundTransitionNotAllowedException.class);
     }
 
     // --- applyGatewayStatus ---
@@ -265,7 +273,7 @@ class RefundTest {
     void applyGatewayStatus_throwsWhenChangingATerminalStatus() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.SUCCEEDED);
 
-        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.FAILED)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.FAILED)).isInstanceOf(RefundTransitionNotAllowedException.class);
         assertThat(refund.status()).isEqualTo(RefundStatus.SUCCEEDED);
     }
 
@@ -273,14 +281,14 @@ class RefundTest {
     void applyGatewayStatus_throwsForARefundNotSubmittedYet() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), null, testAmount(), RefundStatus.INITIATED);
 
-        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.SUCCEEDED)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.SUCCEEDED)).isInstanceOf(RefundTransitionNotAllowedException.class);
     }
 
     @Test
     void applyGatewayStatus_throwsWhenMovingAPendingRefundBackToInitiated() {
         var refund = Refund.createNew(100L, UUID.randomUUID(), "re_test", testAmount(), RefundStatus.PENDING);
 
-        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.INITIATED)).isInstanceOf(DomainException.class);
+        assertThatThrownBy(() -> refund.applyGatewayStatus(RefundStatus.INITIATED)).isInstanceOf(RefundInvariantViolatedException.class);
     }
 
     // --- equals ---

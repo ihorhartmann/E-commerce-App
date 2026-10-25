@@ -15,3 +15,11 @@ fun attributesOf(exception: Throwable): Map<String, Any?> =
     generateSequence(exception) { it.cause }
         .filterIsInstance<OrderServiceException>()
         .fold(emptyMap()) { attributes, cause -> cause.attributes + attributes }
+
+/**
+ * The outermost [OrderServiceException] in [exception]'s cause chain - [exception] itself, if it is one - which is
+ * the one a failure is reported and classified by: its code, its kind. Null if the chain holds none. A top-level
+ * function taking any Throwable for the same reason as [attributesOf].
+ */
+fun outermostOf(exception: Throwable): OrderServiceException? =
+    generateSequence(exception) { it.cause }.filterIsInstance<OrderServiceException>().firstOrNull()

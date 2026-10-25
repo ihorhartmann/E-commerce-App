@@ -4,7 +4,7 @@ package com.hartmann.entities.exception
  * Makes every code unique across the system: errors from all services reach a client through the
  * gateway, and the prefix also tells which service a code came from.
  */
-const val SERVICE_PREFIX = "ORDER."
+private const val SERVICE_PREFIX = "ORDER."
 
 /**
  * A stable, documented error identifier, sent to clients as ProblemDetail.code. Each layer declares

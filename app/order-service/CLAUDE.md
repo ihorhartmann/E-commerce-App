@@ -271,10 +271,16 @@ class OrderNotFoundException(val orderId: Long) :
 * An exception lives where the root CLAUDE.md puts exceptions: next to a port only if the port's callers need it
   (`OrderNotFoundException`, `ConcurrentUpdateException`, `InvalidPageException`), otherwise next to the adapter that
   throws it (`interfaceadapter.out.http.inventory.exception`, `interfaceadapter.out.repository.exception`).
-* A `require`/`check` is left only for an internal invariant (e.g. an order with no items): it is a 500 and a retried
-  Kafka message. A rule a request or a message can break throws an exception of ours.
-* Stored data that breaks a domain rule is corrupted, not an invalid request: `fromOrderEntity` reports it as
-  `InconsistentOrderException` (internal).
+* The domain has no `require`/`check`: every rule it enforces throws an exception of ours, and which one depends on
+  who can break the rule, not on the rule:
+    * a request or a message - an `InvalidException`/`ConflictException` (e.g. `InvalidAddressException`);
+    * stored data - `InconsistentOrderException` (internal), thrown by `createExisting` and by `fromOrderEntity` for
+      a value the stored data fails to build;
+    * only this service's own code - a bug - `OrderInvariantViolatedException` (internal), e.g. `createNew` without
+      items.
+
+  An entity's `createNew` and `createExisting` check the same rules (a shared `findBrokenRule`), each reporting a broken
+  one its own way. The two internal codes are kept apart, so a log tells whether to look at the data or at the code.
 * Log an exception once, where it is handled - `GlobalExceptionHandler`, `OrderKafkaConsumer` - with every attribute
   of `attributesOf(exception)` as a key-value pair of its own.
 

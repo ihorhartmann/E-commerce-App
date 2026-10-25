@@ -1,17 +1,18 @@
 package com.hartmann.adapter.out.repository;
 
 import com.hartmann.adapter.out.repository.entity.RefundEntity;
-import com.hartmann.application.exception.ApplicationException;
+import com.hartmann.adapter.out.repository.exception.DatabaseFailureException;
 import com.hartmann.application.port.out.repository.RefundRepository;
 import com.hartmann.application.port.out.repository.exception.ConcurrentUpdateException;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.repository.exception.RefundNotFoundException;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.model.RefundStatus;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Table;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -21,12 +22,18 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
 
+/**
+ * Every method reports a database error as DatabaseFailureException, so it carries a code of its own rather than
+ * reaching the error handlers as an anonymous jOOQ exception. A failure at commit time, outside these methods,
+ * still does.
+ */
 @Repository
 public class PostgresRefundRepository implements RefundRepository {
     private static final Table<Record> REFUNDS = table(name("payment", "refunds"));
@@ -59,7 +66,7 @@ public class PostgresRefundRepository implements RefundRepository {
     @Override
     public Refund create(Refund refund) {
         var entity = RefundEntity.from(refund);
-        return dsl.insertInto(REFUNDS)
+        return translatingFailures(() -> dsl.insertInto(REFUNDS)
                 .set(PAYMENT_ID, entity.paymentId())
                 .set(IDEMPOTENCY_KEY, entity.idempotencyKey())
                 .set(EXTERNAL_ID, entity.externalId())
@@ -72,20 +79,20 @@ public class PostgresRefundRepository implements RefundRepository {
                 .onConflict(IDEMPOTENCY_KEY)
                 .doNothing()
                 .returning(REFUND_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toRefund)
-                .orElseThrow(() -> new DuplicateIdempotencyKeyException(
-                        "Refund with idempotency key " + entity.idempotencyKey() + " already exists"));
+                .orElseThrow(() -> new DuplicateIdempotencyKeyException(entity.idempotencyKey()));
     }
 
     @Override
     public Optional<Refund> findByIdempotencyKey(UUID idempotencyKey) {
-        return dsl.select(REFUND_FIELDS).from(REFUNDS).where(IDEMPOTENCY_KEY.eq(idempotencyKey)).fetchOptional(this::toRefund);
+        return translatingFailures(() -> dsl.select(REFUND_FIELDS).from(REFUNDS).where(IDEMPOTENCY_KEY.eq(idempotencyKey)).fetchOptional())
+                .map(this::toRefund);
     }
 
     @Override
     public Refund markPending(long refundId, long version, String externalId, RefundStatus status) {
-        return dsl.update(REFUNDS)
+        return translatingFailures(() -> dsl.update(REFUNDS)
                 .set(EXTERNAL_ID, externalId)
                 .set(STATUS, status.name())
                 .set(VERSION, VERSION.plus(1))
@@ -93,46 +100,46 @@ public class PostgresRefundRepository implements RefundRepository {
                 .where(ID.eq(refundId))
                 .and(VERSION.eq(version))
                 .returning(REFUND_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toRefund)
                 .orElseThrow(() -> notUpdated(refundId, version));
     }
 
     @Override
     public List<Refund> findByPaymentId(long paymentId) {
-        return dsl.select(REFUND_FIELDS).from(REFUNDS).where(PAYMENT_ID.eq(paymentId)).fetch(this::toRefund);
+        return translatingFailures(() -> dsl.select(REFUND_FIELDS).from(REFUNDS).where(PAYMENT_ID.eq(paymentId)).fetch())
+                .map(this::toRefund);
     }
 
     @Override
     public Refund updateStatus(long refundId, long version, RefundStatus status) {
-        return dsl.update(REFUNDS)
+        return translatingFailures(() -> dsl.update(REFUNDS)
                 .set(STATUS, status.name())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(refundId))
                 .and(VERSION.eq(version))
                 .returning(REFUND_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toRefund)
                 .orElseThrow(() -> notUpdated(refundId, version));
     }
 
     @Override
     public Refund getByExternalId(String externalId) {
-        var record = dsl.select(REFUND_FIELDS).from(REFUNDS).where(EXTERNAL_ID.eq(externalId)).fetchOne();
+        var record = translatingFailures(() -> dsl.select(REFUND_FIELDS).from(REFUNDS).where(EXTERNAL_ID.eq(externalId)).fetchOne());
         if (record == null) {
-            throw new ObjectNotFoundException("Refund with external id " + externalId + " not found");
+            throw RefundNotFoundException.withExternalId(externalId);
         }
         return toRefund(record);
     }
 
     // Nothing matched: either the refund is gone, or someone changed it after it was loaded.
-    private ApplicationException notUpdated(long refundId, long version) {
-        if (!dsl.fetchExists(REFUNDS, ID.eq(refundId))) {
-            return new ObjectNotFoundException("Refund with id " + refundId + " not found");
+    private RuntimeException notUpdated(long refundId, long version) {
+        if (!translatingFailures(() -> dsl.fetchExists(REFUNDS, ID.eq(refundId)))) {
+            return RefundNotFoundException.withId(refundId);
         }
-        return new ConcurrentUpdateException(
-                "Refund " + refundId + " was changed concurrently since version " + version);
+        return ConcurrentUpdateException.ofRefund(refundId, version);
     }
 
     private Refund toRefund(Record record) {
@@ -150,5 +157,15 @@ public class PostgresRefundRepository implements RefundRepository {
 
     private static Instant toInstant(OffsetDateTime offsetDateTime) {
         return offsetDateTime == null ? null : offsetDateTime.toInstant();
+    }
+
+    // Spring Boot's jOOQ integration translates an SQLException into Spring's DataAccessException; what jOOQ
+    // itself rejects stays its own DataAccessException.
+    private static <T> T translatingFailures(Supplier<T> block) {
+        try {
+            return block.get();
+        } catch (DataAccessException | org.jooq.exception.DataAccessException e) {
+            throw new DatabaseFailureException(e);
+        }
     }
 }

@@ -1,16 +1,18 @@
 package com.hartmann.adapter.out.http;
 
 import com.hartmann.adapter.common.http.stripe.StripeRefundStatusMapper;
+import com.hartmann.adapter.out.http.exception.PaymentGatewayAuthenticationException;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.domain.model.Refund;
 import com.hartmann.domain.value.Money;
 import com.stripe.StripeClient;
 import com.stripe.exception.ApiConnectionException;
 import com.stripe.exception.ApiException;
+import com.stripe.exception.AuthenticationException;
 import com.stripe.exception.RateLimitException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
@@ -57,10 +59,12 @@ public class StripePaymentGateway implements PaymentGateway {
 
             return new SubmitPaymentResult(intent.getId(), intent.getClientSecret());
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
-            throw new PaymentGatewayUnavailableException(
-                    "Stripe is temporarily unavailable for order " + orderId, e);
+            throw PaymentGatewayUnavailableException.ofPayment(orderId, e);
+        } catch (AuthenticationException e) {
+            // also Stripe's PermissionException, a subclass of it
+            throw PaymentGatewayAuthenticationException.ofPayment(orderId, e);
         } catch (StripeException e) {
-            throw new PaymentGatewayException("Failed to create Stripe PaymentIntent for order " + orderId, e);
+            throw PaymentGatewayRejectedException.ofPayment(orderId, e);
         }
     }
 
@@ -83,11 +87,12 @@ public class StripePaymentGateway implements PaymentGateway {
 
             return new SubmitRefundResult(stripeRefund.getId(), StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus()));
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
-            throw new PaymentGatewayUnavailableException(
-                    "Stripe is temporarily unavailable for PaymentIntent " + paymentExternalId, e);
+            throw PaymentGatewayUnavailableException.ofRefund(paymentExternalId, refund.id(), e);
+        } catch (AuthenticationException e) {
+            // also Stripe's PermissionException, a subclass of it
+            throw PaymentGatewayAuthenticationException.ofRefund(paymentExternalId, refund.id(), e);
         } catch (StripeException e) {
-            throw new PaymentGatewayException(
-                    "Failed to create Stripe Refund for PaymentIntent " + paymentExternalId, e);
+            throw PaymentGatewayRejectedException.ofRefund(paymentExternalId, refund.id(), e);
         }
     }
 

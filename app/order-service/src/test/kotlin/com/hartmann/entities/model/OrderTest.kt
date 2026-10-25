@@ -1,5 +1,7 @@
 package com.hartmann.entities.model
 
+import com.hartmann.entities.model.exception.InconsistentOrderException
+import com.hartmann.entities.model.exception.OrderInvariantViolatedException
 import com.hartmann.entities.model.exception.OrderNotCancellableException
 import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
 import com.hartmann.entities.model.exception.RefundAmountMismatchException
@@ -81,13 +83,13 @@ class OrderTest {
     // --- constructor ---
 
     @Test
-    fun `constructor - rejects an empty item list`() {
-        assertThrows<IllegalArgumentException> { placedOrder(items = emptyList()) }
+    fun `createExisting - reports an empty item list as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> { placedOrder(items = emptyList()) }
     }
 
     @Test
-    fun `constructor - rejects items with mismatched currencies`() {
-        assertThrows<IllegalArgumentException> {
+    fun `createExisting - reports items with mismatched currencies as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> {
             placedOrder(
                 items = listOf(
                     testItem(currency = Currency.USD),
@@ -126,11 +128,23 @@ class OrderTest {
 
     @Test
     fun `createNew - rejects an order without an id`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<OrderInvariantViolatedException> {
             Order.createNew(
                 id = 0,
                 customerId = UUID.randomUUID(),
                 reservedItems = listOf(testReservedItem()),
+                address = testAddress(),
+            )
+        }
+    }
+
+    @Test
+    fun `createNew - rejects an order without items`() {
+        assertThrows<OrderInvariantViolatedException> {
+            Order.createNew(
+                id = 1,
+                customerId = UUID.randomUUID(),
+                reservedItems = emptyList(),
                 address = testAddress(),
             )
         }
@@ -159,7 +173,7 @@ class OrderTest {
 
     @Test
     fun `createExisting - throws when id is not positive`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<InconsistentOrderException> {
             Order.createExisting(
                 id = 0,
                 customerId = UUID.randomUUID(),

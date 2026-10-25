@@ -12,7 +12,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
+import org.springframework.http.ProblemDetail
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.HttpRequestMethodNotSupportedException
+import org.springframework.web.context.request.ServletWebRequest
 import java.net.URI
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
@@ -101,6 +104,18 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpErrorCode.INTERNAL_ERROR.code, problem.properties!![GlobalExceptionHandler.CODE_PROPERTY])
         assertEquals(false, problem.properties!![GlobalExceptionHandler.RETRYABLE_PROPERTY])
         assertNull(problem.detail)
+    }
+
+    @Test
+    fun `handleExceptionInternal - gives the code to a ProblemDetail Spring builds itself`() {
+        val response = handler.handleException(HttpRequestMethodNotSupportedException("DELETE"), ServletWebRequest(request))
+
+        val problem = response!!.body as ProblemDetail
+        assertEquals(HttpStatus.METHOD_NOT_ALLOWED, response.statusCode)
+        assertEquals(URI.create("urn:ecommerce:error:${HttpErrorCode.METHOD_NOT_ALLOWED.code}"), problem.type)
+        assertEquals(HttpErrorCode.METHOD_NOT_ALLOWED.title, problem.title)
+        assertEquals(HttpErrorCode.METHOD_NOT_ALLOWED.code, problem.properties!![GlobalExceptionHandler.CODE_PROPERTY])
+        assertEquals(false, problem.properties!![GlobalExceptionHandler.RETRYABLE_PROPERTY])
     }
 
     @Test

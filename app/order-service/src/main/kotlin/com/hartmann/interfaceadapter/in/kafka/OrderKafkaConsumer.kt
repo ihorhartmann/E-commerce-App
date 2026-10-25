@@ -1,7 +1,7 @@
 package com.hartmann.interfaceadapter.`in`.kafka
 
-import com.hartmann.entities.exception.OrderServiceException
 import com.hartmann.entities.exception.attributesOf
+import com.hartmann.entities.exception.outermostOf
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.interfaceadapter.`in`.kafka.dto.OrderIdEvent
@@ -179,10 +179,7 @@ class OrderKafkaConsumer(
             .addKeyValue("messageType", messageType)
             .addKeyValue("correlationId", correlationId)
             .addKeyValue("exceptionMessage", exception.message)
-        generateSequence<Throwable>(exception) { it.cause }
-            .filterIsInstance<OrderServiceException>()
-            .firstOrNull()
-            ?.let { event.addKeyValue("code", it.code.code) }
+        outermostOf(exception)?.let { event.addKeyValue("code", it.code.code) }
         attributesOf(exception).forEach { (key, value) -> event.addKeyValue(key, value) }
         event.log()
     }

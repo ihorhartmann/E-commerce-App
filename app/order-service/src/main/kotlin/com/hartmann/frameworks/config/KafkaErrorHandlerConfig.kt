@@ -29,6 +29,7 @@ class KafkaErrorHandlerConfig {
     @Bean
     fun kafkaErrorHandler(kafkaTemplate: KafkaTemplate<String, String>): CommonErrorHandler {
         return createErrorHandler(kafkaTemplate).apply {
+
             // A permanent failure - a malformed payload, a business rule rejecting the message, a missing
             // order - can't succeed on a later attempt, so it gets no retries and is dead-lettered at once.
             // Any other failure gets the default back-off.

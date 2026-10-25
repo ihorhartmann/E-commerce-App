@@ -1,11 +1,17 @@
 package com.hartmann.domain.model;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.model.exception.InconsistentPaymentException;
+import com.hartmann.domain.model.exception.InvalidPaymentOrderIdException;
+import com.hartmann.domain.model.exception.PaymentInvariantViolatedException;
+import com.hartmann.domain.model.exception.PaymentNotRefundableException;
+import com.hartmann.domain.model.exception.PaymentTransitionNotAllowedException;
+import com.hartmann.domain.model.exception.RefundExceedsBalanceException;
 import com.hartmann.domain.value.Money;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,32 +52,6 @@ public class Payment {
             Instant updatedAt,
             Instant expiresAt
     ) {
-        if (orderId <= 0) {
-            throw new DomainException("Payment orderId must be positive");
-        }
-        if (status == null) {
-            throw new DomainException("Payment status must not be null");
-        }
-        if (!STATUSES_ALLOWING_NO_EXTERNAL_ID.contains(status) && (externalId == null || externalId.isBlank())) {
-            throw new DomainException("Payment externalId must not be blank once submitted");
-        }
-        if (amount == null) {
-            throw new DomainException("Payment amount must not be null");
-        }
-        if (refundedAmount == null) {
-            throw new DomainException("Payment refundedAmount must not be null");
-        }
-        amount.requireSameCurrency(refundedAmount);
-        if (refundedAmount.isGreaterThan(amount)) {
-            throw new DomainException("Payment refundedAmount must not exceed its amount");
-        }
-        if (createdAt == null) {
-            throw new DomainException("Payment createdAt must not be null");
-        }
-        if (expiresAt == null) {
-            throw new DomainException("Payment expiresAt must not be null");
-        }
-
         this.id = id;
         this.orderId = orderId;
         this.externalId = externalId;
@@ -126,15 +106,13 @@ public class Payment {
 
     public Refund requestRefund(Money amount, UUID idempotencyKey) {
         if (status != PaymentStatus.CONFIRMED) {
-            throw new DomainException("Payment " + id + " is not confirmed and cannot be refunded");
+            throw new PaymentNotRefundableException(id, status);
         }
         amount.requireSameCurrency(this.amount);
 
         var refundableBalance = this.amount.subtract(refundedAmount);
         if (amount.isGreaterThan(refundableBalance)) {
-            throw new DomainException(
-                    "Refund amount " + amount.amount() + " exceeds refundable balance " + refundableBalance.amount()
-                            + " for payment " + id);
+            throw new RefundExceedsBalanceException(id, amount, refundableBalance);
         }
 
         var refund = Refund.createNew(id, idempotencyKey, null, amount, RefundStatus.INITIATED);
@@ -144,7 +122,8 @@ public class Payment {
 
     public void releaseRefund(Refund failedRefund) {
         if (failedRefund.paymentId() != id || failedRefund.status() != RefundStatus.FAILED) {
-            throw new DomainException("Refund " + failedRefund.id() + " is not a failed refund of payment " + id);
+            throw new PaymentInvariantViolatedException("refund to release must be a failed refund of this payment",
+                    Map.of("paymentId", id, "refundId", failedRefund.id()));
         }
 
         changeRefundedAmount(refundedAmount.subtract(failedRefund.amount()));
@@ -163,7 +142,7 @@ public class Payment {
     public void markPending(String externalId) {
         requireStatus("mark pending", PaymentStatus.INITIATED);
         if (externalId == null || externalId.isBlank()) {
-            throw new DomainException("Payment " + id + " cannot be marked pending without an externalId");
+            throw new PaymentInvariantViolatedException("gateway's externalId must not be blank", Map.of("paymentId", id));
         }
 
         changeState(PaymentStatus.PENDING, externalId);
@@ -195,8 +174,8 @@ public class Payment {
         switch (gatewayStatus) {
             case CONFIRMED -> requireStatus("confirm", PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED);
             case ATTEMPT_DECLINED -> requireStatus("decline attempt", PaymentStatus.PENDING);
-            default -> throw new DomainException(
-                    "Gateway status " + gatewayStatus + " cannot be applied to payment " + id);
+            default -> throw new PaymentInvariantViolatedException("gateway status must be CONFIRMED or ATTEMPT_DECLINED",
+                    Map.of("paymentId", id, "gatewayStatus", gatewayStatus));
         }
 
         changeState(gatewayStatus, externalId);
@@ -205,8 +184,7 @@ public class Payment {
 
     private void requireStatus(String action, PaymentStatus... expected) {
         if (!List.of(expected).contains(status)) {
-            throw new DomainException("Cannot " + action + " payment " + id + ": expected status "
-                    + List.of(expected) + " but was " + status);
+            throw new PaymentTransitionNotAllowedException(id, action, status);
         }
     }
 
@@ -248,6 +226,13 @@ public class Payment {
      * A brand-new payment attempt, persisted before the PaymentIntent is created on Stripe.
      */
     public static Payment createNew(long orderId, Money amount) {
+        // the order id comes with the request; the amount is built from it, so it is never missing
+        if (orderId <= 0) {
+            throw new InvalidPaymentOrderIdException(orderId);
+        }
+        if (amount == null) {
+            throw new PaymentInvariantViolatedException("amount must not be null", Map.of("orderId", orderId));
+        }
         var now = Instant.now();
         return new Payment(0L, orderId, null, amount, PaymentStatus.INITIATED, Money.zero(amount.currency()), 0L,
                 now, null, now.plus(EXPIRATION));
@@ -265,9 +250,48 @@ public class Payment {
             Instant updatedAt,
             Instant expiresAt
     ) {
-        if (id <= 0) {
-            throw new DomainException("Payment id must be positive");
+        var brokenRule = findBrokenRule(id, orderId, externalId, amount, status, refundedAmount, createdAt, expiresAt);
+        if (brokenRule != null) {
+            throw new InconsistentPaymentException(id, brokenRule);
         }
         return new Payment(id, orderId, externalId, amount, status, refundedAmount, version, createdAt, updatedAt, expiresAt);
+    }
+
+    /** The first of the payment's own rules the stored data breaks, or null. */
+    private static String findBrokenRule(
+            long id,
+            long orderId,
+            String externalId,
+            Money amount,
+            PaymentStatus status,
+            Money refundedAmount,
+            Instant createdAt,
+            Instant expiresAt
+    ) {
+        if (id <= 0) {
+            return "id must be positive";
+        }
+        if (orderId <= 0) {
+            return "orderId must be positive";
+        }
+        if (status == null) {
+            return "status must not be null";
+        }
+        if (!STATUSES_ALLOWING_NO_EXTERNAL_ID.contains(status) && (externalId == null || externalId.isBlank())) {
+            return "externalId must not be blank once submitted";
+        }
+        if (amount == null || refundedAmount == null) {
+            return "amount and refundedAmount must not be null";
+        }
+        if (amount.currency() != refundedAmount.currency()) {
+            return "refundedAmount must be in the amount's currency";
+        }
+        if (refundedAmount.isGreaterThan(amount)) {
+            return "refundedAmount must not exceed the amount";
+        }
+        if (createdAt == null || expiresAt == null) {
+            return "createdAt and expiresAt must not be null";
+        }
+        return null;
     }
 }

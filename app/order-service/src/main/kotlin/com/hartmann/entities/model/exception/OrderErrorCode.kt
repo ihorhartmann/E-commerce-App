@@ -10,4 +10,6 @@ enum class OrderErrorCode(override val title: String) : ErrorCode {
     REFUND_NOT_REQUESTED("Order has no refund request"),
     UNREQUESTED_SHIPMENT_CANCELLATION("Shipment was cancelled for an order nobody asked to cancel"),
     REFUND_AMOUNT_MISMATCH("Refunded amount differs from the requested one"),
+    INCONSISTENT_ORDER("Internal server error"),
+    ORDER_INVARIANT_VIOLATED("Internal server error"),
 }

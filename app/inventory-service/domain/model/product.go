@@ -194,14 +194,15 @@ func (p *Product) Restock(quantity uint) {
 
 // requireOwnReservation checks reservation reserves this product and is counted in its reserved
 // quantity, which also guarantees it's covered by the on-hand quantity (reserved never exceeds it).
+// The services only ever apply a product's own reservations to it, so a violation is a bug.
 func (p *Product) requireOwnReservation(reservation *StockReservation) error {
 	if reservation.ProductID() != p.id {
-		return ErrForeignReservation.
+		return ErrProductInvariantViolated.
 			WithInternalMessage("reservation reserves another product").
 			WithAttrs(slog.Uint64("reservationID", reservation.ID()), slog.Uint64("reservedProductID", reservation.ProductID()), slog.Uint64("productID", p.id))
 	}
 	if reservation.Quantity() > p.reserved {
-		return ErrReservedQuantityMismatch.
+		return ErrProductInvariantViolated.
 			WithInternalMessage("reservation exceeds the product's reserved quantity").
 			WithAttrs(
 				slog.Uint64("reservationID", reservation.ID()),

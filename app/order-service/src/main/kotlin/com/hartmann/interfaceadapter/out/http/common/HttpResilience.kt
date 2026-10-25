@@ -13,10 +13,9 @@ import java.time.Duration
 /**
  * Only a request that provably never reached the server is retried. Once a request may have been
  * received (a read timeout, a 5xx), the downstream service's idempotency claim for its
- * Idempotency-Key can still be IN_PROGRESS, so a retry would be answered with 409 "request in
- * progress" - which HttpPaymentClient can't tell apart from a genuine business rejection (payment
- * declined: the payment service sends no error codes yet) and would turn into a wrong final order
- * status.
+ * Idempotency-Key can still be IN_PROGRESS, so a retry would only be answered with 409 "request in
+ * progress" - reported as the downstream service being unavailable, instead of the outcome the
+ * first request is about to have.
  */
 fun isConnectFailure(e: Throwable): Boolean =
     e is ResourceAccessException && generateSequence(e.cause) { it.cause }.any {

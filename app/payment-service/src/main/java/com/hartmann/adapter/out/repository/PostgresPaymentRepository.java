@@ -1,15 +1,17 @@
 package com.hartmann.adapter.out.repository;
 
 import com.hartmann.adapter.out.repository.entity.PaymentEntity;
+import com.hartmann.adapter.out.repository.exception.DatabaseFailureException;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.exception.ConcurrentUpdateException;
-import com.hartmann.application.port.out.repository.exception.ObjectNotFoundException;
+import com.hartmann.application.port.out.repository.exception.PaymentNotFoundException;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Table;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -17,10 +19,16 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.jooq.impl.DSL.*;
 import static org.jooq.impl.SQLDataType.TIMESTAMPWITHTIMEZONE;
 
+/**
+ * Every method reports a database error as DatabaseFailureException, so it carries a code of its own rather than
+ * reaching the error handlers as an anonymous jOOQ exception. A failure at commit time, outside these methods,
+ * still does.
+ */
 @Repository
 public class PostgresPaymentRepository implements PaymentRepository {
     private static final Table<Record> PAYMENTS = table(name("payment", "payments"));
@@ -52,7 +60,7 @@ public class PostgresPaymentRepository implements PaymentRepository {
     @Override
     public Payment create(Payment payment) {
         var entity = PaymentEntity.from(payment);
-        var record = dsl.insertInto(PAYMENTS)
+        var record = translatingFailures(() -> dsl.insertInto(PAYMENTS)
                 .set(ORDER_ID, entity.orderId())
                 .set(EXTERNAL_ID, entity.externalId())
                 .set(AMOUNT, entity.amount())
@@ -64,32 +72,32 @@ public class PostgresPaymentRepository implements PaymentRepository {
                 .set(UPDATED_AT, toOffsetDateTime(entity.updatedAt()))
                 .set(EXPIRES_AT, toOffsetDateTime(entity.expiresAt()))
                 .returning(PAYMENT_FIELDS)
-                .fetchOne();
+                .fetchOne());
         //noinspection DataFlowIssue
         return toPayment(record);
     }
 
     @Override
     public Payment getById(long paymentId) {
-        var record = dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(ID.eq(paymentId)).fetchOne();
+        var record = translatingFailures(() -> dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(ID.eq(paymentId)).fetchOne());
         if (record == null) {
-            throw new ObjectNotFoundException("Payment with id " + paymentId + " not found");
+            throw PaymentNotFoundException.withId(paymentId);
         }
         return toPayment(record);
     }
 
     @Override
     public Payment getByOrderId(long orderId) {
-        var record = dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(ORDER_ID.eq(orderId)).fetchOne();
+        var record = translatingFailures(() -> dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(ORDER_ID.eq(orderId)).fetchOne());
         if (record == null) {
-            throw new ObjectNotFoundException("Payment for order " + orderId + " not found");
+            throw PaymentNotFoundException.withOrderId(orderId);
         }
         return toPayment(record);
     }
 
     @Override
     public Payment markPending(long paymentId, long version, String externalId) {
-        return dsl.update(PAYMENTS)
+        return translatingFailures(() -> dsl.update(PAYMENTS)
                 .set(EXTERNAL_ID, externalId)
                 .set(STATUS, PaymentStatus.PENDING.name())
                 .set(VERSION, VERSION.plus(1))
@@ -97,44 +105,44 @@ public class PostgresPaymentRepository implements PaymentRepository {
                 .where(ID.eq(paymentId))
                 .and(VERSION.eq(version))
                 .returning(PAYMENT_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toPayment)
                 .orElseThrow(() -> notUpdated(paymentId, version));
     }
 
     @Override
     public Payment updateStatus(long paymentId, long version, PaymentStatus status) {
-        return dsl.update(PAYMENTS)
+        return translatingFailures(() -> dsl.update(PAYMENTS)
                 .set(STATUS, status.name())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(Instant.now()))
                 .where(ID.eq(paymentId))
                 .and(VERSION.eq(version))
                 .returning(PAYMENT_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toPayment)
                 .orElseThrow(() -> notUpdated(paymentId, version));
     }
 
     @Override
     public Payment getByExternalId(String externalId) {
-        var record = dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(EXTERNAL_ID.eq(externalId)).fetchOne();
+        var record = translatingFailures(() -> dsl.select(PAYMENT_FIELDS).from(PAYMENTS).where(EXTERNAL_ID.eq(externalId)).fetchOne());
         if (record == null) {
-            throw new ObjectNotFoundException("Payment with external id " + externalId + " not found");
+            throw PaymentNotFoundException.withExternalId(externalId);
         }
         return toPayment(record);
     }
 
     @Override
     public Payment updateRefundedAmount(Payment payment) {
-        return dsl.update(PAYMENTS)
+        return translatingFailures(() -> dsl.update(PAYMENTS)
                 .set(REFUNDED_AMOUNT, payment.refundedAmount().amount())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, toOffsetDateTime(payment.updatedAt()))
                 .where(ID.eq(payment.id()))
                 .and(VERSION.eq(payment.version()))
                 .returning(PAYMENT_FIELDS)
-                .fetchOptional()
+                .fetchOptional())
                 .map(this::toPayment)
                 .orElseThrow(() -> notUpdated(payment.id(), payment.version()));
     }
@@ -142,21 +150,21 @@ public class PostgresPaymentRepository implements PaymentRepository {
     // Nothing matched: either the payment is gone (getById throws), or someone changed it after it was loaded.
     private ConcurrentUpdateException notUpdated(long paymentId, long version) {
         getById(paymentId);
-        return new ConcurrentUpdateException(
-                "Payment " + paymentId + " was changed concurrently since version " + version);
+        return ConcurrentUpdateException.ofPayment(paymentId, version);
     }
 
     @Override
     public List<Payment> expireOverdue() {
         var now = toOffsetDateTime(Instant.now());
-        return dsl.update(PAYMENTS)
+        return translatingFailures(() -> dsl.update(PAYMENTS)
                 .set(STATUS, PaymentStatus.EXPIRED.name())
                 .set(VERSION, VERSION.plus(1))
                 .set(UPDATED_AT, now)
                 .where(STATUS.in(NON_TERMINAL_STATUSES))
                 .and(EXPIRES_AT.lt(now))
                 .returning(PAYMENT_FIELDS)
-                .fetch(this::toPayment);
+                .fetch())
+                .map(this::toPayment);
     }
 
     private Payment toPayment(Record record) {
@@ -174,5 +182,15 @@ public class PostgresPaymentRepository implements PaymentRepository {
 
     private static Instant toInstant(OffsetDateTime offsetDateTime) {
         return offsetDateTime == null ? null : offsetDateTime.toInstant();
+    }
+
+    // Spring Boot's jOOQ integration translates an SQLException into Spring's DataAccessException; what jOOQ
+    // itself rejects stays its own DataAccessException.
+    private static <T> T translatingFailures(Supplier<T> block) {
+        try {
+            return block.get();
+        } catch (DataAccessException | org.jooq.exception.DataAccessException e) {
+            throw new DatabaseFailureException(e);
+        }
     }
 }

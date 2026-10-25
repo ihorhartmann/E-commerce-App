@@ -1,12 +1,12 @@
 package com.hartmann.application.service;
 
-import com.hartmann.adapter.out.http.exception.PaymentGatewayException;
-import com.hartmann.adapter.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.in.PaymentService;
 import com.hartmann.application.port.in.dto.PaymentIntentResult;
 import com.hartmann.application.port.out.http.PaymentGateway;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
+import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.domain.model.Payment;
@@ -113,7 +113,7 @@ class PaymentServiceImplTest {
         var orderId = 100L;
         var initiatedId = 1L;
         var initiatedPayment = testInitiatedPayment(initiatedId, orderId);
-        var expectedException = new PaymentGatewayUnavailableException("Stripe unavailable", new RuntimeException());
+        var expectedException = PaymentGatewayUnavailableException.ofPayment(orderId, new RuntimeException());
         when(paymentRepository.create(any())).thenReturn(initiatedPayment);
         when(paymentGateway.submitPayment(orderId, testAmount())).thenThrow(expectedException);
 
@@ -129,7 +129,7 @@ class PaymentServiceImplTest {
         var orderId = 100L;
         var initiatedId = 1L;
         var initiatedPayment = testInitiatedPayment(initiatedId, orderId);
-        var expectedException = new PaymentGatewayException("invalid request", new RuntimeException());
+        var expectedException = PaymentGatewayRejectedException.ofPayment(orderId, new RuntimeException());
         when(paymentRepository.create(any())).thenReturn(initiatedPayment);
         when(paymentGateway.submitPayment(orderId, testAmount())).thenThrow(expectedException);
 

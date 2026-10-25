@@ -9,4 +9,5 @@ enum class ValueErrorCode(override val title: String) : ErrorCode {
     INVALID_ADDRESS("Address is incomplete"),
     SHIPMENT_TRANSITION_NOT_ALLOWED("Shipment can't make this transition in its current state"),
     REFUND_TRANSITION_NOT_ALLOWED("Refund can't make this transition in its current state"),
+    INVALID_RESERVED_ITEM("Invalid reserved item"),
 }

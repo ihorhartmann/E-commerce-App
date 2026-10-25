@@ -1,9 +1,12 @@
 package com.hartmann.domain.model;
 
-import com.hartmann.domain.exception.DomainException;
+import com.hartmann.domain.model.exception.InconsistentRefundException;
+import com.hartmann.domain.model.exception.RefundInvariantViolatedException;
+import com.hartmann.domain.model.exception.RefundTransitionNotAllowedException;
 import com.hartmann.domain.value.Money;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 public class Refund {
@@ -29,24 +32,6 @@ public class Refund {
             Instant createdAt,
             Instant updatedAt
     ) {
-        if (paymentId <= 0) {
-            throw new DomainException("Refund paymentId must be positive");
-        }
-        if (idempotencyKey == null) {
-            throw new DomainException("Refund idempotencyKey must not be null");
-        }
-        if (amount == null) {
-            throw new DomainException("Refund amount must not be null");
-        }
-        if (status == null) {
-            throw new DomainException("Refund status must not be null");
-        }
-        if (createdAt == null) {
-            throw new DomainException("Refund createdAt must not be null");
-        }
-        // externalId is intentionally not validated here - a freshly drafted refund
-        // (Payment.createRefund) doesn't have one yet; Stripe assigns it afterward.
-
         this.id = id;
         this.paymentId = paymentId;
         this.idempotencyKey = idempotencyKey;
@@ -114,10 +99,10 @@ public class Refund {
     public void submit(String externalId, RefundStatus gatewayStatus) {
         requireStatus("submit", RefundStatus.INITIATED);
         if (externalId == null || externalId.isBlank()) {
-            throw new DomainException("Refund " + id + " cannot be submitted without an externalId");
+            throw new RefundInvariantViolatedException("gateway's externalId must not be blank", Map.of("refundId", id));
         }
         if (gatewayStatus == RefundStatus.INITIATED) {
-            throw new DomainException("Refund " + id + " cannot be submitted as " + gatewayStatus);
+            throw new RefundInvariantViolatedException("gateway status must not be INITIATED", Map.of("refundId", id));
         }
 
         changeState(externalId, gatewayStatus);
@@ -142,9 +127,9 @@ public class Refund {
             return false;
         }
 
-        requireStatus("apply gateway status " + gatewayStatus + " to", RefundStatus.PENDING);
+        requireStatus("apply gateway status", RefundStatus.PENDING);
         if (gatewayStatus == RefundStatus.INITIATED) {
-            throw new DomainException("Refund " + id + " cannot go back to " + gatewayStatus);
+            throw new RefundInvariantViolatedException("gateway status must not be INITIATED", Map.of("refundId", id));
         }
 
         changeState(externalId, gatewayStatus);
@@ -153,8 +138,7 @@ public class Refund {
 
     private void requireStatus(String action, RefundStatus expected) {
         if (status != expected) {
-            throw new DomainException(
-                    "Cannot " + action + " refund " + id + ": expected status " + expected + " but was " + status);
+            throw new RefundTransitionNotAllowedException(id, action, status);
         }
     }
 
@@ -187,8 +171,15 @@ public class Refund {
                 + ", createdAt=" + createdAt + ", updatedAt=" + updatedAt + "}";
     }
 
+    // externalId is intentionally not checked - a freshly drafted refund (Payment.requestRefund) doesn't have one yet;
+    // the gateway assigns it afterward.
     public static Refund createNew(long paymentId, UUID idempotencyKey, String externalId, Money amount, RefundStatus status) {
-        return new Refund(0L, paymentId, idempotencyKey, externalId, amount, status, 0L, Instant.now(), null);
+        var createdAt = Instant.now();
+        var brokenRule = findBrokenRule(paymentId, idempotencyKey, amount, status, createdAt);
+        if (brokenRule != null) {
+            throw new RefundInvariantViolatedException(brokenRule, Map.of("paymentId", paymentId));
+        }
+        return new Refund(0L, paymentId, idempotencyKey, externalId, amount, status, 0L, createdAt, null);
     }
 
     public static Refund createExisting(
@@ -202,9 +193,33 @@ public class Refund {
             Instant createdAt,
             Instant updatedAt
     ) {
-        if (id <= 0) {
-            throw new DomainException("Refund id must be positive");
+        var brokenRule = id <= 0 ? "id must be positive" : findBrokenRule(paymentId, idempotencyKey, amount, status, createdAt);
+        if (brokenRule != null) {
+            throw new InconsistentRefundException(id, brokenRule);
         }
         return new Refund(id, paymentId, idempotencyKey, externalId, amount, status, version, createdAt, updatedAt);
+    }
+
+    /**
+     * The first of the refund's own rules its data breaks, or null. The same rules hold for a new and for a stored
+     * refund; only what breaking them means differs - a bug in createNew, corrupted data in createExisting.
+     */
+    private static String findBrokenRule(long paymentId, UUID idempotencyKey, Money amount, RefundStatus status, Instant createdAt) {
+        if (paymentId <= 0) {
+            return "paymentId must be positive";
+        }
+        if (idempotencyKey == null) {
+            return "idempotencyKey must not be null";
+        }
+        if (amount == null) {
+            return "amount must not be null";
+        }
+        if (status == null) {
+            return "status must not be null";
+        }
+        if (createdAt == null) {
+            return "createdAt must not be null";
+        }
+        return null;
     }
 }

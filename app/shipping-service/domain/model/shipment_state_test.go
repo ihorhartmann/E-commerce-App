@@ -222,7 +222,7 @@ func TestShipmentState_Cancel(t *testing.T) {
 
 		err := state.cancel(RecipientRefused)
 
-		assertRejected(t, err, ErrInconsistentShipment, state, before)
+		assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 	})
 
 	t.Run("rejects a missing or unknown reason, leaving the state unchanged", func(t *testing.T) {
@@ -232,7 +232,7 @@ func TestShipmentState_Cancel(t *testing.T) {
 
 			err := state.cancel(reason)
 
-			assertRejected(t, err, ErrInconsistentShipment, state, before)
+			assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 		}
 	})
 
@@ -325,7 +325,7 @@ func TestShipmentState_Change(t *testing.T) {
 
 		err := state.change(InDelivery, HolderInventory, uuid.Nil, NoCancellationReason)
 
-		assertRejected(t, err, ErrInconsistentShipment, state, before)
+		assertRejected(t, err, ErrShipmentInvariantViolated, state, before)
 	})
 }
 

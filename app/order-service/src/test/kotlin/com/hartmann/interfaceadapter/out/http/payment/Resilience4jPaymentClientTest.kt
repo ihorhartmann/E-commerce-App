@@ -95,7 +95,7 @@ class Resilience4jPaymentClientTest {
         val orderId = 1L
         val amount = Money(BigDecimal("10.00"), Currency.EUR)
         every { delegate.submitPayment(orderId, amount) } throws
-            PaymentFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), RuntimeException("server error"))
+            PaymentFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), null, RuntimeException("server error"))
 
         assertThrows<PaymentFailureException> { client.submitPayment(orderId, amount) }
 
@@ -130,7 +130,7 @@ class Resilience4jPaymentClientTest {
         val amount = Money(BigDecimal("10.00"), Currency.EUR)
         val failedCalls = 10
         every { delegate.submitPayment(orderId, amount) } throws
-            PaymentFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), RuntimeException("server error"))
+            PaymentFailureException(orderId, HttpStatus.INTERNAL_SERVER_ERROR.value(), null, RuntimeException("server error"))
 
         repeat(failedCalls) { assertThrows<PaymentFailureException> { client.submitPayment(orderId, amount) } }
 
