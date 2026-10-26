@@ -5,6 +5,8 @@ import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.usecase.port.out.outbox.OutboxMessageRepository
 import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
+import com.hartmann.usecase.port.common.tracing.TraceContextPropagator
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -20,11 +22,13 @@ import java.math.BigDecimal
 class OutboxOrderKafkaProducerTest {
     private val outboxRepository = mockk<OutboxMessageRepository>(relaxed = true)
     private val objectMapper: ObjectMapper = jacksonObjectMapper()
-    private val producer = OutboxOrderKafkaProducer(outboxRepository, objectMapper)
+    private val traceContextPropagator = mockk<TraceContextPropagator> { every { currentTraceparent() } returns null }
+    private val producer = OutboxOrderKafkaProducer(outboxRepository, objectMapper, traceContextPropagator)
 
     private fun captureInsertedMessage(): OutboxMessage {
         val slot = slot<OutboxMessage>()
         verify(exactly = 1) { outboxRepository.insert(capture(slot)) }
+        verify(exactly = 1) { traceContextPropagator.currentTraceparent() }
         return slot.captured
     }
 
@@ -42,6 +46,16 @@ class OutboxOrderKafkaProducerTest {
         assertEquals(KafkaConst.CANCEL_RESERVATION_COMMAND, message.messageType)
         assertEquals(correlationId, message.correlationId)
         assertEquals("{\"orderId\":$orderId}", message.payload)
+    }
+
+    @Test
+    fun `publishCancelReservation - keeps the traceparent of the span the message is written in`() {
+        val traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        every { traceContextPropagator.currentTraceparent() } returns traceparent
+
+        producer.publishCancelReservation("corr-8", 49L)
+
+        assertEquals(traceparent, captureInsertedMessage().traceparent)
     }
 
     @Test

@@ -67,6 +67,7 @@ CREATE TABLE orders.outbox_messages (
     topic          VARCHAR(255) NOT NULL,
     key            VARCHAR(255) NOT NULL,
     payload        JSONB NOT NULL,
+    traceparent    VARCHAR(55),
     sent_at        TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );

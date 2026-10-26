@@ -3,6 +3,7 @@ package com.hartmann.interfaceadapter.`in`.scheduled
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.out.outbox.OutboxMessageRepository
 import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
+import com.hartmann.usecase.port.common.tracing.TraceContextPropagator
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.slf4j.LoggerFactory
@@ -15,11 +16,14 @@ import java.time.Instant
 /**
  * Periodically publishes not-yet-sent outbox_messages rows to Kafka through the plain
  * KafkaTemplate, and marks the whole batch sent once every message in it publishes successfully.
+ * Each message is sent as a child of the span it was written in - one batch can hold messages of
+ * as many different traces.
  */
 @Component
 class OutboxMessageRelay(
     private val repository: OutboxMessageRepository,
     private val kafkaTemplate: KafkaTemplate<String, String>,
+    private val traceContextPropagator: TraceContextPropagator,
 ) {
     companion object {
         private val LOG = LoggerFactory.getLogger(OutboxMessageRelay::class.java)
@@ -34,7 +38,9 @@ class OutboxMessageRelay(
         }
 
         try {
-            messages.forEach { kafkaTemplate.send(toRecord(it)).get() }
+            messages.forEach { message ->
+                traceContextPropagator.withParent(message.traceparent) { kafkaTemplate.send(toRecord(message)).get() }
+            }
         } catch (e: Exception) {
             LOG.error("outbox relay failed to publish message batch, count={}", messages.size, e)
             return

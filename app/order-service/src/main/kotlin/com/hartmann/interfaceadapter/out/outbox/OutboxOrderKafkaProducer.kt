@@ -13,6 +13,7 @@ import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.kafka.dto.RestockItemDto
 import com.hartmann.usecase.port.out.outbox.OutboxMessageRepository
 import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
+import com.hartmann.usecase.port.common.tracing.TraceContextPropagator
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.math.BigDecimal
@@ -20,12 +21,15 @@ import java.math.BigDecimal
 /**
  * Implements OrderKafkaProducer by writing to the transactional outbox instead of publishing to
  * Kafka directly - OutboxMessageRelay is what actually delivers the message afterwards, so the
- * saga's DB mutation and the outbox insert can commit atomically in the same transaction.
+ * saga's DB mutation and the outbox insert can commit atomically in the same transaction. Each
+ * message keeps the traceparent of the span it was written in, so the relay publishes it in the
+ * same trace.
  */
 @Component
 class OutboxOrderKafkaProducer(
     private val outboxRepository: OutboxMessageRepository,
     private val objectMapper: ObjectMapper,
+    private val traceContextPropagator: TraceContextPropagator,
 ) : OrderKafkaProducer {
 
     override fun publishCancelReservation(correlationId: String, orderId: Long) {
@@ -63,6 +67,7 @@ class OutboxOrderKafkaProducer(
             topic = topic,
             key = key,
             payload = objectMapper.writeValueAsString(payload),
+            traceparent = traceContextPropagator.currentTraceparent(),
         )
         outboxRepository.insert(message)
     }
