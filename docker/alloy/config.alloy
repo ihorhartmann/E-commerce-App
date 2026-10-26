@@ -1,0 +1,41 @@
+// The single place the services send their telemetry to (OTLP). Which backend it ends up in is decided here only,
+// so moving from this compose stack to Kubernetes or a managed backend changes this file, not the services.
+
+otelcol.receiver.otlp "services" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces = [otelcol.processor.memory_limiter.default.input]
+  }
+}
+
+// Refuses data instead of growing until the container is OOM-killed: above 60% of the container's memory limit
+// (80% minus 20% headroom for spikes) new data is rejected and the senders retry later; at 80% it forces a GC. The
+// limit is read from the container (mem_limit in docker-compose.yaml), so changing it there is enough.
+otelcol.processor.memory_limiter "default" {
+  check_interval         = "1s"
+  limit_percentage       = 80
+  spike_limit_percentage = 20
+
+  output {
+    traces = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+
+    tls {
+      insecure = true
+    }
+  }
+}

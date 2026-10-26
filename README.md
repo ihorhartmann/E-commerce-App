@@ -27,7 +27,7 @@ for the architecture.
 | Web UI - catalog, cart and checkout, orders, shipments | http://localhost:3000 |
 | Gateway - the entry point for clients | http://localhost:8080 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`) | http://localhost:8090/admin |
-| Kafka UI | http://localhost:9090 |
+| Kafka UI | http://localhost:9098 |
 | Services directly (debugging, e2e tests) | http://localhost:3001 (inventory) ... 3004 (shipping) |
 
 Keycloak imports the realm (`docker/keycloak/realm-ecommerce.json`) only when it doesn't exist yet. After changing
