@@ -39,5 +39,27 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    # a producer span per send and a consumer span per record, linked through the traceparent header
+    template:
+      observation-enabled: true
     listener:
       ack-mode: batch
+      observation-enabled: true
+
+# Traces go to the collector (Alloy) over OTLP/HTTP. Spring Boot reads OTEL_EXPORTER_OTLP_ENDPOINT and
+# OTEL_SERVICE_NAME itself (no placeholders here - see TracingConfig)
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  observations:
+    enable:
+      "[spring.security]": false
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false

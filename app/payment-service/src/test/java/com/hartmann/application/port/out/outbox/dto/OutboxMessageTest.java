@@ -13,7 +13,7 @@ class OutboxMessageTest {
 
     @Test
     void createNew_createsAMessageWithoutAnIdSoReadingMessageIdFails() {
-        var message = OutboxMessage.createNew("corr-1", "PaymentCompleted", "42", "{}");
+        var message = OutboxMessage.createNew("corr-1", "PaymentCompleted", "42", "{}", null);
 
         assertThrows(IllegalStateException.class, message::messageId);
     }
@@ -22,13 +22,13 @@ class OutboxMessageTest {
     void createExisting_createsAMessageExposingTheGivenId() {
         var expectedMessageId = UUID.randomUUID();
 
-        var message = OutboxMessage.createExisting(expectedMessageId, "corr-2", "PaymentCompleted", "43", "{}");
+        var message = OutboxMessage.createExisting(expectedMessageId, "corr-2", "PaymentCompleted", "43", "{}", null);
 
         assertEquals(expectedMessageId, message.messageId());
     }
 
     @Test
     void createExisting_rejectsANullId() {
-        assertThrows(IllegalStateException.class, () -> OutboxMessage.createExisting(null, "corr-3", "PaymentCompleted", "44", "{}"));
+        assertThrows(IllegalStateException.class, () -> OutboxMessage.createExisting(null, "corr-3", "PaymentCompleted", "44", "{}", null));
     }
 }

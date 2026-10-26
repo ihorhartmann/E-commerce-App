@@ -7,6 +7,7 @@ import com.hartmann.application.port.common.kafka.KafkaUtils;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.outbox.OutboxMessageRepository;
 import com.hartmann.application.port.out.outbox.dto.OutboxMessage;
+import com.hartmann.application.port.out.tracing.TraceContextPropagator;
 import com.hartmann.domain.value.Money;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -15,10 +16,13 @@ import tools.jackson.databind.ObjectMapper;
 public class OutboxPaymentKafkaProducer implements PaymentKafkaProducer {
     private final OutboxMessageRepository outboxRepository;
     private final ObjectMapper objectMapper;
+    private final TraceContextPropagator traceContextPropagator;
 
-    public OutboxPaymentKafkaProducer(OutboxMessageRepository outboxRepository, ObjectMapper objectMapper) {
+    public OutboxPaymentKafkaProducer(OutboxMessageRepository outboxRepository, ObjectMapper objectMapper,
+                                      TraceContextPropagator traceContextPropagator) {
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
+        this.traceContextPropagator = traceContextPropagator;
     }
 
     @Override
@@ -43,7 +47,8 @@ public class OutboxPaymentKafkaProducer implements PaymentKafkaProducer {
 
     private void insert(String correlationId, String messageType, long orderId, Object payload) {
         var key = KafkaUtils.formatKafkaId(orderId);
-        var message = OutboxMessage.createNew(correlationId, messageType, key, objectMapper.writeValueAsString(payload));
+        var message = OutboxMessage.createNew(correlationId, messageType, key, objectMapper.writeValueAsString(payload),
+                traceContextPropagator.currentTraceparent());
         outboxRepository.insert(message);
     }
 }

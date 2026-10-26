@@ -19,6 +19,8 @@ import com.stripe.model.PaymentIntent;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -32,10 +34,16 @@ public class StripePaymentGateway implements PaymentGateway {
     // client resending its Idempotency-Key - and retrying here too would multiply the attempts.
     private static final int PAYMENT_INTENT_MAX_NETWORK_RETRIES = 2;
 
-    private final StripeClient stripeClient;
+    // Stripe calls go through the SDK's own HTTP client, which Spring's observations don't see: without a span of its
+    // own, the time spent in Stripe would show up as an unexplained gap in the payment service's span
+    private static final String STRIPE_REQUEST_OBSERVATION = "stripe.request";
 
-    public StripePaymentGateway(StripeClient stripeClient) {
+    private final StripeClient stripeClient;
+    private final ObservationRegistry observationRegistry;
+
+    public StripePaymentGateway(StripeClient stripeClient, ObservationRegistry observationRegistry) {
         this.stripeClient = stripeClient;
+        this.observationRegistry = observationRegistry;
     }
 
     @Override
@@ -54,7 +62,8 @@ public class StripePaymentGateway implements PaymentGateway {
 
         LOG.debug("sending create PaymentIntent request orderId={}", orderId);
         try {
-            PaymentIntent intent = stripeClient.v1().paymentIntents().create(params, requestOptions);
+            PaymentIntent intent = observed("stripe create payment intent",
+                    () -> stripeClient.v1().paymentIntents().create(params, requestOptions));
             LOG.info("successfully created PaymentIntent orderId={} paymentIntentId={}", orderId, intent.getId());
 
             return new SubmitPaymentResult(intent.getId(), intent.getClientSecret());
@@ -82,7 +91,7 @@ public class StripePaymentGateway implements PaymentGateway {
 
         LOG.debug("sending create Refund request paymentIntentId={} refundId={}", paymentExternalId, refund.id());
         try {
-            var stripeRefund = stripeClient.v1().refunds().create(params, requestOptions);
+            var stripeRefund = observed("stripe create refund", () -> stripeClient.v1().refunds().create(params, requestOptions));
             LOG.info("successfully created Refund paymentIntentId={} stripeRefundId={}", paymentExternalId, stripeRefund.getId());
 
             return new SubmitRefundResult(stripeRefund.getId(), StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus()));
@@ -94,6 +103,26 @@ public class StripePaymentGateway implements PaymentGateway {
         } catch (StripeException e) {
             throw PaymentGatewayRejectedException.ofRefund(paymentExternalId, refund.id(), e);
         }
+    }
+
+    // A span named contextualName around one Stripe call, marked failed when the call throws.
+    private <T> T observed(String contextualName, StripeCall<T> call) throws StripeException {
+        var observation = Observation.createNotStarted(STRIPE_REQUEST_OBSERVATION, observationRegistry)
+                .contextualName(contextualName)
+                .start();
+        try (var ignored = observation.openScope()) {
+            return call.call();
+        } catch (StripeException | RuntimeException e) {
+            observation.error(e);
+            throw e;
+        } finally {
+            observation.stop();
+        }
+    }
+
+    @FunctionalInterface
+    private interface StripeCall<T> {
+        T call() throws StripeException;
     }
 
     private long toMinorUnits(Money amount) {

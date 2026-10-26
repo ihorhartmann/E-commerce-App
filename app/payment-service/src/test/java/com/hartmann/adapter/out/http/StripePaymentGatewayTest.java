@@ -18,6 +18,7 @@ import com.stripe.model.Refund;
 import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -49,7 +50,7 @@ class StripePaymentGatewayTest {
     @BeforeEach
     void setUp() {
         stripeClient = mock(StripeClient.class, RETURNS_DEEP_STUBS);
-        gateway = new StripePaymentGateway(stripeClient);
+        gateway = new StripePaymentGateway(stripeClient, ObservationRegistry.NOOP);
     }
 
     private Money money(String amount) {

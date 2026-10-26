@@ -13,6 +13,11 @@ import org.springframework.http.server.reactive.observation.ServerRequestObserva
  */
 @Configuration
 class TracingConfig(environment: Environment) {
+    private companion object {
+        val REQUIRED_ENV_VARS = listOf("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_SERVICE_NAME")
+        const val HEALTH_PATH = "/health"
+    }
+
     init {
         REQUIRED_ENV_VARS.forEach { environment.getRequiredProperty(it) }
     }
@@ -23,8 +28,4 @@ class TracingConfig(environment: Environment) {
         !(context is ServerRequestObservationContext && context.carrier?.path?.value() == HEALTH_PATH)
     }
 
-    private companion object {
-        val REQUIRED_ENV_VARS = listOf("OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_SERVICE_NAME")
-        const val HEALTH_PATH = "/health"
-    }
 }
