@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -117,17 +118,27 @@ func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, m
 // the message is settled - handled or dead-lettered - and may be committed. It returns false if ctx
 // is done first, i.e. the consumer is shutting down: the message must then not be committed, so that
 // it is redelivered instead of being lost.
+//
+// The whole of it - every attempt and the dead-lettering - is one consumer span, continuing the trace of whoever sent
+// the message.
 func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Message, handle messageHandler) bool {
+	ctx, span := startProcessSpan(ctx, message, c.groupID)
+	defer span.End()
+
 	messageType, messageID, correlationID, err := parseHeaders(message.Headers)
 	if err != nil {
 		slog.Error("kafka message header validation error", apperror.LogAttr(err))
 		return c.sendDeadLetter(ctx, message, err)
 	}
 
+	setMessageAttributes(span, messageType, messageID, correlationID)
 	slog.Debug("received kafka message", "messageType", messageType, "messageId", messageID, "correlationId", correlationID)
 
+	// the handler's context carries the span but not ctx's cancellation: a shutdown cuts the retry back-offs short,
+	// never a handler in the middle of its work
+	handlerCtx := trace.ContextWithSpan(context.Background(), span)
 	err = runWithRetry(ctx, c.retryDelays, func() error {
-		err = handleSafely(handle, messageType, messageID, correlationID, message.Value)
+		err = handleSafely(handlerCtx, handle, messageType, messageID, correlationID, message.Value)
 		if err != nil {
 			slog.Warn("kafka message handling error", "messageType", messageType, "correlationId", correlationID, apperror.LogAttr(err))
 		}
@@ -146,14 +157,14 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 
 // handleSafely runs handle for one message, turning a panic in it into an internal error - retried
 // and then dead-lettered like any other - instead of a crashed consumer.
-func handleSafely(handle messageHandler, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) (err error) {
+func handleSafely(ctx context.Context, handle messageHandler, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = apperror.FromPanic(recovered)
 		}
 	}()
 
-	return handle(context.Background(), messageType, messageID, correlationID, payload)
+	return handle(ctx, messageType, messageID, correlationID, payload)
 }
 
 // sendDeadLetter publishes message to its dead-letter topic - c.deadLetterProducer keeps retrying on its
@@ -167,6 +178,7 @@ func (c *kafkaGoMessageConsumer) sendDeadLetter(ctx context.Context, message kaf
 	}
 
 	slog.Error("kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, apperror.LogAttr(cause))
+	markDeadLettered(trace.SpanFromContext(ctx), cause)
 	return true
 }
 

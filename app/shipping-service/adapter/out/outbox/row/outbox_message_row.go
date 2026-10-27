@@ -15,6 +15,7 @@ type OutboxMessage struct {
 	MessageType   string     `gorm:"not null"`
 	Key           string     `gorm:"not null"`
 	Payload       string     `gorm:"type:jsonb;not null"`
+	Traceparent   *string    `gorm:"type:varchar(55)"`
 	SentAt        *time.Time `gorm:"index"`
 	CreatedAt     time.Time  `gorm:"not null"`
 }
@@ -30,6 +31,7 @@ func ToOutboxMessageRow(message dto.OutboxMessage) *OutboxMessage {
 		MessageType:   message.MessageType,
 		Key:           message.Key,
 		Payload:       string(message.Payload),
+		Traceparent:   toNullableString(message.Traceparent),
 	}
 }
 
@@ -40,5 +42,20 @@ func FromOutboxMessageRow(row *OutboxMessage) dto.OutboxMessage {
 		MessageType:   row.MessageType,
 		Key:           row.Key,
 		Payload:       json.RawMessage(row.Payload),
+		Traceparent:   fromNullableString(row.Traceparent),
 	}
+}
+
+func toNullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func fromNullableString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

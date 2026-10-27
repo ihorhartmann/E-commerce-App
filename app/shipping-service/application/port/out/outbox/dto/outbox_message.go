@@ -12,9 +12,10 @@ type OutboxMessage struct {
 	MessageType   string
 	Key           string
 	Payload       json.RawMessage
+	Traceparent   string
 }
 
-func NewOutboxMessage(correlationID string, messageType string, key string, payload any) (OutboxMessage, error) {
+func NewOutboxMessage(correlationID string, messageType string, key string, payload any, traceparent string) (OutboxMessage, error) {
 	value, err := json.Marshal(payload)
 	if err != nil {
 		return OutboxMessage{}, err
@@ -25,5 +26,6 @@ func NewOutboxMessage(correlationID string, messageType string, key string, payl
 		MessageType:   messageType,
 		Key:           key,
 		Payload:       value,
+		Traceparent:   traceparent,
 	}, nil
 }

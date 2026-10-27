@@ -26,9 +26,17 @@ import (
 	gormconn "shippingservice/infrastructure/gorm"
 	"shippingservice/infrastructure/jwks"
 	"shippingservice/infrastructure/kafkago"
+	"shippingservice/infrastructure/telemetry"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"gorm.io/gorm"
+)
+
+const (
+	healthPath = "/health"
+	// how long shutdown waits for the buffered spans to reach the collector
+	tracingShutdownTimeout = 5 * time.Second
 )
 
 func main() {
@@ -37,6 +45,13 @@ func main() {
 	config, err := env.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
+	}
+
+	// first, so the database, Kafka and HTTP instrumentation below all find the provider installed
+	shutdownTracing, err := telemetry.InitTracing(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
+	if err != nil {
+		slog.Error("failed to set up tracing", "error", err)
 		os.Exit(1)
 	}
 
@@ -91,6 +106,11 @@ func main() {
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
 	router.Use(
+		// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
+		// excepted, polled every few seconds
+		otelgin.Middleware(config.OTELServiceName, otelgin.WithFilter(func(r *http.Request) bool {
+			return r.URL.Path != healthPath
+		})),
 		middleware.HandleMiddlewareError,
 		middleware.Recover,
 		middleware.LoggingMiddleware,
@@ -104,7 +124,7 @@ func main() {
 	router.NoRoute(func(c *gin.Context) { _ = c.Error(httperror.ErrRouteNotFound) })
 	router.NoMethod(func(c *gin.Context) { _ = c.Error(httperror.ErrMethodNotAllowed) })
 
-	router.GET("/health", func(c *gin.Context) {
+	router.GET(healthPath, func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
@@ -144,6 +164,13 @@ func main() {
 	}
 
 	closeDB(db)
+
+	// last: everything that creates spans has stopped, so this flushes all of them
+	tracingCtx, cancelTracing := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+	defer cancelTracing()
+	if err = shutdownTracing(tracingCtx); err != nil {
+		slog.Error("failed to flush traces", "error", err)
+	}
 
 	slog.Info("application shut down successfully")
 }

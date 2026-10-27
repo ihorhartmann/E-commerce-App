@@ -56,6 +56,16 @@ func LoadFromEnv() (*Config, error) {
 		return nil, err
 	}
 
+	otelExporterOTLPEndpoint, err := GetStrEnv(OTELExporterOTLPEndpointEnvVar)
+	if err != nil {
+		return nil, err
+	}
+
+	otelServiceName, err := GetStrEnv(OTELServiceNameEnvVar)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:           port,
 		KafkaHost:      kafkaHost,
@@ -68,6 +78,9 @@ func LoadFromEnv() (*Config, error) {
 		OIDCIssuer:     oidcIssuer,
 		OIDCJWKSURI:    oidcJWKSURI,
 		OIDCRolesClaim: oidcRolesClaim,
+
+		OTELExporterOTLPEndpoint: otelExporterOTLPEndpoint,
+		OTELServiceName:          otelServiceName,
 	}, nil
 }
 
@@ -86,4 +99,8 @@ type Config struct {
 	OIDCJWKSURI string
 	// OIDCRolesClaim is the dot-separated path to the roles array inside the token, e.g. realm_access.roles
 	OIDCRolesClaim string
+	// OTELExporterOTLPEndpoint is the collector's OTLP/HTTP base URL, e.g. http://alloy:4318
+	OTELExporterOTLPEndpoint string
+	// OTELServiceName is the service.name every span of this service carries
+	OTELServiceName string
 }
