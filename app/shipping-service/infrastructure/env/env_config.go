@@ -67,18 +67,17 @@ func LoadFromEnv() (*Config, error) {
 	}
 
 	return &Config{
-		Port:           port,
-		KafkaHost:      kafkaHost,
-		KafkaPort:      kafkaPort,
-		DBHost:         dbHost,
-		DBPort:         dbPort,
-		DBName:         dbName,
-		DBUser:         dbUser,
-		DBPassword:     dbPassword,
-		OIDCIssuer:     oidcIssuer,
-		OIDCJWKSURI:    oidcJWKSURI,
-		OIDCRolesClaim: oidcRolesClaim,
-
+		Port:                     port,
+		KafkaHost:                kafkaHost,
+		KafkaPort:                kafkaPort,
+		DBHost:                   dbHost,
+		DBPort:                   dbPort,
+		DBName:                   dbName,
+		DBUser:                   dbUser,
+		DBPassword:               dbPassword,
+		OIDCIssuer:               oidcIssuer,
+		OIDCJWKSURI:              oidcJWKSURI,
+		OIDCRolesClaim:           oidcRolesClaim,
 		OTELExporterOTLPEndpoint: otelExporterOTLPEndpoint,
 		OTELServiceName:          otelServiceName,
 	}, nil

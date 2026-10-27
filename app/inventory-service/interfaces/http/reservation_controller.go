@@ -33,7 +33,7 @@ func (rc *ReservationController) CreateReservation(c *fiber.Ctx) error {
 		return err
 	}
 
-	reservedItems, err := rc.reservationService.ReserveItems(c.Context(), request.OrderID, reservationDTOs)
+	reservedItems, err := rc.reservationService.ReserveItems(c.UserContext(), request.OrderID, reservationDTOs)
 	if err != nil {
 		return err
 	}

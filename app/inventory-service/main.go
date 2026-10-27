@@ -13,18 +13,27 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"inventoryservice/application"
 	"inventoryservice/infrastructure/env"
 	gormconn "inventoryservice/infrastructure/gorm"
 	gormtx "inventoryservice/infrastructure/gorm/transaction"
 	"inventoryservice/infrastructure/repository"
+	"inventoryservice/infrastructure/telemetry"
 	inhttp "inventoryservice/interfaces/http"
 	"inventoryservice/interfaces/http/idempotency"
 	inkafka "inventoryservice/interfaces/kafka"
 
+	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
+)
+
+const (
+	healthPath = "/health"
+	// how long shutdown waits for the buffered spans to reach the collector
+	tracingShutdownTimeout = 5 * time.Second
 )
 
 func main() {
@@ -33,6 +42,13 @@ func main() {
 	config, err := env.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
+	}
+
+	// first, so the database, Kafka and HTTP instrumentation below all find the provider installed
+	shutdownTracing, err := telemetry.InitTracing(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
+	if err != nil {
+		slog.Error("failed to set up tracing", "error", err)
 		os.Exit(1)
 	}
 
@@ -82,6 +98,11 @@ func main() {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleMiddlewareError,
 	})
+	// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
+	// excepted, polled every few seconds
+	app.Use(otelfiber.Middleware(otelfiber.WithoutMetrics(true), otelfiber.WithNext(func(c *fiber.Ctx) bool {
+		return c.Path() == healthPath
+	})))
 	app.Use(middleware.Recover)
 	app.Use(middleware.LoggingMiddleware)
 	// before idempotency: a rejected request must not claim its Idempotency-Key
@@ -91,7 +112,7 @@ func main() {
 	// back to the idempotency middleware
 	app.Use(middleware.HandleControllerError)
 
-	app.Get("/health", func(c *fiber.Ctx) error {
+	app.Get(healthPath, func(c *fiber.Ctx) error {
 		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "ok"})
 	})
 
@@ -123,6 +144,13 @@ func main() {
 	}
 
 	closeDB(db)
+
+	// last: everything that creates spans has stopped, so this flushes all of them
+	tracingCtx, cancelTracing := context.WithTimeout(context.Background(), tracingShutdownTimeout)
+	defer cancelTracing()
+	if err = shutdownTracing(tracingCtx); err != nil {
+		slog.Error("failed to flush traces", "error", err)
+	}
 
 	slog.Info("application shut down successfully")
 }

@@ -116,8 +116,9 @@ infrastructure/
 ├── kafka/
 │   └── common/
 ├── kafkago/
-└── repository/
-    └── transaction/
+├── repository/
+│   └── transaction/
+└── telemetry/
 ```
 
 Outbound adapter implementations that implement the ports declared in `application/port/out` follow the naming
@@ -125,6 +126,12 @@ conventions in the [root CLAUDE.md](../../CLAUDE.md#ports-and-adapters-naming).
 
 `env`, `gorm`, and `kafkago` contain framework- and driver-level code (environment configuration, GORM setup and
 migrations, the raw kafka-go client wrapper) that contains no business-specific logic.
+
+`telemetry` installs the global OpenTelemetry tracer provider and propagator (`InitTracing`, called first in `main.go`)
+that the instrumentation uses: `otelfiber` for HTTP, `otelgorm` for SQL, and the Kafka consumer's own span per message
+(`interfaces/kafka/kafkago/kafkago_tracing.go`). A trace starts only at an entry point - an incoming request or
+message; any other span without a parent (a sweep's query) is dropped. Pass the request's or message's `ctx` down to
+the repositories (`c.UserContext()` in a controller, not `c.Context()`), so their SQL spans join its trace.
 
 ---
 

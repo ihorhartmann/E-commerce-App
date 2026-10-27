@@ -41,7 +41,7 @@ func (pc *ProductController) CreateProduct(c *fiber.Ctx) error {
 		return err
 	}
 
-	createdProduct, err := pc.productService.Create(c.Context(), product)
+	createdProduct, err := pc.productService.Create(c.UserContext(), product)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (pc *ProductController) UpdateProduct(c *fiber.Ctx) error {
 		return err
 	}
 
-	updatedProduct, err := pc.productService.Update(c.Context(), update)
+	updatedProduct, err := pc.productService.Update(c.UserContext(), update)
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (pc *ProductController) GetProduct(c *fiber.Ctx) error {
 		return err
 	}
 
-	product, err := pc.productService.Get(c.Context(), id)
+	product, err := pc.productService.Get(c.UserContext(), id)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (pc *ProductController) GetProducts(c *fiber.Ctx) error {
 		return err
 	}
 
-	productPage, err := pc.productService.GetProducts(c.Context(), page, size)
+	productPage, err := pc.productService.GetProducts(c.UserContext(), page, size)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (pc *ProductController) DeleteProduct(c *fiber.Ctx) error {
 		return err
 	}
 
-	if err = pc.productService.Delete(c.Context(), id); err != nil {
+	if err = pc.productService.Delete(c.UserContext(), id); err != nil {
 		return err
 	}
 
