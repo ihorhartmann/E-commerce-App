@@ -81,3 +81,10 @@ management:
     export:
       otlp:
         enabled: false
+
+# a span per SQL statement (datasource-micrometer), the statement in its jdbc.query attribute as prepared - with ? for
+# what is bound to it: statements only - not getting a connection or reading a result set - and never the bound values
+jdbc:
+  includes: QUERY
+  datasource-proxy:
+    include-parameter-values: false

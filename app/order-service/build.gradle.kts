@@ -24,6 +24,7 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     implementation("org.springframework.boot:spring-boot-kafka")
     implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation("net.ttddyy.observation:datasource-micrometer-spring-boot:2.3.0")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
     implementation("io.github.resilience4j:resilience4j-retry:2.4.0")
