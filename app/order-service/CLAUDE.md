@@ -234,11 +234,13 @@ These implementations do not contain business-specific logic and are therefore i
 frameworks/
 ├── config/
 ├── kafka/
+├── observation/
 └── security/
 ```
 
 `frameworks/config` holds only `@Configuration` classes. The framework glue they wire in lives next to them, in a
-package per framework: `frameworks/kafka` (e.g. `RetryableDeadLetterPublishingRecoverer`), `frameworks/security`
+package per framework: `frameworks/kafka` (e.g. `RetryableDeadLetterPublishingRecoverer`), `frameworks/observation`
+(the span name conventions, e.g. `KafkaListenerSpanNameConvention`), `frameworks/security`
 (e.g. `RolesClaimGrantedAuthoritiesConverter`). A class that turns a framework event into one of this service's own
 types is an interface adapter, not glue, even if a framework calls it: Spring Security's entry point and
 access-denied handler, which turn a rejected request into this service's exceptions, live in

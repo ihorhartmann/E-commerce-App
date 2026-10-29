@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS payment.outbox_messages (
     message_type   VARCHAR(255) NOT NULL,
     key            VARCHAR(255) NOT NULL,
     payload        JSONB NOT NULL,
+    traceparent    VARCHAR(55),
     sent_at        TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
     );

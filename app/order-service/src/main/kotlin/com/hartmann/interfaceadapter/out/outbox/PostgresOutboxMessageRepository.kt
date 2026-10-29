@@ -25,6 +25,7 @@ class PostgresOutboxMessageRepository(
                 topic = message.topic,
                 key = message.key,
                 payload = message.payload,
+                traceparent = message.traceparent,
             )
         )
     }

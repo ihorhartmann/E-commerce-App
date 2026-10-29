@@ -2,6 +2,7 @@ package com.hartmann.usecase
 
 import com.hartmann.entities.model.Order
 import com.hartmann.usecase.port.`in`.usecase.CancelOrderUseCase
+import com.hartmann.usecase.port.common.tracing.CorrelationTagger
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
@@ -13,10 +14,14 @@ import java.util.UUID
 class CancelOrderUseCaseImpl(
     private val orderRepository: OrderRepository,
     private val orderKafkaProducer: OrderKafkaProducer,
+    private val correlationTagger: CorrelationTagger,
 ) : CancelOrderUseCase {
 
     @Transactional
     override fun execute(orderId: Long, customerId: UUID): Order {
+        val correlationId = orderId.toString()
+        // the order id is the saga's correlation id
+        correlationTagger.tagCurrentSpan(correlationId)
         var order = orderRepository.getOrder(orderId)
         // "not found" rather than "forbidden": another customer's order must not even be confirmed to exist
         if (!order.isOwnedBy(customerId)) {

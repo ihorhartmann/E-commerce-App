@@ -11,7 +11,13 @@ import (
 	"shippingservice/application/port/out/outbox"
 	"shippingservice/application/port/out/outbox/dto"
 	"shippingservice/domain/model"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
+
+// traceparentKey is the W3C trace context header the propagator writes the current span into.
+const traceparentKey = "traceparent"
 
 // ShipmentKafkaProducer implements portout.ShipmentKafkaProducer by writing to the
 // transactional outbox instead of publishing to Kafka directly - OutboxMessageRelay is what
@@ -50,6 +56,7 @@ func (p *ShipmentKafkaProducer) insert(ctx context.Context, messageType kafkacon
 		messageType.String(),
 		kafkautil.FormatKafkaId(orderID),
 		payload,
+		currentTraceparent(ctx),
 	)
 
 	if err != nil {
@@ -60,4 +67,12 @@ func (p *ShipmentKafkaProducer) insert(ctx context.Context, messageType kafkacon
 	}
 
 	return p.repository.Insert(ctx, message)
+}
+
+// currentTraceparent is the W3C traceparent of the span ctx carries, kept with the message so the relay publishes it in
+// the same trace; "" outside a trace.
+func currentTraceparent(ctx context.Context) string {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	return carrier.Get(traceparentKey)
 }

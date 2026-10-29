@@ -26,6 +26,7 @@ class OutboxMessageRow(
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     var payload: String = "",
+    var traceparent: String? = null,
     var sentAt: Instant? = null,
     var createdAt: Instant = Instant.now(),
 )
@@ -37,4 +38,5 @@ fun toOutboxMessage(row: OutboxMessageRow) = OutboxMessage.createExisting(
     topic = row.topic,
     key = row.key,
     payload = row.payload,
+    traceparent = row.traceparent,
 )

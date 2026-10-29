@@ -199,6 +199,14 @@ These implementations do not contain business-specific logic and are therefore i
 
 Kafka producers and consumers that contain business-specific behavior belong to the `Adapters` layer.
 
+`infrastructure/telemetry` installs the global OpenTelemetry tracer provider and propagator (`InitTracing`, called
+first in `main.go`) that the instrumentation uses: `otelgin` for HTTP, `otelgorm` for SQL, and the kafka-go consumer's
+and producer's own spans (`infrastructure/kafkago/kafkago_tracing.go`). A trace starts only at an entry point - an
+incoming request or message; any other span without a parent (the outbox relay's polling query, a sweep) is dropped.
+The outbox keeps a message's trace: `adapter/out/outbox` stores the current span's `traceparent` with it, and
+`kafkaGoMessageProducer.SendBatch` sends it in a producer span that is a child of that one. Pass the request's or
+message's `ctx` down to the repositories (`c.Request.Context()` in a controller), so their SQL spans join its trace.
+
 ## Error handling
 
 Every error is a `domain/apperror.Error`: a sentinel declared once, as a package-level variable in the `errors.go`

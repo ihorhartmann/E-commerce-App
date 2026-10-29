@@ -50,3 +50,24 @@ management:
       base-path: /
       exposure:
         include: health
+  # Traces go to the collector (Alloy) over OTLP/HTTP. Spring Boot reads OTEL_EXPORTER_OTLP_ENDPOINT and
+  # OTEL_SERVICE_NAME itself (no placeholders here - see TracingConfig). The gateway is where traces start: a request
+  # without a traceparent header gets a new trace here, which the services continue
+  tracing:
+    sampling:
+      # every trace is kept (the default is 0.1); the services follow the gateway's decision
+      probability: 1.0
+  observations:
+    enable:
+      # Spring Security's span per filter chain step: noise in every trace, and roots of their own for the
+      # requests whose server span is skipped (health checks, see TracingConfig)
+      "[spring.security]": false
+  # only traces go over OTLP for now: the starter would push metrics and logs to the same collector too
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false

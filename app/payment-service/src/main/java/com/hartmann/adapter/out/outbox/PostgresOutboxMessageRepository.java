@@ -32,6 +32,7 @@ public class PostgresOutboxMessageRepository implements OutboxMessageRepository 
     private static final Field<String> MESSAGE_TYPE = field(name("outbox_messages", "message_type"), VARCHAR);
     private static final Field<String> KEY = field(name("outbox_messages", "key"), VARCHAR);
     private static final Field<JSONB> PAYLOAD = field(name("outbox_messages", "payload"), SQLDataType.JSONB);
+    private static final Field<String> TRACEPARENT = field(name("outbox_messages", "traceparent"), VARCHAR);
     private static final Field<OffsetDateTime> SENT_AT = field(name("outbox_messages", "sent_at"), TIMESTAMPWITHTIMEZONE);
     private static final Field<OffsetDateTime> CREATED_AT = field(name("outbox_messages", "created_at"), TIMESTAMPWITHTIMEZONE);
 
@@ -50,12 +51,13 @@ public class PostgresOutboxMessageRepository implements OutboxMessageRepository 
                 .set(MESSAGE_TYPE, row.messageType())
                 .set(KEY, row.key())
                 .set(PAYLOAD, JSONB.valueOf(row.payload()))
+                .set(TRACEPARENT, row.traceparent())
                 .execute();
     }
 
     @Override
     public List<OutboxMessage> fetchUnsent(int limit) {
-        return dsl.select(ID, CORRELATION_ID, MESSAGE_TYPE, KEY, PAYLOAD, SENT_AT, CREATED_AT)
+        return dsl.select(ID, CORRELATION_ID, MESSAGE_TYPE, KEY, PAYLOAD, TRACEPARENT, SENT_AT, CREATED_AT)
                 .from(OUTBOX_MESSAGES)
                 .where(SENT_AT.isNull())
                 .orderBy(CREATED_AT)
@@ -66,6 +68,7 @@ public class PostgresOutboxMessageRepository implements OutboxMessageRepository 
                         record.get(MESSAGE_TYPE),
                         record.get(KEY),
                         record.get(PAYLOAD).data(),
+                        record.get(TRACEPARENT),
                         toInstant(record.get(SENT_AT)),
                         toInstant(record.get(CREATED_AT))
                 )));

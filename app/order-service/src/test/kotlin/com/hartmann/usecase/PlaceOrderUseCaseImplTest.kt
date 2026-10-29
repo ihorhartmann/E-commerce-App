@@ -11,6 +11,7 @@ import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
 import com.hartmann.entities.value.ReservedItem
 import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
+import com.hartmann.usecase.port.common.tracing.CorrelationTagger
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.internal.dto.SubmitPaymentResult
@@ -63,10 +64,11 @@ class PlaceOrderUseCaseImplTest {
     private val inventoryClient = mockk<InventoryClient>()
     private val paymentClient = mockk<PaymentClient>()
     private val kafkaProducer = mockk<OrderKafkaProducer>(relaxed = true)
+    private val correlationTagger = mockk<CorrelationTagger>(relaxed = true)
     private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
 
     private val useCase =
-        PlaceOrderUseCaseImpl(orderRepository, inventoryClient, paymentClient, kafkaProducer, transactionManager)
+        PlaceOrderUseCaseImpl(orderRepository, inventoryClient, paymentClient, kafkaProducer, correlationTagger, transactionManager)
 
     @Test
     fun `execute - reserves the stock under a fresh id, stores the order of the reserved items and submits its payment`() {
@@ -99,6 +101,7 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
         // nothing to compensate, so no transaction of its own is opened around the remote calls
         verify(exactly = 0) { transactionManager.getTransaction(any()) }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 
     @Test
@@ -120,6 +123,12 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 0) { orderRepository.save(any()) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
         verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
+        // tagged before the reservation, so a checkout that fails right there is found by its order id too
+        verifyOrder {
+            correlationTagger.tagCurrentSpan(orderId.toString())
+            inventoryClient.reserve(orderId, requestedItems)
+        }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 
     @Test
@@ -138,6 +147,7 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 1) { orderRepository.create(any()) }
         verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 
     @Test
@@ -165,5 +175,6 @@ class PlaceOrderUseCaseImplTest {
             transactionManager.commit(any())
         }
         verify(exactly = 1) { transactionManager.commit(any()) }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 }

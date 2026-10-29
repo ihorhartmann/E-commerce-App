@@ -3,34 +3,35 @@ package com.hartmann.application.port.out.outbox.dto;
 import java.util.Objects;
 import java.util.UUID;
 
-// Not a record: a record's canonical constructor can't be private, and createNew/createExisting
-// must be the only ways in, so a message either has no id yet or is guaranteed to have one.
 public final class OutboxMessage {
     private final UUID messageId;
     private final String correlationId;
     private final String messageType;
     private final String key;
     private final String payload;
+    private final String traceparent;
 
-    private OutboxMessage(UUID messageId, String correlationId, String messageType, String key, String payload) {
+    private OutboxMessage(UUID messageId, String correlationId, String messageType, String key, String payload, String traceparent) {
         this.messageId = messageId;
         this.correlationId = correlationId;
         this.messageType = messageType;
         this.key = key;
         this.payload = payload;
+        this.traceparent = traceparent;
     }
 
     // A message about to be inserted: the database assigns its id.
-    public static OutboxMessage createNew(String correlationId, String messageType, String key, String payload) {
-        return new OutboxMessage(null, correlationId, messageType, key, payload);
+    public static OutboxMessage createNew(String correlationId, String messageType, String key, String payload, String traceparent) {
+        return new OutboxMessage(null, correlationId, messageType, key, payload, traceparent);
     }
 
     // A message already stored in the outbox.
-    public static OutboxMessage createExisting(UUID messageId, String correlationId, String messageType, String key, String payload) {
+    public static OutboxMessage createExisting(UUID messageId, String correlationId, String messageType, String key, String payload,
+                                               String traceparent) {
         if (messageId == null) {
             throw new IllegalStateException("an existing outbox message must have an id");
         }
-        return new OutboxMessage(messageId, correlationId, messageType, key, payload);
+        return new OutboxMessage(messageId, correlationId, messageType, key, payload, traceparent);
     }
 
     // Only a message read back from the outbox has an id - it is assigned by the database on insert.
@@ -57,6 +58,10 @@ public final class OutboxMessage {
         return payload;
     }
 
+    public String traceparent() {
+        return traceparent;
+    }
+
     @Override
     public boolean equals(Object o) {
         return o instanceof OutboxMessage other
@@ -64,17 +69,18 @@ public final class OutboxMessage {
                 && Objects.equals(correlationId, other.correlationId)
                 && Objects.equals(messageType, other.messageType)
                 && Objects.equals(key, other.key)
-                && Objects.equals(payload, other.payload);
+                && Objects.equals(payload, other.payload)
+                && Objects.equals(traceparent, other.traceparent);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(messageId, correlationId, messageType, key, payload);
+        return Objects.hash(messageId, correlationId, messageType, key, payload, traceparent);
     }
 
     @Override
     public String toString() {
         return "OutboxMessage{messageId=" + messageId + ", correlationId=" + correlationId + ", messageType=" + messageType
-                + ", key=" + key + "}";
+                + ", key=" + key + ", traceparent=" + traceparent + "}";
     }
 }

@@ -52,7 +52,7 @@ func (m *IdempotencyMiddleware) Handle(c *fiber.Ctx) error {
 		Body:   c.Body(),
 	}
 
-	attempt, err := m.service.Claim(c.Context(), idempotencyKey, request, claimTTL)
+	attempt, err := m.service.Claim(c.UserContext(), idempotencyKey, request, claimTTL)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (m *IdempotencyMiddleware) Handle(c *fiber.Ctx) error {
 	// Best-effort: the handler already produced the correct response above, so a failure here
 	// must never override it with an error response - it only means this key's replay cache
 	// stays stale (reclaimed like any abandoned IN_PROGRESS record).
-	if err = m.service.Complete(c.Context(), idempotencyKey, c.Response().StatusCode(), c.Response().Body()); err != nil {
+	if err = m.service.Complete(c.UserContext(), idempotencyKey, c.Response().StatusCode(), c.Response().Body()); err != nil {
 		slog.ErrorContext(c.UserContext(), "failed to record idempotent response",
 			slog.String("idempotencyKey", idempotencyKey), apperror.LogAttr(err))
 	}
@@ -111,7 +111,7 @@ func (m *IdempotencyMiddleware) replay(c *fiber.Ctx, attempt *dto.RequestAttempt
 // release is best-effort, like recording a response: if it fails, the key is reclaimed once its
 // claim expires, as before.
 func (m *IdempotencyMiddleware) release(c *fiber.Ctx, idempotencyKey string) {
-	if err := m.service.Release(c.Context(), idempotencyKey); err != nil {
+	if err := m.service.Release(c.UserContext(), idempotencyKey); err != nil {
 		slog.ErrorContext(c.UserContext(), "failed to release idempotency key",
 			slog.String("idempotencyKey", idempotencyKey), apperror.LogAttr(err))
 	}

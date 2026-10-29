@@ -53,5 +53,38 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        # how long a batch waits to fill up before it is sent - the client's default, set here so it stays the same
+        # 5ms the Go services wait whatever a client upgrade changes
+        "[linger.ms]": 5
+    # a producer span per send and a consumer span per record, linked through the traceparent header
+    template:
+      observation-enabled: true
     listener:
       ack-mode: batch
+      observation-enabled: true
+
+# Traces go to the collector (Alloy) over OTLP/HTTP. Spring Boot reads OTEL_EXPORTER_OTLP_ENDPOINT and
+# OTEL_SERVICE_NAME itself (no placeholders here - see TracingConfig)
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  observations:
+    enable:
+      "[spring.security]": false
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  logging:
+    export:
+      otlp:
+        enabled: false
+
+# a span per SQL statement (datasource-micrometer), the statement in its jdbc.query attribute as prepared - with ? for
+# what is bound to it: statements only - not getting a connection or reading a result set - and never the bound values
+jdbc:
+  includes: QUERY
+  datasource-proxy:
+    include-parameter-values: false

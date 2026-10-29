@@ -15,6 +15,9 @@ import (
 	"shippingservice/domain/value"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
 
@@ -42,7 +45,7 @@ func testShipment(t *testing.T, orderID uint64, status model.ShipmentStatus) *mo
 // code, assigns it on insert.
 func wantOutboxMessage(t *testing.T, messageType kafkaconst.MessageType, correlationID string, shipment *model.Shipment, payload any) dto.OutboxMessage {
 	t.Helper()
-	want, err := dto.NewOutboxMessage(correlationID, messageType.String(), kafkautil.FormatKafkaId(shipment.OrderId()), payload)
+	want, err := dto.NewOutboxMessage(correlationID, messageType.String(), kafkautil.FormatKafkaId(shipment.OrderId()), payload, "")
 	if err != nil {
 		t.Fatalf("failed to build expected outbox message: %v", err)
 	}
@@ -113,4 +116,50 @@ func TestOutboxShipmentKafkaProducer_PublishShipmentReturnedToInventory(t *testi
 			t.Errorf("err = %v, want nil", err)
 		}
 	})
+
+	t.Run("keeps the traceparent of the span the message is written in", func(t *testing.T) {
+		otel.SetTextMapPropagator(propagation.TraceContext{})
+		traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+		spanID := "00f067aa0ba902b7"
+		ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    mustTraceID(t, traceID),
+			SpanID:     mustSpanID(t, spanID),
+			TraceFlags: trace.FlagsSampled,
+		}))
+		correlationID := "corr-4"
+		shipment := testShipment(t, uint64(10), model.Cancelled)
+		var gotMessage dto.OutboxMessage
+
+		repository := outboxmocks.NewMockMessageRepository(gomock.NewController(t))
+		repository.EXPECT().Insert(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, message dto.OutboxMessage) error {
+			gotMessage = message
+			return nil
+		}).Times(1)
+		producer := NewOutboxShipmentKafkaProducer(repository)
+
+		if err := producer.PublishShipmentReturnedToInventory(ctx, correlationID, shipment); err != nil {
+			t.Errorf("err = %v, want nil", err)
+		}
+		if want := "00-" + traceID + "-" + spanID + "-01"; gotMessage.Traceparent != want {
+			t.Errorf("traceparent = %q, want %q", gotMessage.Traceparent, want)
+		}
+	})
+}
+
+func mustTraceID(t *testing.T, hex string) trace.TraceID {
+	t.Helper()
+	traceID, err := trace.TraceIDFromHex(hex)
+	if err != nil {
+		t.Fatalf("invalid trace id %q: %v", hex, err)
+	}
+	return traceID
+}
+
+func mustSpanID(t *testing.T, hex string) trace.SpanID {
+	t.Helper()
+	spanID, err := trace.SpanIDFromHex(hex)
+	if err != nil {
+		t.Fatalf("invalid span id %q: %v", hex, err)
+	}
+	return spanID
 }

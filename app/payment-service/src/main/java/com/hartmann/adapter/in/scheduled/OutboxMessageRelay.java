@@ -3,6 +3,7 @@ package com.hartmann.adapter.in.scheduled;
 import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.application.port.out.outbox.OutboxMessageRepository;
 import com.hartmann.application.port.out.outbox.dto.OutboxMessage;
+import com.hartmann.application.port.out.tracing.TraceContextPropagator;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
@@ -17,6 +18,8 @@ import java.time.Instant;
 /**
  * Periodically publishes not-yet-sent outbox_messages rows to Kafka through the plain
  * KafkaTemplate, and marks the whole batch sent once every message in it publishes successfully.
+ * Each message is sent as a child of the span it was written in - one batch can hold messages of
+ * as many different traces.
  */
 @Component
 public class OutboxMessageRelay {
@@ -25,10 +28,13 @@ public class OutboxMessageRelay {
 
     private final OutboxMessageRepository repository;
     private final KafkaTemplate<String, String> kafkaTemplate;
+    private final TraceContextPropagator traceContextPropagator;
 
-    public OutboxMessageRelay(OutboxMessageRepository repository, KafkaTemplate<String, String> kafkaTemplate) {
+    public OutboxMessageRelay(OutboxMessageRepository repository, KafkaTemplate<String, String> kafkaTemplate,
+                              TraceContextPropagator traceContextPropagator) {
         this.repository = repository;
         this.kafkaTemplate = kafkaTemplate;
+        this.traceContextPropagator = traceContextPropagator;
     }
 
     @Scheduled(fixedDelay = 200)
@@ -40,7 +46,7 @@ public class OutboxMessageRelay {
 
         try {
             for (var message : messages) {
-                kafkaTemplate.send(toRecord(message)).get();
+                traceContextPropagator.withParent(message.traceparent(), () -> kafkaTemplate.send(toRecord(message))).get();
             }
         } catch (Exception e) {
             LOG.error("outbox relay failed to publish message batch, count={}", messages.size(), e);

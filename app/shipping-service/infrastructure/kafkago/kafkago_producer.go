@@ -9,6 +9,7 @@ import (
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type kafkaGoMessageProducer struct {
@@ -23,16 +24,26 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 		Balancer:     &kafkago.Hash{},
 		RequiredAcks: kafkago.RequireOne,
 		BatchSize:    100,
-		BatchTimeout: 200 * time.Millisecond,
+		BatchTimeout: 5 * time.Millisecond,
 	}
 
 	return &kafkaGoMessageProducer{writer: writer}
 }
 
+// SendBatch publishes messages in one write, each in a producer span of its own - a child of the span it was written to
+// the outbox in, so its trace goes on through Kafka even though a batch mixes messages of many traces.
 func (p *kafkaGoMessageProducer) SendBatch(messages []*dto.OutboxMessage) error {
 	slog.Debug("sending kafka message batch", "count", len(messages))
 
-	if err := p.writer.WriteMessages(context.Background(), toLibMessages(messages)...); err != nil {
+	libMessages := toLibMessages(messages)
+	spans := make([]trace.Span, len(messages))
+	for i, message := range messages {
+		spans[i] = startSendSpan(p.writer.Topic, message.Traceparent, &libMessages[i], message.MessageType, message.MessageID.String(), message.CorrelationID)
+	}
+
+	err := p.writer.WriteMessages(context.Background(), libMessages...)
+	endSendSpans(spans, err)
+	if err != nil {
 		return ErrPublishFailure.
 			WithAttrs(slog.String("topic", p.writer.Topic), slog.Int("count", len(messages))).
 			WithCause(err)

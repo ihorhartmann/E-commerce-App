@@ -1,5 +1,6 @@
 package com.hartmann.frameworks.config
 
+import com.hartmann.frameworks.observation.HttpClientSpanNameConvention
 import com.hartmann.interfaceadapter.out.http.common.LoggingClientHttpRequestInterceptor
 import com.hartmann.interfaceadapter.out.http.common.connectFailureRetryConfig
 import com.hartmann.interfaceadapter.out.http.inventory.HttpInventoryClient
@@ -11,6 +12,7 @@ import com.hartmann.usecase.port.out.internal.PaymentClient
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
 import io.github.resilience4j.retry.Retry
+import io.micrometer.observation.ObservationRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
@@ -41,8 +43,9 @@ class HttpClientConfig {
         httpClient: HttpClient,
         @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
         @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
+        observationRegistry: ObservationRegistry,
     ): InventoryClient = Resilience4jInventoryClient(
-        HttpInventoryClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor)),
+        HttpInventoryClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor, observationRegistry)),
         retry("inventory-service"),
         circuitBreaker("inventory-service", Resilience4jInventoryClient.circuitBreakerConfig()),
     )
@@ -54,8 +57,9 @@ class HttpClientConfig {
         httpClient: HttpClient,
         @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
         @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
+        observationRegistry: ObservationRegistry,
     ): PaymentClient = Resilience4jPaymentClient(
-        HttpPaymentClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor)),
+        HttpPaymentClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor, observationRegistry)),
         retry("payment-service"),
         circuitBreaker("payment-service", Resilience4jPaymentClient.circuitBreakerConfig()),
     )
@@ -66,11 +70,15 @@ class HttpClientConfig {
         httpClient: HttpClient,
         loggingInterceptor: ClientHttpRequestInterceptor,
         serviceTokenInterceptor: ClientHttpRequestInterceptor,
+        observationRegistry: ObservationRegistry,
     ): RestClient {
         val requestFactory = JdkClientHttpRequestFactory(httpClient).apply { setReadTimeout(readTimeout) }
         return RestClient.builder()
             .baseUrl(baseUrl)
             .requestFactory(requestFactory)
+            // a client span per call, and the traceparent header that lets the callee continue the trace
+            .observationRegistry(observationRegistry)
+            .observationConvention(HttpClientSpanNameConvention())
             .requestInterceptor(loggingInterceptor)
             .requestInterceptor(serviceTokenInterceptor)
             .build()

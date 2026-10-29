@@ -41,7 +41,7 @@ func (m *AuthMiddleware) Handle(c *fiber.Ctx) error {
 		return unauthorized(c, httperror.ErrMissingBearerToken)
 	}
 
-	principal, err := m.verifier.Verify(c.Context(), rawToken)
+	principal, err := m.verifier.Verify(c.UserContext(), rawToken)
 	if err != nil {
 		return unauthorized(c, err)
 	}

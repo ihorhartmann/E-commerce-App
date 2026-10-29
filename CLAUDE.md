@@ -125,7 +125,10 @@ a transitive or BOM-managed version being resolved implicitly. `org.springframew
 own artifacts (`spring-boot-starter-*`, the Gradle plugin, the Maven `spring-boot-dependencies` BOM import) are
 versioned once, in a single place, and that one version governs all of them - so it still complies with this rule,
 just centrally rather than per-dependency, instead of each `spring-boot-starter-*` needing its own repeated version
-string.
+string. The same exception covers the libraries whose versions that Spring Boot BOM manages and that a Spring Boot
+starter already brings in - Micrometer (`io.micrometer:*`) and OpenTelemetry (`io.opentelemetry:*`): a service that
+uses them directly declares them without a version, so they always stay in step with the one Spring Boot version
+instead of silently overriding it after a Spring Boot upgrade.
 
 # Go-specific conventions
 

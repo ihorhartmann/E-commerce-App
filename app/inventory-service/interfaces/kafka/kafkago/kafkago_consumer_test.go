@@ -12,6 +12,8 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // mockDeadLetterProducer records the messages published to it, failing the first failFirst calls.
@@ -336,6 +338,55 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		}
 		if wantPublishCalls := 1; producer.calls != wantPublishCalls {
 			t.Errorf("dead-letter publishes = %d, want %d", producer.calls, wantPublishCalls)
+		}
+	})
+
+	t.Run("handles the message in a child span of the one its traceparent header names", func(t *testing.T) {
+		recorder := recordSpans()
+		traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
+		parentSpanID := "00f067aa0ba902b7"
+		message := validMessage()
+		message.Headers = append(message.Headers, kafkago.Header{Key: traceparentHeader, Value: []byte("00-" + traceID + "-" + parentSpanID + "-01")})
+		var gotHandlerTraceID string
+
+		processed := newConsumer(&mockDeadLetterProducer{}).process(context.Background(), message, func(ctx context.Context, _ kafka.MessageType, _ uuid.UUID, _ string, _ []byte) error {
+			gotHandlerTraceID = trace.SpanContextFromContext(ctx).TraceID().String()
+			return nil
+		})
+
+		if !processed {
+			t.Error("process = false, want true")
+		}
+		if gotHandlerTraceID != traceID {
+			t.Errorf("handler's trace id = %q, want %q", gotHandlerTraceID, traceID)
+		}
+		endedSpan := endedSpanOfTrace(t, recorder, traceID)
+		if gotParentSpanID := endedSpan.Parent().SpanID().String(); gotParentSpanID != parentSpanID {
+			t.Errorf("parent span id = %q, want %q", gotParentSpanID, parentSpanID)
+		}
+		if wantKind := trace.SpanKindConsumer; endedSpan.SpanKind() != wantKind {
+			t.Errorf("span kind = %v, want %v", endedSpan.SpanKind(), wantKind)
+		}
+		if wantCode := codes.Unset; endedSpan.Status().Code != wantCode {
+			t.Errorf("span status = %v, want %v", endedSpan.Status().Code, wantCode)
+		}
+	})
+
+	t.Run("marks the span failed when the message is dead-lettered", func(t *testing.T) {
+		recorder := recordSpans()
+		traceID := "5bf92f3577b34da6a3ce929d0e0e4736"
+		message := validMessage()
+		message.Headers = append(message.Headers, kafkago.Header{Key: traceparentHeader, Value: []byte("00-" + traceID + "-00f067aa0ba902b7-01")})
+
+		processed := newConsumer(&mockDeadLetterProducer{}).process(context.Background(), message, func(context.Context, kafka.MessageType, uuid.UUID, string, []byte) error {
+			return inkafka.ErrMalformedMessage.WithCause(errors.New("permanent failure"))
+		})
+
+		if !processed {
+			t.Error("process = false, want true")
+		}
+		if wantCode := codes.Error; endedSpanOfTrace(t, recorder, traceID).Status().Code != wantCode {
+			t.Errorf("span status = %v, want %v", endedSpanOfTrace(t, recorder, traceID).Status().Code, wantCode)
 		}
 	})
 }

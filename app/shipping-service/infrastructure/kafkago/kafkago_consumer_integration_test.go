@@ -215,7 +215,7 @@ func closeQuietly(t *testing.T, name string, c io.Closer) {
 // the consumer to receive, not the outbox itself.
 func sendMessage(t *testing.T, producer common.KafkaMessageProducer, messageType kafka.MessageType, correlationID string, key string, payload any) {
 	t.Helper()
-	message, err := dto.NewOutboxMessage(correlationID, messageType.String(), key, payload)
+	message, err := dto.NewOutboxMessage(correlationID, messageType.String(), key, payload, "")
 	if err != nil {
 		t.Fatalf("failed to build outbox message: %v", err)
 	}

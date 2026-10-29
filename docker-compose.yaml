@@ -91,6 +91,51 @@ services:
     depends_on:
       - kafka
 
+  # traces: the services send OTLP to alloy, alloy forwards to tempo, grafana reads tempo.
+  # Only grafana and alloy's debug UI are published to the host.
+  tempo:
+    image: grafana/tempo:3.1.1
+    command: ["-target=all", "-config.file=/etc/tempo/tempo.yaml"]
+    networks:
+      - app-network
+    volumes:
+      - ./docker/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  alloy:
+    image: grafana/alloy:v1.21.2
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    mem_limit: 512m
+    networks:
+      - app-network
+    ports:
+      - "${ALLOY_UI_PORT}:12345"
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    depends_on:
+      - tempo
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    networks:
+      - app-network
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    environment:
+      # local development only: anyone reaching the port is an admin, no login form
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - tempo
+
   inventory-service:
     build:
       context: ./app/inventory-service
@@ -102,6 +147,8 @@ services:
       - "${INVENTORY_SERVICE_PORT}:${INVENTORY_SERVICE_PORT}"
     environment:
       INVENTORY_SERVICE_PORT: ${INVENTORY_SERVICE_PORT}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: inventory-service
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       DB_HOST: postgres
@@ -114,6 +161,8 @@ services:
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      alloy:
+        condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
@@ -132,6 +181,8 @@ services:
       - "${ORDER_SERVICE_PORT}:${ORDER_SERVICE_PORT}"
     environment:
       ORDER_SERVICE_PORT: ${ORDER_SERVICE_PORT}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: order-service
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
@@ -148,6 +199,8 @@ services:
       OIDC_CLIENT_ID: order-service
       OIDC_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
     depends_on:
+      alloy:
+        condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
@@ -172,6 +225,8 @@ services:
       - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
     environment:
       PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: payment-service
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       KAFKA_HOST: kafka
@@ -185,6 +240,8 @@ services:
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      alloy:
+        condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
@@ -203,6 +260,8 @@ services:
       - "${SHIPPING_SERVICE_PORT}:${SHIPPING_SERVICE_PORT}"
     environment:
       SHIPPING_SERVICE_PORT: ${SHIPPING_SERVICE_PORT}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: shipping-service
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       DB_HOST: postgres
@@ -214,6 +273,8 @@ services:
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     depends_on:
+      alloy:
+        condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
@@ -232,6 +293,8 @@ services:
       - "${GATEWAY_PORT}:${GATEWAY_PORT}"
     environment:
       GATEWAY_PORT: ${GATEWAY_PORT}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_SERVICE_NAME: gateway-service
       # public realm URL - equal to `iss` in tokens, used for browser redirects
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       # the same realm from inside the network - token, jwks, userinfo
@@ -244,6 +307,8 @@ services:
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
       SHIPPING_SERVICE_URL: http://shipping-service:${SHIPPING_SERVICE_PORT}
     depends_on:
+      alloy:
+        condition: service_started
       keycloak:
         condition: service_healthy
       order-service:
@@ -279,3 +344,5 @@ networks:
 
 volumes:
   postgres-data:
+  tempo-data:
+  grafana-data:

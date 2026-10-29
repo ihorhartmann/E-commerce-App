@@ -20,8 +20,9 @@ gateway only checks that a request is authenticated.
 ## Packages
 
 ```text
-config/   security, client registration, JWT decoder, OIDC properties
-http/     controllers of the gateway itself (e.g. GET /api/v1/me), with their DTOs in http/dto
+config/        security, client registration, JWT decoder, OIDC properties, tracing
+http/          controllers of the gateway itself (e.g. GET /api/v1/me), with their DTOs in http/dto
+observation/   span name conventions: `{METHOD} {route}`, a routed request by its route's path pattern
 ```
 
 Routes live in `application.yml`, not in code.
