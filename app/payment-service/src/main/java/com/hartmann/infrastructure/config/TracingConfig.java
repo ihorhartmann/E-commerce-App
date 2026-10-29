@@ -1,9 +1,15 @@
 package com.hartmann.infrastructure.config;
 
+import com.hartmann.infrastructure.observation.HttpServerSpanNameConvention;
+import com.hartmann.infrastructure.observation.KafkaListenerSpanNameConvention;
+import com.hartmann.infrastructure.observation.KafkaTemplateSpanNameConvention;
 import io.micrometer.observation.ObservationPredicate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.http.server.observation.ServerRequestObservationConvention;
+import org.springframework.kafka.support.micrometer.KafkaListenerObservationConvention;
+import org.springframework.kafka.support.micrometer.KafkaTemplateObservationConvention;
 
 import java.util.List;
 
@@ -29,5 +35,23 @@ public class TracingConfig {
     @Bean
     public ObservationPredicate skipScheduledTaskObservations() {
         return (name, _) -> !SCHEDULED_TASK_OBSERVATION.equals(name);
+    }
+
+    // Span names in one format across all services, the ones OpenTelemetry's semantic conventions give - Spring Boot
+    // picks these up for the incoming requests and for the Kafka template and listeners.
+
+    @Bean
+    public ServerRequestObservationConvention httpServerSpanNameConvention() {
+        return new HttpServerSpanNameConvention();
+    }
+
+    @Bean
+    public KafkaTemplateObservationConvention kafkaTemplateSpanNameConvention() {
+        return new KafkaTemplateSpanNameConvention();
+    }
+
+    @Bean
+    public KafkaListenerObservationConvention kafkaListenerSpanNameConvention() {
+        return new KafkaListenerSpanNameConvention();
     }
 }

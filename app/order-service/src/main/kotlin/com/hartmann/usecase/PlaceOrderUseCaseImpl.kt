@@ -5,6 +5,7 @@ import com.hartmann.entities.value.Address
 import com.hartmann.usecase.port.`in`.usecase.PlaceOrderUseCase
 import com.hartmann.usecase.port.`in`.usecase.dto.CheckoutResult
 import com.hartmann.usecase.port.`in`.usecase.dto.RequestedItem
+import com.hartmann.usecase.port.common.tracing.CorrelationTagger
 import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
@@ -20,6 +21,7 @@ class PlaceOrderUseCaseImpl(
     private val inventoryClient: InventoryClient,
     private val paymentClient: PaymentClient,
     private val kafkaProducer: OrderKafkaProducer,
+    private val correlationTagger: CorrelationTagger,
     transactionManager: PlatformTransactionManager,
 ) : PlaceOrderUseCase {
     private val transactionTemplate = TransactionTemplate(transactionManager)
@@ -31,13 +33,16 @@ class PlaceOrderUseCaseImpl(
         // The id is taken first, because the stock is reserved for it; the order itself is stored only once the
         // reservation succeeded, so a failed one leaves no order behind.
         val orderId = orderRepository.nextId()
+        val correlationId = orderId.toString()
+        // the order id is the saga's correlation id: tagged before anything can fail, so a failed checkout is found too
+        correlationTagger.tagCurrentSpan(correlationId)
         val reservedItems = inventoryClient.reserve(orderId, requestedItems)
 
         val order = try {
             orderRepository.create(Order.createNew(orderId, customerId, reservedItems, address))
         } catch (e: Exception) {
             // the stock is reserved, but there is no order to hold it for
-            kafkaProducer.publishCancelReservation(orderId.toString(), orderId)
+            kafkaProducer.publishCancelReservation(correlationId, orderId)
             throw e
         }
 
@@ -47,7 +52,7 @@ class PlaceOrderUseCaseImpl(
             order.failPayment()
             transactionTemplate.executeWithoutResult {
                 orderRepository.save(order)
-                kafkaProducer.publishCancelReservation(order.id.toString(), order.id)
+                kafkaProducer.publishCancelReservation(correlationId, order.id)
             }
             throw e
         }

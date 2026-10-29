@@ -6,6 +6,7 @@ import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.usecase.port.common.tracing.CorrelationTagger
 import com.hartmann.usecase.port.out.kafka.OrderKafkaProducer
 import com.hartmann.usecase.port.out.repository.OrderRepository
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
@@ -26,7 +27,8 @@ class CancelOrderUseCaseImplTest {
 
     private val orderRepository = mockk<OrderRepository>()
     private val orderKafkaProducer = mockk<OrderKafkaProducer>(relaxed = true)
-    private val useCase = CancelOrderUseCaseImpl(orderRepository, orderKafkaProducer)
+    private val correlationTagger = mockk<CorrelationTagger>(relaxed = true)
+    private val useCase = CancelOrderUseCaseImpl(orderRepository, orderKafkaProducer, correlationTagger)
 
     private fun orderOf(id: Long, customerId: UUID, status: OrderStatus, version: Long = 0) = Order.createExisting(
         id = id,
@@ -53,6 +55,7 @@ class CancelOrderUseCaseImplTest {
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         verify(exactly = 1) { orderRepository.save(order) }
         verify(exactly = 1) { orderKafkaProducer.publishCancelShipment(orderId.toString(), orderId) }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 
     @Test
@@ -67,6 +70,7 @@ class CancelOrderUseCaseImplTest {
         assertSame(order, actual)
         verify(exactly = 0) { orderRepository.save(any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelShipment(any(), any()) }
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 
     @Test
@@ -82,5 +86,7 @@ class CancelOrderUseCaseImplTest {
         assertEquals(OrderStatus.PROCESSING, order.status)
         verify(exactly = 0) { orderRepository.save(any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelShipment(any(), any()) }
+        // tagged before the order is even read, so a rejected cancellation is found by its order id too
+        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
     }
 }

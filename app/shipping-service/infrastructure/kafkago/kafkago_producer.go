@@ -24,7 +24,7 @@ func NewKafkaGoMessageProducer(brokers []string, topic string) common.KafkaMessa
 		Balancer:     &kafkago.Hash{},
 		RequiredAcks: kafkago.RequireOne,
 		BatchSize:    100,
-		BatchTimeout: 200 * time.Millisecond,
+		BatchTimeout: 5 * time.Millisecond,
 	}
 
 	return &kafkaGoMessageProducer{writer: writer}

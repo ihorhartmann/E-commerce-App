@@ -131,7 +131,6 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 		return c.sendDeadLetter(ctx, message, err)
 	}
 
-	setMessageAttributes(span, messageType, messageID, correlationID)
 	slog.Debug("received kafka message", "messageType", messageType, "messageId", messageID, "correlationId", correlationID)
 
 	// the handler's context carries the span but not ctx's cancellation: a shutdown cuts the retry back-offs short,

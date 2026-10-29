@@ -192,11 +192,13 @@ Packages are grouped by technical responsibility or external technology integrat
 infrastructure/
 ├── config/
 ├── kafka/
+├── observation/
 └── security/
 ```
 
 `infrastructure.config` holds only `@Configuration` classes. The framework glue they wire in lives next to them, in
 a package per framework: `infrastructure.kafka` (e.g. `RetryableDeadLetterPublishingRecoverer`),
+`infrastructure.observation` (the span name conventions, e.g. `KafkaListenerSpanNameConvention`),
 `infrastructure.security` (e.g. `RolesClaimGrantedAuthoritiesConverter`). A class that turns a framework event into
 one of this service's own types is an adapter, not glue, even if a framework calls it: Spring Security's entry point
 and access-denied handler, which turn a rejected request into this service's exceptions, live in

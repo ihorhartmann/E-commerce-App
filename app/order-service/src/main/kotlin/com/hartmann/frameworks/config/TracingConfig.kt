@@ -1,9 +1,15 @@
 package com.hartmann.frameworks.config
 
+import com.hartmann.frameworks.observation.HttpServerSpanNameConvention
+import com.hartmann.frameworks.observation.KafkaListenerSpanNameConvention
+import com.hartmann.frameworks.observation.KafkaTemplateSpanNameConvention
 import io.micrometer.observation.ObservationPredicate
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
+import org.springframework.http.server.observation.ServerRequestObservationConvention
+import org.springframework.kafka.support.micrometer.KafkaListenerObservationConvention
+import org.springframework.kafka.support.micrometer.KafkaTemplateObservationConvention
 
 /**
  * Spring Boot reads the OpenTelemetry env vars itself - the collector's address and the `service.name` every span
@@ -30,4 +36,17 @@ class TracingConfig(environment: Environment) {
      */
     @Bean
     fun skipScheduledTaskObservations() = ObservationPredicate { name, _ -> name != SCHEDULED_TASK_OBSERVATION }
+
+    // Span names in one format across all services, the ones OpenTelemetry's semantic conventions give - Spring Boot
+    // picks these up for the incoming requests and for the Kafka template and listeners; the outgoing calls get theirs
+    // in HttpClientConfig
+
+    @Bean
+    fun httpServerSpanNameConvention(): ServerRequestObservationConvention = HttpServerSpanNameConvention()
+
+    @Bean
+    fun kafkaTemplateSpanNameConvention(): KafkaTemplateObservationConvention = KafkaTemplateSpanNameConvention()
+
+    @Bean
+    fun kafkaListenerSpanNameConvention(): KafkaListenerObservationConvention = KafkaListenerSpanNameConvention()
 }

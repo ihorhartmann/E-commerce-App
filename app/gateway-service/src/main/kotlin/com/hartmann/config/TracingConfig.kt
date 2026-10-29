@@ -1,10 +1,14 @@
 package com.hartmann.config
 
+import com.hartmann.observation.HttpServerSpanNameConvention
+import com.hartmann.observation.RoutedRequestSpanNameConvention
 import io.micrometer.observation.ObservationPredicate
+import org.springframework.cloud.gateway.filter.headers.observation.GatewayObservationConvention
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.http.server.reactive.observation.ServerRequestObservationContext
+import org.springframework.http.server.reactive.observation.ServerRequestObservationConvention
 
 /**
  * Spring Boot reads the OpenTelemetry env vars itself - the collector's address and the `service.name` every span
@@ -28,4 +32,12 @@ class TracingConfig(environment: Environment) {
         !(context is ServerRequestObservationContext && context.carrier?.path?.value() == HEALTH_PATH)
     }
 
+    // Span names in one format across all services, the ones OpenTelemetry's semantic conventions give - Spring Boot
+    // picks the first up for the incoming requests, Spring Cloud Gateway the second for the requests it sends on
+
+    @Bean
+    fun httpServerSpanNameConvention(): ServerRequestObservationConvention = HttpServerSpanNameConvention()
+
+    @Bean
+    fun routedRequestSpanNameConvention(): GatewayObservationConvention = RoutedRequestSpanNameConvention()
 }

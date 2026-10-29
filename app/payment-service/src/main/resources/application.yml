@@ -39,6 +39,10 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        # how long a batch waits to fill up before it is sent - the client's default, set here so it stays the same
+        # 5ms the Go services wait whatever a client upgrade changes
+        "[linger.ms]": 5
     # a producer span per send and a consumer span per record, linked through the traceparent header
     template:
       observation-enabled: true

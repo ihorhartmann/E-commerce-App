@@ -3,6 +3,7 @@ package kafkago
 import (
 	"context"
 	"errors"
+	"shippingservice/adapter/common/kafka"
 	"sync"
 	"testing"
 
@@ -54,12 +55,17 @@ func TestStartSendSpan(t *testing.T) {
 		recorder := recordSpans()
 		traceID := "6bf92f3577b34da6a3ce929d0e0e4736"
 		parentSpanID := "00f067aa0ba902b7"
+		topic := "shipping.events"
+		messageType := "ShipmentDelivered"
 		message := kafkago.Message{}
 
-		span := startSendSpan("shipping.events", "00-"+traceID+"-"+parentSpanID+"-01", &message, "ShipmentDelivered", "0192f1d2-7c4b-7000-8000-000000000001", "corr-1")
+		span := startSendSpan(topic, "00-"+traceID+"-"+parentSpanID+"-01", &message, messageType, "0192f1d2-7c4b-7000-8000-000000000001", "corr-1")
 		endSendSpans([]trace.Span{span}, nil)
 
 		endedSpan := endedSpanOfTrace(t, recorder, traceID)
+		if wantName := "send " + topic + " " + messageType; endedSpan.Name() != wantName {
+			t.Errorf("span name = %q, want %q", endedSpan.Name(), wantName)
+		}
 		if gotParentSpanID := endedSpan.Parent().SpanID().String(); gotParentSpanID != parentSpanID {
 			t.Errorf("parent span id = %q, want %q", gotParentSpanID, parentSpanID)
 		}
@@ -196,6 +202,79 @@ func TestMarkDeadLettered(t *testing.T) {
 		}
 		if gotMessage != cause.Error() {
 			t.Errorf("exception.message = %q, want %q", gotMessage, cause.Error())
+		}
+	})
+}
+
+func TestStartProcessSpanFromRawHeaders(t *testing.T) {
+	t.Run("names and tags the span from the headers as they arrived, even invalid ones", func(t *testing.T) {
+		recorder := recordSpans()
+		topic := "commands"
+		messageType := "SomethingUnknown"
+		messageID := "not-a-uuid"
+		correlationID := "corr-raw"
+		message := kafkago.Message{
+			Topic: topic,
+			Headers: []kafkago.Header{
+				{Key: kafka.MessageTypeHeader, Value: []byte(messageType)},
+				{Key: kafka.MessageIDHeader, Value: []byte(messageID)},
+				{Key: kafka.CorrelationIDHeader, Value: []byte(correlationID)},
+			},
+		}
+
+		_, span := startProcessSpan(context.Background(), message, "test-group")
+		span.End()
+
+		endedSpan := endedSpanOfTrace(t, recorder, span.SpanContext().TraceID().String())
+		if wantName := "process " + topic + " " + messageType; endedSpan.Name() != wantName {
+			t.Errorf("span name = %q, want %q", endedSpan.Name(), wantName)
+		}
+		wantAttributes := map[string]string{
+			"messaging.message.type":            messageType,
+			"messaging.message.id":              messageID,
+			"messaging.message.conversation_id": correlationID,
+		}
+		for key, want := range wantAttributes {
+			if got, ok := attributeValue(endedSpan, key); !ok || got != want {
+				t.Errorf("attribute %s = %q (present: %v), want %q", key, got, ok, want)
+			}
+		}
+	})
+
+	t.Run("leaves out the attribute of a header the message doesn't carry", func(t *testing.T) {
+		recorder := recordSpans()
+		topic := "commands"
+
+		_, span := startProcessSpan(context.Background(), kafkago.Message{Topic: topic}, "test-group")
+		span.End()
+
+		endedSpan := endedSpanOfTrace(t, recorder, span.SpanContext().TraceID().String())
+		if wantName := "process " + topic; endedSpan.Name() != wantName {
+			t.Errorf("span name = %q, want %q", endedSpan.Name(), wantName)
+		}
+		for _, key := range []string{"messaging.message.type", "messaging.message.id", "messaging.message.conversation_id"} {
+			if got, ok := attributeValue(endedSpan, key); ok {
+				t.Errorf("attribute %s = %q, want none", key, got)
+			}
+		}
+	})
+}
+
+func TestHeaderValue(t *testing.T) {
+	t.Run("returns the value of the last header with the key", func(t *testing.T) {
+		key := "messageType"
+		headers := []kafkago.Header{{Key: key, Value: []byte("First")}, {Key: key, Value: []byte("Last")}}
+
+		got, ok := headerValue(headers, key)
+
+		if !ok || got != "Last" {
+			t.Errorf("headerValue = %q (found: %v), want %q", got, ok, "Last")
+		}
+	})
+
+	t.Run("reports no header with the key", func(t *testing.T) {
+		if _, ok := headerValue(nil, "messageType"); ok {
+			t.Error("found = true, want false")
 		}
 	})
 }

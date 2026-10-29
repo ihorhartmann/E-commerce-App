@@ -100,9 +100,11 @@ func main() {
 	})
 	// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
 	// excepted, polled every few seconds
-	app.Use(otelfiber.Middleware(otelfiber.WithoutMetrics(true), otelfiber.WithNext(func(c *fiber.Ctx) bool {
-		return c.Path() == healthPath
-	})))
+	app.Use(otelfiber.Middleware(
+		otelfiber.WithoutMetrics(true),
+		otelfiber.WithNext(func(c *fiber.Ctx) bool { return c.Path() == healthPath }),
+		otelfiber.WithSpanNameFormatter(func(c *fiber.Ctx) string { return c.Method() + " " + c.Route().Path }),
+	))
 	app.Use(middleware.Recover)
 	app.Use(middleware.LoggingMiddleware)
 	// before idempotency: a rejected request must not claim its Idempotency-Key

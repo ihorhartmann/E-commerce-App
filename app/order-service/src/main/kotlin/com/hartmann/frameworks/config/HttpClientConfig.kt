@@ -1,5 +1,6 @@
 package com.hartmann.frameworks.config
 
+import com.hartmann.frameworks.observation.HttpClientSpanNameConvention
 import com.hartmann.interfaceadapter.out.http.common.LoggingClientHttpRequestInterceptor
 import com.hartmann.interfaceadapter.out.http.common.connectFailureRetryConfig
 import com.hartmann.interfaceadapter.out.http.inventory.HttpInventoryClient
@@ -77,6 +78,7 @@ class HttpClientConfig {
             .requestFactory(requestFactory)
             // a client span per call, and the traceparent header that lets the callee continue the trace
             .observationRegistry(observationRegistry)
+            .observationConvention(HttpClientSpanNameConvention())
             .requestInterceptor(loggingInterceptor)
             .requestInterceptor(serviceTokenInterceptor)
             .build()

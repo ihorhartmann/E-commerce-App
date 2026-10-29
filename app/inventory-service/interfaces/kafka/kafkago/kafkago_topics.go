@@ -29,12 +29,12 @@ const (
 
 func declaredTopics() []kafkago.TopicConfig {
 	return []kafkago.TopicConfig{
-		topic(kafka.InventoryCommandsTopic),
+		topicConfig(kafka.InventoryCommandsTopic),
 		deadLetterTopic(kafka.InventoryCommandsDLTTopic),
 	}
 }
 
-func topic(name string) kafkago.TopicConfig {
+func topicConfig(name string) kafkago.TopicConfig {
 	return kafkago.TopicConfig{
 		Topic:             name,
 		NumPartitions:     topicPartitions,
@@ -43,7 +43,7 @@ func topic(name string) kafkago.TopicConfig {
 }
 
 func deadLetterTopic(name string) kafkago.TopicConfig {
-	config := topic(name)
+	config := topicConfig(name)
 	config.ConfigEntries = []kafkago.ConfigEntry{
 		{ConfigName: retentionConfigName, ConfigValue: strconv.FormatInt(dltRetention.Milliseconds(), 10)},
 	}
