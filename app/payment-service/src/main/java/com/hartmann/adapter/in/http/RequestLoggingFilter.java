@@ -25,15 +25,19 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        LOG.debug("received http request method={} path={}", request.getMethod(), request.getRequestURI());
+        LOG.atDebug().setMessage("received http request")
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .log();
 
         filterChain.doFilter(request, response);
 
         if (response.getStatus() < 400) {
-            LOG.info(
-                    "successfully handled http request method={} path={} status={}",
-                    request.getMethod(), request.getRequestURI(), response.getStatus()
-            );
+            LOG.atInfo().setMessage("successfully handled http request")
+                    .addKeyValue("method", request.getMethod())
+                    .addKeyValue("path", request.getRequestURI())
+                    .addKeyValue("status", response.getStatus())
+                    .log();
         }
     }
 }

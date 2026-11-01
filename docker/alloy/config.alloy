@@ -1,5 +1,8 @@
-// The single place the services send their telemetry to (OTLP). Which backend it ends up in is decided here only,
-// so moving from this compose stack to Kubernetes or a managed backend changes this file, not the services.
+// The single place the services send their telemetry to (OTLP), and the one that collects their logs. Which backend
+// it ends up in is decided here only, so moving from this compose stack to Kubernetes or a managed backend changes this
+// file, not the services.
+
+// ---- Traces ----
 
 otelcol.receiver.otlp "services" {
   http {
@@ -37,5 +40,71 @@ otelcol.exporter.otlp "tempo" {
     tls {
       insecure = true
     }
+  }
+}
+
+// ---- Logs ----
+
+// The services only write to stdout; the lines are read from Docker, from the containers of this compose project.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=e-commerce-app"]
+  }
+}
+
+// Every stream is labelled with its compose service - order-service, kafka, ... - the same name the service's spans
+// carry as service.name, so a span leads to its logs.
+discovery.relabel "containers" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.process.services.receiver]
+}
+
+// The services write a JSON object per line: its level becomes a label - only a handful of values, so it stays cheap
+// to index - and its trace id structured metadata, kept next to the line without a stream of its own. The other
+// containers (Kafka, Postgres, Keycloak, ...) log plain text, passed on as it is.
+loki.process "services" {
+  stage.match {
+    selector = "{service=~\".+-service\"}"
+
+    stage.json {
+      expressions = {
+        level   = "level",
+        traceId = "traceId",
+      }
+    }
+
+    stage.labels {
+      values = {
+        level = "",
+      }
+    }
+
+    stage.structured_metadata {
+      values = {
+        traceId = "",
+      }
+    }
+  }
+
+  forward_to = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
   }
 }

@@ -673,7 +673,8 @@ class OrderControllerTest {
             jsonPath("$.items[0].status") { value(order.status.name) }
             jsonPath("$.items[0].totalPrice.amount") { value(20.0) }
             jsonPath("$.items[0].totalPrice.currency") { value("EUR") }
-            jsonPath("$.items[0].itemCount") { value(order.items.size) }
+            // one order line of 2 units
+            jsonPath("$.items[0].itemCount") { value(2) }
             jsonPath("$.items[0].createdAt") { exists() }
         }
 

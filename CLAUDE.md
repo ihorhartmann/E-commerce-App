@@ -167,6 +167,32 @@ is missing, the service must not start and must log an error.
 All services must have graceful shutdown, so that on receiving a termination signal the service can close all Kafka,
 database connections and other resources if there are such.
 
+# Logging
+
+* Every service logs to stdout, one JSON object per line, with the same field names: `@timestamp`, `level`,
+  `message`, `traceId`, `spanId`, and - while a Kafka message is handled - `messageType`, `messageId`,
+  `correlationId`. Spring services get it from `logging.structured.format.console: logstash`, Go services from
+  `telemetry.NewLogHandler`. Alloy reads the lines from Docker and pushes them to Loki, labelled with the compose service
+  and the level only.
+* The trace and the Kafka message's ids come from the context, not from each log call: in Spring from the MDC
+  (Micrometer Tracing's, and the one the Kafka consumer fills), in Go from the `ctx` - so log with slog's `*Context`
+  functions (`slog.InfoContext(ctx, ...)`) wherever a request's or a message's `ctx` is at hand, and give every line of
+  a unit of work a value with `logging.WithAttrs`. Don't pass those fields to a single log call again: Spring Boot's
+  structured logging drops a line that has a key twice - in the MDC and as a key-value, or as two key-values - so a
+  key-value whose key may already be there (an exception's attributes) is left out, as `failureKeyValues` does.
+* A log message is a constant text, the same for the same event in every service (`received http request`,
+  `successfully processed kafka message`, `kafka message dead-lettered`, ...); every value goes in as a key-value of
+  its own - `LOG.atInfo().setMessage(...).addKeyValue(...)` in Spring, slog attrs in Go - never into the message, so
+  Loki can filter on it and count the event.
+* Levels: ERROR - a failure that needs attention (a 5xx, a dead-lettered message); WARN - something unusual but
+  handled (a rejected request or message, a retry); INFO - one or two lines per unit of work in normal operation
+  (a request or message handled, a refund created); DEBUG - the detail for an investigation (`received ...`,
+  `sending ...`). A Kafka message that fails is logged the same way in every service: each failed attempt as a WARN -
+  `kafka message rejected` for a permanent failure, `kafka message handling failed` for a transient one (retried) -
+  and, once it gives up, a single ERROR `kafka message dead-lettered`; one ERROR is one message to redrive. Every
+  service logs INFO and up by default; `LOG_LEVEL` in `.env` sets it for all of them (in
+  docker-compose it becomes `LOG_LEVEL` for the Go services and `LOGGING_LEVEL_COM_HARTMANN` for the Spring ones).
+
 # Kafka topics, retries and dead-lettering
 
 * Every topic a service produces to or consumes from must be declared explicitly in that service's configuration, never
@@ -180,6 +206,10 @@ database connections and other resources if there are such.
   redriven well after the fact.
 * A failing message is retried in place, blocking its partition, with exponential back-off: 5 attempts in total, waiting
   1s, 2s, 4s, 8s between them (15s), and then published to its DLT. All services use these same numbers.
+* The consumer checks the business headers itself (`messageType`, `messageId`, `correlationId`) - in Spring they are
+  `@Header(required = false)` parameters, not ones Spring's binding rejects - so a message missing one fails with our
+  `INVALID_MESSAGE_HEADERS` code like any other invalid message, instead of a framework exception that bypasses the
+  consumer. The Kafka error codes are the same in every service (`INVALID_MESSAGE_HEADERS`, `MALFORMED_MESSAGE`).
 * Failures are classified, and only transient ones are retried:
     * permanent failures - malformed payload, missing/invalid headers, a business rule rejecting the message, a
       referenced entity that doesn't exist, a request rejected outright by a third party - go straight to the DLT

@@ -74,7 +74,7 @@ func (p *deadLetterRetryableProducer) Send(ctx context.Context, message kafkago.
 			return ctx.Err()
 		}
 
-		slog.Error("failed to publish kafka message to the dead-letter topic, retrying", "key", string(message.Key), apperror.LogAttr(err))
+		slog.ErrorContext(ctx, "failed to publish kafka message to the dead-letter topic, retrying", "key", string(message.Key), apperror.LogAttr(err))
 		if err = sleep(ctx, p.interval); err != nil {
 			return err
 		}

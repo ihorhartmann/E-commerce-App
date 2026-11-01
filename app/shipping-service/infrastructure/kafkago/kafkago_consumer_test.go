@@ -1,13 +1,18 @@
 package kafkago
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	inkafka "shippingservice/adapter/in/kafka"
+	"slices"
 	"testing"
 	"time"
 
 	"shippingservice/adapter/common/kafka"
+	"shippingservice/adapter/common/logging"
 
 	kafkago "github.com/segmentio/kafka-go"
 
@@ -372,6 +377,35 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		}
 	})
 
+	t.Run("hands the handler a context with the message's ids for its log lines", func(t *testing.T) {
+		messageID := uuid.NewString()
+		correlationID := "corr-logs"
+		message := validMessage()
+		message.Headers = []kafkago.Header{
+			{Key: kafka.MessageTypeHeader, Value: []byte(kafka.CreateShipmentCommand.String())},
+			{Key: kafka.MessageIDHeader, Value: []byte(messageID)},
+			{Key: kafka.CorrelationIDHeader, Value: []byte(correlationID)},
+		}
+		var gotAttrs []slog.Attr
+
+		processed := newConsumer(&mockDeadLetterProducer{}).process(context.Background(), message, func(ctx context.Context, _ kafka.MessageType, _ uuid.UUID, _ string, _ []byte) error {
+			gotAttrs = logging.Attrs(ctx)
+			return nil
+		})
+
+		if !processed {
+			t.Error("process = false, want true")
+		}
+		wantAttrs := []slog.Attr{
+			slog.String(kafka.MessageTypeHeader, kafka.CreateShipmentCommand.String()),
+			slog.String(kafka.MessageIDHeader, messageID),
+			slog.String(kafka.CorrelationIDHeader, correlationID),
+		}
+		if !slices.EqualFunc(gotAttrs, wantAttrs, slog.Attr.Equal) {
+			t.Errorf("handler's log attrs = %v, want %v", gotAttrs, wantAttrs)
+		}
+	})
+
 	t.Run("marks the span failed when the message is dead-lettered", func(t *testing.T) {
 		recorder := recordSpans()
 		traceID := "5bf92f3577b34da6a3ce929d0e0e4736"
@@ -387,6 +421,46 @@ func TestKafkaGoMessageConsumer_process(t *testing.T) {
 		}
 		if wantCode := codes.Error; endedSpanOfTrace(t, recorder, traceID).Status().Code != wantCode {
 			t.Errorf("span status = %v, want %v", endedSpanOfTrace(t, recorder, traceID).Status().Code, wantCode)
+		}
+	})
+}
+
+func TestLogFailure(t *testing.T) {
+	logLine := func(t *testing.T, err error) map[string]any {
+		t.Helper()
+		var buffer bytes.Buffer
+		previous := slog.Default()
+		slog.SetDefault(slog.New(slog.NewJSONHandler(&buffer, nil)))
+		defer slog.SetDefault(previous)
+
+		logFailure(context.Background(), err)
+
+		var line map[string]any
+		if err = json.Unmarshal(buffer.Bytes(), &line); err != nil {
+			t.Fatalf("log line %q is not JSON: %v", buffer.String(), err)
+		}
+		return line
+	}
+
+	t.Run("logs a permanent failure as a rejected message, at warn", func(t *testing.T) {
+		line := logLine(t, inkafka.ErrMalformedMessage)
+
+		if got, want := line[slog.MessageKey], "kafka message rejected"; got != want {
+			t.Errorf("message = %v, want %q", got, want)
+		}
+		if got, want := line[slog.LevelKey], slog.LevelWarn.String(); got != want {
+			t.Errorf("level = %v, want %q", got, want)
+		}
+	})
+
+	t.Run("logs a transient failure as a failed attempt, at warn", func(t *testing.T) {
+		line := logLine(t, errors.New("database unavailable"))
+
+		if got, want := line[slog.MessageKey], "kafka message handling failed"; got != want {
+			t.Errorf("message = %v, want %q", got, want)
+		}
+		if got, want := line[slog.LevelKey], slog.LevelWarn.String(); got != want {
+			t.Errorf("level = %v, want %q", got, want)
 		}
 	})
 }

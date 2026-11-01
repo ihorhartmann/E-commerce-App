@@ -34,8 +34,9 @@ class KafkaErrorHandlerConfig {
             // order - can't succeed on a later attempt, so it gets no retries and is dead-lettered at once.
             // Any other failure gets the default back-off.
             setBackOffFunction { _, exception -> if (isPermanentFailure(exception)) FixedBackOff(0, 0) else null }
-            // A required header is missing: @Header binding fails inside the framework, before the
-            // consumer runs, so the failure is no OrderServiceException.
+            // A listener argument Spring can't bind fails inside the framework, before the consumer runs, so the
+            // failure is no OrderServiceException. The headers are optional parameters the consumer checks itself, so
+            // this is only a fallback.
             addNotRetryableExceptions(MessageHandlingException::class.java)
         }
     }

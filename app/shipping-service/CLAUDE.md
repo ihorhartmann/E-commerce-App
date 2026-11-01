@@ -110,6 +110,7 @@ This layer may depend on the `Application` and `Domain` layers.
 adapter/
 ├── common/
 │   ├── kafka/
+│   ├── logging/
 │   └── ...
 │
 ├── in/
@@ -206,6 +207,10 @@ incoming request or message; any other span without a parent (the outbox relay's
 The outbox keeps a message's trace: `adapter/out/outbox` stores the current span's `traceparent` with it, and
 `kafkaGoMessageProducer.SendBatch` sends it in a producer span that is a child of that one. Pass the request's or
 message's `ctx` down to the repositories (`c.Request.Context()` in a controller), so their SQL spans join its trace.
+
+`telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
+`ctx` a line is logged with, and the attrs that `ctx` carries from `adapter/common/logging.WithAttrs` - the kafka-go
+consumer gives the handler's `ctx` the message's ids that way.
 
 ## Error handling
 

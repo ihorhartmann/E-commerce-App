@@ -313,8 +313,8 @@ class OrderKafkaConsumerIntegrationTest {
         val key = "no-headers"
         val record = ProducerRecord(KafkaConst.PAYMENT_EVENTS_TOPIC, key, "{}")
         record.headers().add(RecordHeader(KafkaConst.MESSAGE_TYPE, KafkaConst.PAYMENT_COMPLETED_EVENT.toByteArray(StandardCharsets.UTF_8)))
-        // correlationId header intentionally omitted - @Header binding should fail before the
-        // listener body (and therefore the saga) is ever reached.
+        // correlationId header intentionally omitted - the consumer rejects the message (InvalidMessageHeaderException)
+        // before the saga is ever reached.
         send(record)
 
         awaitDeadLetter(KafkaConst.PAYMENT_EVENTS_DLT_TOPIC, key, NON_RETRYABLE_DEAD_LETTER_TIMEOUT)

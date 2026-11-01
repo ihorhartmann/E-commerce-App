@@ -37,13 +37,17 @@ const (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	// JSON lines on stdout, for Alloy to push to Loki; a line logged with a ctx gets its trace and its logging.WithAttrs.
+	// INFO until the configuration says which level - a configuration that fails to load is logged as JSON too.
+	logLevel := new(slog.LevelVar)
+	slog.SetDefault(slog.New(telemetry.NewLogHandler(os.Stdout, logLevel)))
 
 	config, err := env.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
 	}
+	logLevel.Set(config.LogLevel)
 
 	// first, so the database, Kafka and HTTP instrumentation below all find the provider installed
 	shutdownTracing, err := telemetry.InitTracing(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
@@ -97,6 +101,8 @@ func main() {
 	// The order matters - see error_handler_middleware.go.
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleMiddlewareError,
+		// Fiber's startup banner is plain text on stdout, between the JSON lines
+		DisableStartupMessage: true,
 	})
 	// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
 	// excepted, polled every few seconds

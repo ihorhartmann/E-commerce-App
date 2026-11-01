@@ -1,5 +1,7 @@
 package env
 
+import "log/slog"
+
 func LoadFromEnv() (*Config, error) {
 	port, err := GetStrEnv(PortEnvVar)
 	if err != nil {
@@ -66,6 +68,11 @@ func LoadFromEnv() (*Config, error) {
 		return nil, err
 	}
 
+	logLevel, err := GetLogLevelEnv(LogLevelEnvVar, slog.LevelInfo)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Port:                     port,
 		KafkaHost:                kafkaHost,
@@ -80,6 +87,7 @@ func LoadFromEnv() (*Config, error) {
 		OIDCRolesClaim:           oidcRolesClaim,
 		OTELExporterOTLPEndpoint: otelExporterOTLPEndpoint,
 		OTELServiceName:          otelServiceName,
+		LogLevel:                 logLevel,
 	}, nil
 }
 
@@ -102,4 +110,6 @@ type Config struct {
 	OTELExporterOTLPEndpoint string
 	// OTELServiceName is the service.name every span of this service carries
 	OTELServiceName string
+	// LogLevel is the lowest level logged - INFO unless LOG_LEVEL says otherwise
+	LogLevel slog.Level
 }

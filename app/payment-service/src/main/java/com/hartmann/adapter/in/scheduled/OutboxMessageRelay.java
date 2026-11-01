@@ -49,7 +49,10 @@ public class OutboxMessageRelay {
                 traceContextPropagator.withParent(message.traceparent(), () -> kafkaTemplate.send(toRecord(message))).get();
             }
         } catch (Exception e) {
-            LOG.error("outbox relay failed to publish message batch, count={}", messages.size(), e);
+            LOG.atError().setMessage("outbox relay failed to publish message batch")
+                    .setCause(e)
+                    .addKeyValue("count", messages.size())
+                    .log();
             return;
         }
 

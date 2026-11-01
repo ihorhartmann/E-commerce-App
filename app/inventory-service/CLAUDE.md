@@ -59,7 +59,8 @@ Errors in this layer must be declared in an `errors.go` file located next to the
 application/
 ├── port/
 │   ├── common/
-│   │   └── kafka/
+│   │   ├── kafka/
+│   │   └── logging/
 │   ├── in/
 │   └── out/
 │       ├── kafka/
@@ -132,6 +133,11 @@ that the instrumentation uses: `otelfiber` for HTTP, `otelgorm` for SQL, and the
 (`interfaces/kafka/kafkago/kafkago_tracing.go`). A trace starts only at an entry point - an incoming request or
 message; any other span without a parent (a sweep's query) is dropped. Pass the request's or message's `ctx` down to
 the repositories (`c.UserContext()` in a controller, not `c.Context()`), so their SQL spans join its trace.
+
+`telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
+`ctx` a line is logged with, and the attrs that `ctx` carries from `application/port/common/logging.WithAttrs` - the
+Kafka consumer gives the handler's `ctx` the message's ids that way. `logging` lives in `application/port/common`, as
+both the consumer (`Interfaces`) and the handler (`Infrastructure`) use it.
 
 ---
 

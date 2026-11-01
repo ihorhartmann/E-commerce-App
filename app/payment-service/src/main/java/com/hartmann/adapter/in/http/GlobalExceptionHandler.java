@@ -201,9 +201,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static void logFailure(Exception exception, ErrorCode code, HttpStatusCode status, HttpServletRequest request) {
         LoggingEventBuilder event;
         if (status.is5xxServerError()) {
-            event = LOG.atError().setCause(exception).setMessage("Request failed");
+            event = LOG.atError().setCause(exception).setMessage("request failed");
         } else {
-            event = LOG.atWarn().setMessage("Request rejected");
+            event = LOG.atWarn().setMessage("http request rejected");
         }
 
         event.addKeyValue("method", request == null ? null : request.getMethod())

@@ -188,9 +188,9 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     // gets the stack trace; anything else doesn't need one.
     private fun logFailure(exception: Exception, code: ErrorCode, status: HttpStatusCode, request: HttpServletRequest?) {
         val event = if (status.is5xxServerError) {
-            LOG.atError().setCause(exception).setMessage("Request failed")
+            LOG.atError().setCause(exception).setMessage("request failed")
         } else {
-            LOG.atWarn().setMessage("Request rejected")
+            LOG.atWarn().setMessage("http request rejected")
         }
 
         event.addKeyValue("method", request?.method)

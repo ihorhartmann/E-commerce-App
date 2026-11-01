@@ -33,7 +33,7 @@ func Write(c *fiber.Ctx, err error) error {
 		slog.ErrorContext(c.UserContext(), "request failed",
 			"method", c.Method(), "path", c.Path(), "status", status, apperror.LogAttr(err))
 	} else {
-		slog.WarnContext(c.UserContext(), "request rejected",
+		slog.WarnContext(c.UserContext(), "http request rejected",
 			"method", c.Method(), "path", c.Path(), "status", status, apperror.LogAttr(err))
 	}
 

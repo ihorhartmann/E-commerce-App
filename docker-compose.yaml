@@ -1,3 +1,7 @@
+# One project name, whichever folder the stack is started from: Alloy collects the logs of this project's containers
+# only (docker/alloy/config.alloy).
+name: e-commerce-app
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -92,6 +96,7 @@ services:
       - kafka
 
   # traces: the services send OTLP to alloy, alloy forwards to tempo, grafana reads tempo.
+  # logs: the services write to stdout, alloy reads it from Docker and pushes it to loki, grafana reads loki.
   # Only grafana and alloy's debug UI are published to the host.
   tempo:
     image: grafana/tempo:3.1.1
@@ -101,6 +106,15 @@ services:
     volumes:
       - ./docker/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
+
+  loki:
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    networks:
+      - app-network
+    volumes:
+      - ./docker/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
 
   alloy:
     image: grafana/alloy:v1.21.2
@@ -116,8 +130,13 @@ services:
       - "${ALLOY_UI_PORT}:12345"
     volumes:
       - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # the containers' logs, read through the Docker API
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # how far each container's log has been read, so a restarted Alloy neither loses nor resends lines
+      - alloy-data:/var/lib/alloy/data
     depends_on:
       - tempo
+      - loki
 
   grafana:
     image: grafana/grafana:13.2.4
@@ -135,6 +154,7 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - tempo
+      - loki
 
   inventory-service:
     build:
@@ -149,6 +169,7 @@ services:
       INVENTORY_SERVICE_PORT: ${INVENTORY_SERVICE_PORT}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: inventory-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       DB_HOST: postgres
@@ -183,6 +204,7 @@ services:
       ORDER_SERVICE_PORT: ${ORDER_SERVICE_PORT}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: order-service
+      LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
@@ -227,6 +249,7 @@ services:
       PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: payment-service
+      LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       KAFKA_HOST: kafka
@@ -262,6 +285,7 @@ services:
       SHIPPING_SERVICE_PORT: ${SHIPPING_SERVICE_PORT}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: shipping-service
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       DB_HOST: postgres
@@ -295,6 +319,7 @@ services:
       GATEWAY_PORT: ${GATEWAY_PORT}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: gateway-service
+      LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
       # public realm URL - equal to `iss` in tokens, used for browser redirects
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       # the same realm from inside the network - token, jwks, userinfo
@@ -345,4 +370,6 @@ networks:
 volumes:
   postgres-data:
   tempo-data:
+  loki-data:
+  alloy-data:
   grafana-data:

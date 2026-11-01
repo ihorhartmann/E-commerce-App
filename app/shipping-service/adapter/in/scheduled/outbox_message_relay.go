@@ -50,13 +50,13 @@ func (r *OutboxMessageRelay) StartAsync(ctx context.Context) {
 func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Error("outbox relay panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+			slog.ErrorContext(ctx, "outbox relay panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
 		}
 	}()
 
 	messages, err := r.repository.FetchUnsent(ctx, outboxRelayBatchSize)
 	if err != nil {
-		slog.Error("outbox relay failed to fetch unsent messages", apperror.LogAttr(err))
+		slog.ErrorContext(ctx, "outbox relay failed to fetch unsent messages", apperror.LogAttr(err))
 		return
 	}
 	if len(messages) == 0 {
@@ -64,7 +64,7 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	}
 
 	if err = r.producer.SendBatch(messages); err != nil {
-		slog.Error("outbox relay failed to publish message batch", "count", len(messages), apperror.LogAttr(err))
+		slog.ErrorContext(ctx, "outbox relay failed to publish message batch", "count", len(messages), apperror.LogAttr(err))
 		return
 	}
 
@@ -74,6 +74,6 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	}
 
 	if err = r.repository.MarkSentBatch(ctx, messageIDs, time.Now()); err != nil {
-		slog.Error("outbox relay failed to mark message batch sent", "count", len(messageIDs), apperror.LogAttr(err))
+		slog.ErrorContext(ctx, "outbox relay failed to mark message batch sent", "count", len(messageIDs), apperror.LogAttr(err))
 	}
 }

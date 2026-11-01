@@ -95,7 +95,10 @@ public class PaymentServiceImpl implements PaymentService {
         var expired = paymentRepository.expireOverdue();
 
         for (var payment : expired) {
-            LOG.info("expired payment id={} orderId={}", payment.id(), payment.orderId());
+            LOG.atInfo().setMessage("expired payment")
+                    .addKeyValue("paymentId", payment.id())
+                    .addKeyValue("orderId", payment.orderId())
+                    .log();
 
             // A payment that was never submitted never left INITIATED - the gateway call itself
             // never succeeded, so order-service already resolved that order synchronously when

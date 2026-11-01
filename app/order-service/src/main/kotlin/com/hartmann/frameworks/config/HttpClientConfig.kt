@@ -87,12 +87,22 @@ class HttpClientConfig {
     private fun retry(name: String): Retry =
         Retry.of(name, connectFailureRetryConfig(MAX_ATTEMPTS, INITIAL_BACKOFF)).apply {
             eventPublisher.onRetry {
-                LOG.warn("retrying call to {} after connect failure, attempt={}", name, it.numberOfRetryAttempts, it.lastThrowable)
+                LOG.atWarn().setMessage("retrying http call after connect failure")
+                    .setCause(it.lastThrowable)
+                    .addKeyValue("client", name)
+                    .addKeyValue("attempt", it.numberOfRetryAttempts)
+                    .log()
             }
         }
 
     private fun circuitBreaker(name: String, config: CircuitBreakerConfig): CircuitBreaker =
         CircuitBreaker.of(name, config).apply {
-            eventPublisher.onStateTransition { LOG.warn("{} circuit breaker {}", name, it.stateTransition) }
+            eventPublisher.onStateTransition {
+                LOG.atWarn().setMessage("circuit breaker state changed")
+                    .addKeyValue("client", name)
+                    .addKeyValue("fromState", it.stateTransition.fromState)
+                    .addKeyValue("toState", it.stateTransition.toState)
+                    .log()
+            }
         }
 }

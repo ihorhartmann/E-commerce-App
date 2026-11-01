@@ -22,15 +22,19 @@ class RequestLoggingFilter : OncePerRequestFilter() {
         response: HttpServletResponse,
         filterChain: FilterChain
     ) {
-        LOG.debug("received http request method={} path={}", request.method, request.requestURI)
+        LOG.atDebug().setMessage("received http request")
+            .addKeyValue("method", request.method)
+            .addKeyValue("path", request.requestURI)
+            .log()
 
         filterChain.doFilter(request, response)
 
         if (response.status < 400) {
-            LOG.info(
-                "successfully handled http request method={} path={} status={}",
-                request.method, request.requestURI, response.status
-            )
+            LOG.atInfo().setMessage("successfully handled http request")
+                .addKeyValue("method", request.method)
+                .addKeyValue("path", request.requestURI)
+                .addKeyValue("status", response.status)
+                .log()
         }
     }
 }

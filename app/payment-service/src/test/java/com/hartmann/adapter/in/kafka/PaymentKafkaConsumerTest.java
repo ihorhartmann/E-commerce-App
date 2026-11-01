@@ -17,13 +17,17 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -70,6 +74,47 @@ class PaymentKafkaConsumerTest {
     }
 
     @Test
+    void onMessage_putsTheMessagesIdsInTheMdcWhileItIsHandledAndTakesThemOutAfter() {
+        var paymentId = 2L;
+        var orderId = 101L;
+        var payload = "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}";
+        var messageId = UUID.randomUUID();
+        var correlationId = "corr-mdc";
+        var actualMdc = new AtomicReference<Map<String, String>>();
+        when(paymentService.getByOrderId(orderId)).thenAnswer(_ -> {
+            actualMdc.set(MDC.getCopyOfContextMap());
+            return testPayment(paymentId, orderId);
+        });
+
+        consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, messageId.toString(), correlationId, payload);
+
+        var expectedMdc = Map.of(
+                KafkaConst.MESSAGE_TYPE, KafkaConst.REFUND_REQUESTED_COMMAND,
+                KafkaConst.MESSAGE_ID, messageId.toString(),
+                KafkaConst.CORRELATION_ID, correlationId);
+        assertThat(actualMdc.get()).isEqualTo(expectedMdc);
+        assertThat(MDC.getCopyOfContextMap()).isNullOrEmpty();
+        verify(paymentService, times(1)).getByOrderId(orderId);
+        verify(refundService, times(1)).submitRefund(messageId, correlationId, paymentId,
+                new Money(new BigDecimal("40.00"), Currency.USD));
+    }
+
+    @Test
+    void onMessage_takesTheMessagesIdsOutOfTheMdcWhenHandlingFails() {
+        var orderId = 102L;
+        var payload = "{\"orderId\":" + orderId + ",\"amount\":40.00,\"currency\":\"USD\"}";
+        var exception = PaymentNotFoundException.withOrderId(orderId);
+        when(paymentService.getByOrderId(orderId)).thenThrow(exception);
+
+        assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, UUID.randomUUID().toString(),
+                "corr-mdc-failure", payload)).isSameAs(exception);
+
+        assertThat(MDC.getCopyOfContextMap()).isNullOrEmpty();
+        verify(paymentService, times(1)).getByOrderId(orderId);
+        verifyNoInteractions(refundService);
+    }
+
+    @Test
     void onMessage_ignoresUnrecognizedMessageTypes() {
         consumer.onMessage("SomeUnrelatedEvent", UUID.randomUUID().toString(), "corr-2", "{}");
 
@@ -84,6 +129,19 @@ class PaymentKafkaConsumerTest {
                 .isInstanceOf(MalformedPayloadException.class)
                 .hasCauseInstanceOf(JacksonException.class);
 
+        verifyNoInteractions(paymentService, refundService);
+    }
+
+    @Test
+    void onMessage_throwsAnInvalidMessageHeaderExceptionWithoutCallingEitherServiceWhenAHeaderIsMissing() {
+        var payload = "{\"orderId\":100,\"amount\":40.00,\"currency\":\"USD\"}";
+
+        assertThatThrownBy(() -> consumer.onMessage(KafkaConst.REFUND_REQUESTED_COMMAND, null, "corr-missing-id", payload))
+                .isInstanceOf(InvalidMessageHeaderException.class)
+                .extracting(exception -> ((InvalidMessageHeaderException) exception).attributes().get("header"))
+                .isEqualTo(KafkaConst.MESSAGE_ID);
+
+        assertThat(MDC.getCopyOfContextMap()).isNullOrEmpty();
         verifyNoInteractions(paymentService, refundService);
     }
 

@@ -40,13 +40,17 @@ const (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	// JSON lines on stdout, for Alloy to push to Loki; a line logged with a ctx gets its trace and its logging.WithAttrs.
+	// INFO until the configuration says which level - a configuration that fails to load is logged as JSON too.
+	logLevel := new(slog.LevelVar)
+	slog.SetDefault(slog.New(telemetry.NewLogHandler(os.Stdout, logLevel)))
 
 	config, err := env.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
 	}
+	logLevel.Set(config.LogLevel)
 
 	// first, so the database, Kafka and HTTP instrumentation below all find the provider installed
 	shutdownTracing, err := telemetry.InitTracing(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
@@ -100,6 +104,9 @@ func main() {
 		closeDB(db)
 		os.Exit(1)
 	}
+
+	// release mode: in debug mode Gin writes its route table and warnings to stdout as plain text, between the JSON lines
+	gin.SetMode(gin.ReleaseMode)
 
 	// The order matters - see error_handler_middleware.go. gin.New, not gin.Default: Default adds its
 	// own logger and its own panic recovery, which would write a plain 500 instead of a ProblemDetail.

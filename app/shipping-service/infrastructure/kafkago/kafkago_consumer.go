@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"shippingservice/adapter/common/kafka"
+	"shippingservice/adapter/common/logging"
 	inkafka "shippingservice/adapter/in/kafka"
 	"shippingservice/domain/apperror"
 	"sync"
@@ -127,24 +128,30 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 
 	messageType, messageID, correlationID, err := parseHeaders(message.Headers)
 	if err != nil {
-		slog.Error("kafka message header validation error", apperror.LogAttr(err))
+		slog.WarnContext(ctx, "kafka message rejected", apperror.LogAttr(err))
 		return c.sendDeadLetter(ctx, message, err)
 	}
 
-	slog.Debug("received kafka message", "messageType", messageType, "messageId", messageID, "correlationId", correlationID)
+	// the message's ids in every line logged while it is handled, here and in the handler
+	ctx = logging.WithAttrs(ctx,
+		slog.String(kafka.MessageTypeHeader, messageType.String()),
+		slog.String(kafka.MessageIDHeader, messageID.String()),
+		slog.String(kafka.CorrelationIDHeader, correlationID),
+	)
+	slog.DebugContext(ctx, "received kafka message")
 
-	// the handler's context carries the span but not ctx's cancellation: a shutdown cuts the retry back-offs short,
-	// never a handler in the middle of its work
-	handlerCtx := trace.ContextWithSpan(context.Background(), span)
+	// the handler's context carries the span and the ids but not ctx's cancellation: a shutdown cuts the retry
+	// back-offs short, never a handler in the middle of its work
+	handlerCtx := context.WithoutCancel(ctx)
 	err = runWithRetry(ctx, c.retryDelays, func() error {
 		err = handleSafely(handlerCtx, handle, messageType, messageID, correlationID, message.Value)
 		if err != nil {
-			slog.Warn("kafka message handling error", "messageType", messageType, "correlationId", correlationID, apperror.LogAttr(err))
+			logFailure(ctx, err)
 		}
 		return err
 	})
 	if err == nil {
-		slog.Info("successfully processed kafka message", "messageType", messageType, "correlationId", correlationID)
+		slog.InfoContext(ctx, "successfully processed kafka message")
 		return true
 	}
 	if ctx.Err() != nil {
@@ -152,6 +159,16 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 	}
 
 	return c.sendDeadLetter(ctx, message, err)
+}
+
+// logFailure logs a failed attempt at handling a message as a warning: a permanent failure is rejected - dead-lettered at
+// once - a transient one retried. The error is logged once, when the message is dead-lettered.
+func logFailure(ctx context.Context, err error) {
+	if apperror.OutermostError(err).Category().Permanent() {
+		slog.WarnContext(ctx, "kafka message rejected", apperror.LogAttr(err))
+		return
+	}
+	slog.WarnContext(ctx, "kafka message handling failed", apperror.LogAttr(err))
 }
 
 // handleSafely runs handle for one message, turning a panic in it into an internal error - retried
@@ -176,7 +193,7 @@ func (c *kafkaGoMessageConsumer) sendDeadLetter(ctx context.Context, message kaf
 		return false
 	}
 
-	slog.Error("kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, apperror.LogAttr(cause))
+	slog.ErrorContext(ctx, "kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, apperror.LogAttr(cause))
 	markDeadLettered(trace.SpanFromContext(ctx), cause)
 	return true
 }

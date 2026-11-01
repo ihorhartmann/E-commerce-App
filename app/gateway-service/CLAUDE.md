@@ -21,11 +21,32 @@ gateway only checks that a request is authenticated.
 
 ```text
 config/        security, client registration, JWT decoder, OIDC properties, tracing
-http/          controllers of the gateway itself (e.g. GET /api/v1/me), with their DTOs in http/dto
+http/          controllers of the gateway itself (e.g. GET /api/v1/me), with their DTOs in http/dto; its error
+               responses (GlobalExceptionHandler) and request logging (RequestLoggingFilter)
 observation/   span name conventions: `{METHOD} {route}`, a routed request by its route's path pattern
 ```
 
 Routes live in `application.yml`, not in code.
+
+## Errors and logging
+
+* `GlobalExceptionHandler` (an `ErrorWebExceptionHandler`) answers every request the gateway fails itself with an
+  RFC 9457 ProblemDetail shaped like the services' (`type` `urn:ecommerce:error:GATEWAY.<code>`, `title`, `status`,
+  `instance`, `code`, `retryable`, `Retry-After` when retryable), its codes in `GatewayError`. It is deliberately
+  minimal - a fixed mapping, not the services' exception hierarchy:
+    * a route that doesn't exist (404), a method not allowed (405);
+    * a service that can't be reached (503) or doesn't answer within the `httpclient` timeouts in `application.yml`
+      (504), logged with the route and the URL the request was sent to;
+    * a request that isn't authenticated (401) or fails the CSRF check (403) - `SecurityConfig` hands Spring
+      Security's entry point and access-denied handler to it;
+    * anything else, e.g. a failure of `CurrentUserController`, as a 500.
+
+  It logs each failure once: a 5xx as an error, anything else as a warning.
+* A service that answers with an error itself is passed on as it is: the service logged it, and `RequestLoggingFilter`
+  adds only a debug line with the status. Its `received`/`successfully handled http request` lines are debug too -
+  every routed request is logged by its service and recorded in its trace anyway.
+* `spring.reactor.context-propagation: auto` restores the request's trace into the MDC on every reactive step, so the
+  gateway's log lines carry `traceId` and `spanId` like the services'.
 
 ## Configuration
 

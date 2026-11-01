@@ -325,8 +325,8 @@ class PaymentKafkaConsumerIntegrationTest {
         var key = "no-headers";
         var record = new ProducerRecord<>(KafkaConst.PAYMENT_COMMANDS_TOPIC, key, "{}");
         record.headers().add(new RecordHeader(KafkaConst.MESSAGE_TYPE, KafkaConst.REFUND_REQUESTED_COMMAND.getBytes(StandardCharsets.UTF_8)));
-        // correlationId header intentionally omitted - @Header binding should fail
-        // before the listener body (and therefore either service) is ever reached.
+        // correlationId header intentionally omitted - the consumer rejects the message (InvalidMessageHeaderException)
+        // before either service is ever reached.
         send(record);
 
         awaitDeadLetter(key, NON_RETRYABLE_DEAD_LETTER_TIMEOUT);

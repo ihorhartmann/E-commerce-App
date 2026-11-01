@@ -60,11 +60,14 @@ public class StripePaymentGateway implements PaymentGateway {
                 .setMaxNetworkRetries(PAYMENT_INTENT_MAX_NETWORK_RETRIES)
                 .build();
 
-        LOG.debug("sending create PaymentIntent request orderId={}", orderId);
+        LOG.atDebug().setMessage("sending create PaymentIntent request").addKeyValue("orderId", orderId).log();
         try {
             PaymentIntent intent = observed("stripe create payment intent",
                     () -> stripeClient.v1().paymentIntents().create(params, requestOptions));
-            LOG.info("successfully created PaymentIntent orderId={} paymentIntentId={}", orderId, intent.getId());
+            LOG.atInfo().setMessage("successfully created PaymentIntent")
+                    .addKeyValue("orderId", orderId)
+                    .addKeyValue("paymentIntentId", intent.getId())
+                    .log();
 
             return new SubmitPaymentResult(intent.getId(), intent.getClientSecret());
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
@@ -89,10 +92,17 @@ public class StripePaymentGateway implements PaymentGateway {
                 .setIdempotencyKey("refund-" + refund.idempotencyKey())
                 .build();
 
-        LOG.debug("sending create Refund request paymentIntentId={} refundId={}", paymentExternalId, refund.id());
+        LOG.atDebug().setMessage("sending create Refund request")
+                .addKeyValue("paymentIntentId", paymentExternalId)
+                .addKeyValue("refundId", refund.id())
+                .log();
         try {
             var stripeRefund = observed("stripe create refund", () -> stripeClient.v1().refunds().create(params, requestOptions));
-            LOG.info("successfully created Refund paymentIntentId={} stripeRefundId={}", paymentExternalId, stripeRefund.getId());
+            LOG.atInfo().setMessage("successfully created Refund")
+                    .addKeyValue("paymentIntentId", paymentExternalId)
+                    .addKeyValue("refundId", refund.id())
+                    .addKeyValue("stripeRefundId", stripeRefund.getId())
+                    .log();
 
             return new SubmitRefundResult(stripeRefund.getId(), StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus()));
         } catch (RateLimitException | ApiConnectionException | ApiException e) {

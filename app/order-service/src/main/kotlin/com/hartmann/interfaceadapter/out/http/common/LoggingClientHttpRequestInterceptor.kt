@@ -20,11 +20,18 @@ class LoggingClientHttpRequestInterceptor : ClientHttpRequestInterceptor {
     }
 
     override fun intercept(request: HttpRequest, body: ByteArray, execution: ClientHttpRequestExecution): ClientHttpResponse {
-        LOG.debug("sending {} {}", request.method, request.uri)
+        LOG.atDebug().setMessage("sending http request")
+            .addKeyValue("method", request.method)
+            .addKeyValue("uri", request.uri)
+            .log()
 
         val response = execution.execute(request, body)
         if (response.statusCode.is2xxSuccessful) {
-            LOG.info("successfully received response {} {} status={}", request.method, request.uri, response.statusCode.value())
+            LOG.atInfo().setMessage("successfully received http response")
+                .addKeyValue("method", request.method)
+                .addKeyValue("uri", request.uri)
+                .addKeyValue("status", response.statusCode.value())
+                .log()
         }
 
         return response

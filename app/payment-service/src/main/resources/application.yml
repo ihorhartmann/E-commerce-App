@@ -74,3 +74,10 @@ jdbc:
   includes: QUERY
   datasource-proxy:
     include-parameter-values: false
+
+# one JSON object per line on stdout, which Alloy reads and pushes to Loki: the trace and span ids Micrometer Tracing
+# puts in the MDC, and the key-value pairs of a log event, become fields of their own
+logging:
+  structured:
+    format:
+      console: logstash

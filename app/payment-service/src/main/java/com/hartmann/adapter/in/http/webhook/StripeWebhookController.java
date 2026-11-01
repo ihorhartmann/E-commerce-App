@@ -59,7 +59,7 @@ public class StripeWebhookController {
             case "payment_intent.succeeded" -> handlePaymentIntentEvent(event, PaymentStatus.CONFIRMED);
             case "payment_intent.payment_failed" -> handlePaymentIntentEvent(event, PaymentStatus.ATTEMPT_DECLINED);
             case "refund.updated" -> handleRefundEvent(event);
-            default -> LOG.info("Ignoring unhandled Stripe event type: {}", event.getType());
+            default -> LOG.atDebug().setMessage("ignoring unhandled Stripe event").addKeyValue("eventType", event.getType()).log();
         }
 
         return ResponseEntity.ok().build();
@@ -72,21 +72,24 @@ public class StripeWebhookController {
                         updatePaymentStatus(event, paymentIntent, status);
                     }
                 },
-                () -> LOG.warn(
-                        "Stripe event {} ({}) could not be deserialized to PaymentIntent — "
-                                + "likely an API version mismatch between account and stripe-java",
-                        event.getId(), event.getType()
-                )
+                () -> LOG.atWarn()
+                        .setMessage("Stripe event could not be deserialized to PaymentIntent - likely an API version mismatch between account and stripe-java")
+                        .addKeyValue("eventId", event.getId())
+                        .addKeyValue("eventType", event.getType())
+                        .log()
         );
     }
 
     private void updatePaymentStatus(Event event, PaymentIntent paymentIntent, PaymentStatus status) {
         try {
             Payment payment = paymentService.updateStatusByExternalId(paymentIntent.getId(), status);
-            LOG.info(
-                    "Payment updated from webhook: eventId={}, paymentId={}, orderId={}, externalId={}, status={}",
-                    event.getId(), payment.id(), payment.orderId(), paymentIntent.getId(), status
-            );
+            LOG.atInfo().setMessage("payment updated from webhook")
+                    .addKeyValue("eventId", event.getId())
+                    .addKeyValue("paymentId", payment.id())
+                    .addKeyValue("orderId", payment.orderId())
+                    .addKeyValue("paymentIntentId", paymentIntent.getId())
+                    .addKeyValue("status", status)
+                    .log();
         } catch (PaymentServiceException e) {
             acknowledgeIfPermanent(event, e);
         }
@@ -99,11 +102,11 @@ public class StripeWebhookController {
                         updateRefundStatus(event, stripeRefund);
                     }
                 },
-                () -> LOG.warn(
-                        "Stripe event {} ({}) could not be deserialized to Refund — "
-                                + "likely an API version mismatch between account and stripe-java",
-                        event.getId(), event.getType()
-                )
+                () -> LOG.atWarn()
+                        .setMessage("Stripe event could not be deserialized to Refund - likely an API version mismatch between account and stripe-java")
+                        .addKeyValue("eventId", event.getId())
+                        .addKeyValue("eventType", event.getType())
+                        .log()
         );
     }
 
@@ -111,10 +114,13 @@ public class StripeWebhookController {
         try {
             var status = StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus());
             Refund refund = refundService.updateStatusByExternalId(stripeRefund.getId(), status);
-            LOG.info(
-                    "Refund updated from webhook: eventId={}, refundId={}, paymentId={}, externalId={}, status={}",
-                    event.getId(), refund.id(), refund.paymentId(), stripeRefund.getId(), status
-            );
+            LOG.atInfo().setMessage("refund updated from webhook")
+                    .addKeyValue("eventId", event.getId())
+                    .addKeyValue("refundId", refund.id())
+                    .addKeyValue("paymentId", refund.paymentId())
+                    .addKeyValue("stripeRefundId", stripeRefund.getId())
+                    .addKeyValue("status", status)
+                    .log();
         } catch (PaymentServiceException e) {
             acknowledgeIfPermanent(event, e);
         }

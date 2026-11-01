@@ -11,11 +11,13 @@ import com.hartmann.usecase.port.`in`.saga.FulfillOrderSaga
 import com.hartmann.usecase.port.out.idempotency.dto.KafkaMessageMetadata
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import io.mockk.*
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
+import org.slf4j.MDC
 import tools.jackson.core.JacksonException
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.math.BigDecimal
@@ -39,6 +41,45 @@ class OrderKafkaConsumerTest {
 
         consumer.onPaymentEvent(messageType, messageId.toString(), correlationId, "{\"orderId\":$orderId}")
 
+        verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
+        confirmVerified(saga)
+    }
+
+    @Test
+    fun `onPaymentEvent - puts the message's ids in the MDC while the saga handles it and takes them out after`() {
+        val orderId = 106L
+        val messageId = UUID.randomUUID()
+        val correlationId = "corr-mdc"
+        val messageType = KafkaConst.PAYMENT_COMPLETED_EVENT
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        var actualMdc: Map<String, String>? = null
+        every { saga.onPaymentCompleted(message, orderId) } answers { actualMdc = MDC.getCopyOfContextMap() }
+
+        consumer.onPaymentEvent(messageType, messageId.toString(), correlationId, "{\"orderId\":$orderId}")
+
+        val expectedMdc = mapOf(
+            KafkaConst.MESSAGE_TYPE to messageType,
+            KafkaConst.MESSAGE_ID to messageId.toString(),
+            KafkaConst.CORRELATION_ID to correlationId,
+        )
+        assertEquals(expectedMdc, actualMdc)
+        assertTrue(MDC.getCopyOfContextMap().isNullOrEmpty())
+        verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
+        confirmVerified(saga)
+    }
+
+    @Test
+    fun `onPaymentEvent - takes the message's ids out of the MDC when the saga fails`() {
+        val orderId = 107L
+        val messageId = UUID.randomUUID()
+        val message = KafkaMessageMetadata(messageId, "corr-mdc-failure", KafkaConst.PAYMENT_COMPLETED_EVENT)
+        every { saga.onPaymentCompleted(message, orderId) } throws OrderNotFoundException(orderId)
+
+        assertThrows<OrderNotFoundException> {
+            consumer.onPaymentEvent(message.messageType, messageId.toString(), message.correlationId, "{\"orderId\":$orderId}")
+        }
+
+        assertTrue(MDC.getCopyOfContextMap().isNullOrEmpty())
         verify(exactly = 1) { saga.onPaymentCompleted(message, orderId) }
         confirmVerified(saga)
     }
@@ -121,6 +162,27 @@ class OrderKafkaConsumerTest {
         }
 
         assertTrue(exception.cause is JacksonException)
+        verify { saga wasNot Called }
+    }
+
+    @Test
+    fun `onPaymentEvent - throws an InvalidMessageHeaderException without dispatching when the messageType header is missing`() {
+        val exception = assertThrows<InvalidMessageHeaderException> {
+            consumer.onPaymentEvent(null, UUID.randomUUID().toString(), "corr-missing-type", "{\"orderId\":109}")
+        }
+
+        assertEquals(KafkaConst.MESSAGE_TYPE, exception.header)
+        verify { saga wasNot Called }
+    }
+
+    @Test
+    fun `onShippingEvent - throws an InvalidMessageHeaderException without dispatching when the correlationId header is missing`() {
+        val exception = assertThrows<InvalidMessageHeaderException> {
+            consumer.onShippingEvent(KafkaConst.SHIPMENT_CREATED_EVENT, UUID.randomUUID().toString(), null, "{}")
+        }
+
+        assertEquals(KafkaConst.CORRELATION_ID, exception.header)
+        assertTrue(MDC.getCopyOfContextMap().isNullOrEmpty())
         verify { saga wasNot Called }
     }
 

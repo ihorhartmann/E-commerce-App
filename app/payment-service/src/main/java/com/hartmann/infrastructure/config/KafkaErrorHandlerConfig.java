@@ -34,8 +34,9 @@ public class KafkaErrorHandlerConfig {
         // Any other failure gets the default back-off.
         errorHandler.setBackOffFunction((_, exception) ->
                 KafkaFailures.isPermanentFailure(exception) ? new FixedBackOff(0, 0) : null);
-        // A required header is missing: @Header binding fails inside the framework, before the
-        // consumer runs, so the failure is no PaymentServiceException.
+        // A listener argument Spring can't bind fails inside the framework, before the consumer runs, so the failure
+        // is no PaymentServiceException. The headers are optional parameters the consumer checks itself, so this is
+        // only a fallback.
         errorHandler.addNotRetryableExceptions(MessageHandlingException.class);
         return errorHandler;
     }
