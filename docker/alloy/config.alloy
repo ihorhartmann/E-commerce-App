@@ -1,16 +1,18 @@
-// The single place the services send their telemetry to (OTLP), and the one that collects their logs. Which backend
-// it ends up in is decided here only, so moving from this compose stack to Kubernetes or a managed backend changes this
-// file, not the services.
+// The single place the services send their telemetry to (OTLP), and the one that collects their logs and the
+// infrastructure's metrics. Which backend it all ends up in is decided here only, so moving from this compose stack to
+// Kubernetes or a managed backend changes this file, not the services.
 
-// ---- Traces ----
+// ---- Traces and metrics ----
 
+// The services push both over OTLP/HTTP: spans go on to Tempo, metrics to Prometheus.
 otelcol.receiver.otlp "services" {
   http {
     endpoint = "0.0.0.0:4318"
   }
 
   output {
-    traces = [otelcol.processor.memory_limiter.default.input]
+    traces  = [otelcol.processor.memory_limiter.default.input]
+    metrics = [otelcol.processor.memory_limiter.default.input]
   }
 }
 
@@ -23,13 +25,15 @@ otelcol.processor.memory_limiter "default" {
   spike_limit_percentage = 20
 
   output {
-    traces = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.default.input]
   }
 }
 
 otelcol.processor.batch "default" {
   output {
-    traces = [otelcol.exporter.otlp.tempo.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = [otelcol.exporter.otlphttp.prometheus.input]
   }
 }
 
@@ -40,6 +44,72 @@ otelcol.exporter.otlp "tempo" {
     tls {
       insecure = true
     }
+  }
+}
+
+// Prometheus takes OTLP itself (--web.enable-otlp-receiver): the exporter adds /v1/metrics to this endpoint.
+otelcol.exporter.otlphttp "prometheus" {
+  client {
+    endpoint = "http://prometheus:9090/api/v1/otlp"
+  }
+}
+
+// ---- Metrics of the infrastructure ----
+
+// What the services can't measure themselves, from exporters built into Alloy - no container of their own - scraped
+// every 15s - the services' export interval - and pushed to Prometheus with remote write
+// (--web.enable-remote-write-receiver).
+
+// Postgres itself - connections against max_connections, deadlocks, database size - and the custom queries over the
+// services' tables: outbox backlog, orders by status, stuck orders, saga durations, payments, refunds, shipments.
+prometheus.exporter.postgres "postgres" {
+  data_source_names          = [string.format("postgresql://%s:%s@postgres:5432/%s?sslmode=disable", sys.env("POSTGRES_USER"), sys.env("POSTGRES_PASSWORD"), sys.env("POSTGRES_DB"))]
+  custom_queries_config_path = "/etc/alloy/postgres-queries.yaml"
+}
+
+// Consumer lag by consumer group, topic and partition - the Go and the Spring consumers alike - plus brokers and
+// under-replicated partitions.
+prometheus.exporter.kafka "kafka" {
+  kafka_uris = ["kafka:9092"]
+}
+
+// CPU, memory against the limit, restarts and network of every container. Needs the host's /, /sys, /var/lib/docker
+// and containerd's socket mounted read-only (docker-compose.yaml) - not a privileged Alloy.
+prometheus.exporter.cadvisor "containers" {
+  docker_host      = "unix:///var/run/docker.sock"
+  docker_only      = true
+  storage_duration = "5m"
+  // the compose service as a label, not every label of the container
+  store_container_labels       = false
+  allowlisted_container_labels = ["com.docker.compose.service"]
+}
+
+// Free space of the Docker host's file systems - where the volumes of Postgres, Tempo, Loki and Prometheus live.
+prometheus.exporter.unix "host" {
+  set_collectors = ["filesystem"]
+  rootfs_path    = "/rootfs"
+}
+
+// Alloy's own health: spans, metrics and log lines it dropped or failed to export.
+prometheus.exporter.self "alloy" { }
+
+prometheus.scrape "infrastructure" {
+  targets = array.concat(
+    prometheus.exporter.postgres.postgres.targets,
+    prometheus.exporter.kafka.kafka.targets,
+    prometheus.exporter.cadvisor.containers.targets,
+    prometheus.exporter.unix.host.targets,
+    prometheus.exporter.self.alloy.targets,
+    // Keycloak's own metrics on its management port, failed logins among them (KC_EVENT_METRICS_USER_ENABLED)
+    [{"__address__" = "keycloak:9000", "job" = "keycloak"}],
+  )
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 

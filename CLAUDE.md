@@ -193,6 +193,32 @@ database connections and other resources if there are such.
   service logs INFO and up by default; `LOG_LEVEL` in `.env` sets it for all of them (in
   docker-compose it becomes `LOG_LEVEL` for the Go services and `LOGGING_LEVEL_COM_HARTMANN` for the Spring ones).
 
+# Metrics and health
+
+* Every service pushes its metrics over OTLP to Alloy, which forwards them to Prometheus, every 15s, with
+  `service.name` and a `service.instance.id` per replica (the host name). Durations are in seconds, with the same
+  explicit buckets everywhere (`0.005 ... 10`s), so the percentiles of every service compare.
+* A metric that several services record has the same name and attributes in every one of them:
+  `http.server.request.duration` (`http.request.method`, `http.route`, `http.response.status_code`),
+  `ecommerce.kafka.message.duration` (`topic`, `message.type`, `outcome` = `success`/`failed`/`rejected`, one per attempt),
+  `ecommerce.kafka.message.dead_lettered`, `ecommerce.errors` (`error.code`, `transport`), and the outbox relay's
+  `ecommerce.outbox.messages.published`/`ecommerce.outbox.relay.failures`. Attributes are low-cardinality only: a route
+  pattern, never a path; a code, never an id.
+* Custom meters are recorded globally - Micrometer's `Metrics.globalRegistry` in Spring, the global `otel.Meter` in Go -
+  not injected, so code without a registry (a unit test) records nothing.
+* What describes the system rather than a replica - the outbox backlog, orders by status, stuck orders, saga durations,
+  payments and shipments by status - is read from the database by Alloy's postgres exporter
+  (`docker/alloy/postgres-queries.yaml`), never kept as a gauge in each replica. Consumer lag comes from Alloy's Kafka
+  exporter.
+* A metric counts, it never lists: which orders are stuck is no label of a series, but a table Grafana reads straight
+  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`).
+* Every service answers `/health/liveness` (the process is up - no dependency checked) and `/health/readiness` (and
+  `/health`): the startup has finished, the shutdown hasn't begun, and the database answers - Kafka and the other
+  services are no part of it. Spring gets them from Actuator (`probes.enabled`, readiness group `readinessState,db`), Go
+  from its `HealthController`, set ready at the end of `main.go`'s startup and not ready as the first step of the
+  shutdown. Health requests need no token and are neither traced, nor logged, nor counted. docker-compose waits for
+  readiness (`service_healthy`).
+
 # Kafka topics, retries and dead-lettering
 
 * Every topic a service produces to or consumes from must be declared explicitly in that service's configuration, never
@@ -232,6 +258,12 @@ database connections and other resources if there are such.
 * Redriving from a DLT is always a manual, deliberate action, never automatic: republish to the original topic with the
   same key, payload and business headers (never a new `messageId`), without the failure headers, and only after the
   cause has been fixed.
+* What still waits in the DLTs is the lag of the `dlt-redrive` consumer group, which nothing consumes with: its offset
+  in each DLT is a bookmark - everything before it has been redriven or discarded. `kafka-init`
+  (`docker/kafka/init-dlt-redrive.sh`) sets it at the start of every DLT that has none yet and never moves an existing
+  one; the Grafana dashboards show the lag. After redriving or discarding a message, move the bookmark past it:
+  `kafka-consumer-groups.sh --group dlt-redrive --topic <dlt>:<partition> --reset-offsets --to-offset <its offset + 1>
+  --execute`. Kafka keeps the bookmarks 30 days (`KAFKA_OFFSETS_RETENTION_MINUTES`), as long as the DLT messages.
 
 # Exceptions, errors, DTOs, and Repository Entities
 

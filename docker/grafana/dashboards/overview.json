@@ -1,0 +1,832 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Is everything fine right now: the symptoms of every service side by side.",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [
+        "ecommerce"
+      ],
+      "title": "E-commerce",
+      "type": "dashboards"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [],
+      "title": "Services - what the clients see",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Replicas of each service whose metrics arrived in the last minute. A service that reported in the last day but has no replica reporting now is down - red, rather than gone from the panel.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "index": 0,
+                  "text": "down"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "no data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "count by (job) (timestamp(target_info{job=~\".+-service\"}) \u003e time() - 60) or max by (job) (max_over_time(timestamp(target_info{job=~\".+-service\"})[1d:1m])) * 0",
+          "instant": true,
+          "legendFormat": "{{job}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Replicas reporting",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Every HTTP request each service answered, all its replicas together.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (job) ((((increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000)))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Requests per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "From the summed buckets of every replica.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 9
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (job, le) ((((increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000))))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "p50 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "From the summed buckets of every replica.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 9
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (job, le) ((((increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000))))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "p95 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "From the summed buckets of every replica.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (job, le) ((((increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_bucket{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000))))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "p99 latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Failed requests and Kafka message attempts in the selected time range, by error code - optimistic-lock conflicts, requests already in progress, insufficient stock, rejected payments...",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
+      "id": 7,
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Count"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sort_desc(round(sum by (job, transport, error_code) (((increase(ecommerce_errors_total[$__range]) + (min_over_time(ecommerce_errors_total[$__range]) unless present_over_time(ecommerce_errors_total[$__range] offset $__range))) or increase(ecommerce_errors_total[$__range]) or (min_over_time(ecommerce_errors_total[$__range]) unless present_over_time(ecommerce_errors_total[$__range] offset $__range))))) \u003e 0)",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Errors by code",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "Count"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Requests rejected as the caller's fault - invalid, unauthorized, not found, conflicting. A sudden rise is a broken client or an attack.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 17
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (job) ((((increase(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"4..\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000))) / sum by (job) ((((increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000)))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "4xx share of requests",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Requests the service failed itself. Above 5% for 5 minutes is the critical alert of the plan.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 17
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (job) ((((increase(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\", http_response_status_code=~\"5..\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000))) / sum by (job) ((((increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) + (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) or increase(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) or (min_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval]) unless present_over_time(http_server_request_duration_seconds_count{job=~\".+-service\"}[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000)))",
+          "instant": false,
+          "legendFormat": "{{job}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "5xx share of requests",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 10,
+      "panels": [],
+      "title": "Asynchronous - Kafka and the outbox",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Dead-lettered messages still waiting for a redrive or a discard, by DLT: a new one adds one, moving the dlt-redrive group's offset past it takes it off (see CLAUDE.md).",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic) (kafka_consumergroup_uncommitted_offsets{consumergroup=\"dlt-redrive\"})",
+          "instant": true,
+          "legendFormat": "{{topic}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Messages waiting in DLTs",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Messages each consumer group still has to read. A lag that keeps growing means the saga stands still.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (consumergroup, topic) (kafka_consumergroup_uncommitted_offsets{consumergroup!=\"dlt-redrive\"})",
+          "instant": false,
+          "legendFormat": "{{consumergroup}} - {{topic}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Consumer lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Every attempt at handling a message, by outcome: success, failed (retried) or rejected (dead-lettered at once).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 40,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (job, outcome) ((((increase(ecommerce_kafka_message_duration_seconds_count[$__rate_interval]) + (min_over_time(ecommerce_kafka_message_duration_seconds_count[$__rate_interval]) unless present_over_time(ecommerce_kafka_message_duration_seconds_count[$__rate_interval] offset $__rate_interval))) or increase(ecommerce_kafka_message_duration_seconds_count[$__rate_interval]) or (min_over_time(ecommerce_kafka_message_duration_seconds_count[$__rate_interval]) unless present_over_time(ecommerce_kafka_message_duration_seconds_count[$__rate_interval] offset $__rate_interval))) / ($__rate_interval_ms / 1000)))",
+          "instant": false,
+          "legendFormat": "{{job}} - {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Message attempts per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Orders waiting over 30 minutes for the payment, or for shipping's answer to a cancellation - which ones: the Saga dashboard.",
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 34
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ecommerce_orders_stuck_count",
+          "instant": true,
+          "legendFormat": "{{status}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Stuck orders",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Messages written to the outbox but not yet published to Kafka.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 34
+      },
+      "id": 15,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ecommerce_outbox_pending",
+          "instant": false,
+          "legendFormat": "{{service}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbox backlog",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Age of the oldest message still waiting in each outbox. Over 2 minutes means the relay is stuck or can't reach Kafka.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 34
+      },
+      "id": 16,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "ecommerce_outbox_oldest_age_seconds",
+          "instant": false,
+          "legendFormat": "{{service}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Oldest unpublished outbox message",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": [
+    "ecommerce"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Overview",
+  "uid": "ecommerce-overview",
+  "version": 1
+}

@@ -13,9 +13,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is not set}
     volumes:
       - postgres-data:/var/lib/postgresql
-      - ./docker/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+      # run in the order of their names, once - on a new volume: the schemas first, then the users that read them
+      - ./docker/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
+      - ./docker/postgres/init-grafana-reader.sh:/docker-entrypoint-initdb.d/02-init-grafana-reader.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 2s
@@ -44,6 +47,9 @@ services:
       # lets other containers use http://keycloak:8080 for back-channel calls (token, jwks)
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
+      # /metrics on the management port, with counters of user events - failed logins among them - for Alloy to scrape
+      KC_METRICS_ENABLED: "true"
+      KC_EVENT_METRICS_USER_ENABLED: "true"
       GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
       ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
       GATEWAY_PORT: ${GATEWAY_PORT}
@@ -82,6 +88,45 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # The committed offsets of a group nobody consumes with are dropped after this long (the default is 7 days):
+      # dlt-redrive's bookmarks (kafka-init) must last as long as the DLT messages they point at - 30 days
+      KAFKA_OFFSETS_RETENTION_MINUTES: 43200
+      # The topics, offsets and DLTs live on a volume, so a message survives docker compose down until it is consumed.
+      # The cluster id is fixed: the broker refuses a log directory formatted for another cluster.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    # healthy once the broker answers requests - the services wait for that instead of failing to declare their topics
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+
+  # One-off: gives the dlt-redrive group a bookmark at the start of every DLT that has none, so its lag is the number of
+  # dead-lettered messages still waiting for a redrive or a discard. Runs once the services have declared their DLTs,
+  # then exits.
+  kafka-init:
+    image: apache/kafka:4.3.1
+    command: ["sh", "/opt/kafka-init/init-dlt-redrive.sh"]
+    restart: "no"
+    networks:
+      - app-network
+    volumes:
+      - ./docker/kafka/init-dlt-redrive.sh:/opt/kafka-init/init-dlt-redrive.sh:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      shipping-service:
+        condition: service_healthy
 
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
@@ -97,6 +142,8 @@ services:
 
   # traces: the services send OTLP to alloy, alloy forwards to tempo, grafana reads tempo.
   # logs: the services write to stdout, alloy reads it from Docker and pushes it to loki, grafana reads loki.
+  # metrics: the services send OTLP to alloy, alloy forwards to prometheus - with what its own exporters read from
+  # postgres, kafka, the containers and keycloak - and grafana reads prometheus.
   # Only grafana and alloy's debug UI are published to the host.
   tempo:
     image: grafana/tempo:3.1.1
@@ -116,6 +163,22 @@ services:
       - ./docker/loki/loki.yaml:/etc/loki/loki.yaml:ro
       - loki-data:/loki
 
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      # the services' metrics, over OTLP from alloy
+      - --web.enable-otlp-receiver
+      # the exporters' metrics, from alloy's prometheus.remote_write
+      - --web.enable-remote-write-receiver
+    networks:
+      - app-network
+    volumes:
+      - ./docker/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+
   alloy:
     image: grafana/alloy:v1.21.2
     command:
@@ -128,15 +191,36 @@ services:
       - app-network
     ports:
       - "${ALLOY_UI_PORT}:12345"
+    environment:
+      # the postgres exporter's connection (docker/alloy/config.alloy)
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      # the containers' logs, read through the Docker API
+      - ./docker/alloy/postgres-queries.yaml:/etc/alloy/postgres-queries.yaml:ro
+      # the containers' logs and metadata, read through the Docker API
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # the Docker host's file systems, cgroups and containers - cAdvisor and the file system exporter
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      # containerd's socket, through which cAdvisor finds the Docker containers
+      - /run/containerd:/run/containerd:ro
       # how far each container's log has been read, so a restarted Alloy neither loses nor resends lines
       - alloy-data:/var/lib/alloy/data
     depends_on:
-      - tempo
-      - loki
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+      prometheus:
+        condition: service_started
+      # the Kafka exporter connects once, when Alloy loads its config, and doesn't retry
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:13.2.4
@@ -149,18 +233,27 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # the read-only Postgres user of its datasource - see docker/postgres/init-grafana-reader.sh
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is not set}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      # the dashboards themselves, as JSON - see provisioning/dashboards/dashboards.yaml
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     depends_on:
       - tempo
       - loki
+      - prometheus
+      - postgres
 
   inventory-service:
     build:
       context: ./app/inventory-service
       dockerfile: Dockerfile
     image: inventory-service:latest
+    # a service that exits on a failed startup - Kafka not up yet, say - is started again, as Kubernetes would
+    restart: on-failure
     networks:
       - app-network
     ports:
@@ -181,13 +274,20 @@ services:
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${INVENTORY_SERVICE_PORT}/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       alloy:
         condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -196,6 +296,8 @@ services:
       context: ./app/order-service
       dockerfile: Dockerfile
     image: order-service:latest
+    # a service that exits on a failed startup - Kafka not up yet, say - is started again, as Kubernetes would
+    restart: on-failure
     networks:
       - app-network
     ports:
@@ -220,19 +322,26 @@ services:
       OIDC_TOKEN_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
       OIDC_CLIENT_ID: order-service
       OIDC_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
+    # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${ORDER_SERVICE_PORT}/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     depends_on:
       alloy:
         condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
-        condition: service_started
+        condition: service_healthy
       inventory-service:
-        condition: service_started
+        condition: service_healthy
       payment-service:
-        condition: service_started
+        condition: service_healthy
       shipping-service:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -241,6 +350,8 @@ services:
       context: ./app/payment-service
       dockerfile: Dockerfile
     image: payment-service:latest
+    # a service that exits on a failed startup - Kafka not up yet, say - is started again, as Kubernetes would
+    restart: on-failure
     networks:
       - app-network
     ports:
@@ -262,13 +373,20 @@ services:
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${PAYMENT_SERVICE_PORT}/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     depends_on:
       alloy:
         condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -277,6 +395,8 @@ services:
       context: ./app/shipping-service
       dockerfile: Dockerfile
     image: shipping-service:latest
+    # a service that exits on a failed startup - Kafka not up yet, say - is started again, as Kubernetes would
+    restart: on-failure
     networks:
       - app-network
     ports:
@@ -296,13 +416,20 @@ services:
       OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${SHIPPING_SERVICE_PORT}/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       alloy:
         condition: service_started
       keycloak:
         condition: service_healthy
       kafka:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
@@ -311,6 +438,8 @@ services:
       context: ./app/gateway-service
       dockerfile: Dockerfile
     image: gateway-service:latest
+    # a service that exits on a failed startup - Kafka not up yet, say - is started again, as Kubernetes would
+    restart: on-failure
     networks:
       - app-network
     ports:
@@ -331,19 +460,26 @@ services:
       PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
       SHIPPING_SERVICE_URL: http://shipping-service:${SHIPPING_SERVICE_PORT}
+    # ready: started, not shutting down - the gateway has no database - what the web UI waits for
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${GATEWAY_PORT}/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     depends_on:
       alloy:
         condition: service_started
       keycloak:
         condition: service_healthy
       order-service:
-        condition: service_started
+        condition: service_healthy
       payment-service:
-        condition: service_started
+        condition: service_healthy
       inventory-service:
-        condition: service_started
+        condition: service_healthy
       shipping-service:
-        condition: service_started
+        condition: service_healthy
 
   web-ui:
     build:
@@ -360,7 +496,7 @@ services:
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
     depends_on:
       gateway-service:
-        condition: service_started
+        condition: service_healthy
 
 networks:
   app-network:
@@ -369,7 +505,9 @@ networks:
 
 volumes:
   postgres-data:
+  kafka-data:
   tempo-data:
   loki-data:
+  prometheus-data:
   alloy-data:
   grafana-data:

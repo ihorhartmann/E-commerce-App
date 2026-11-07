@@ -1,0 +1,14 @@
+# Prometheus scrapes nothing itself: the services push their metrics over OTLP through Alloy (/api/v1/otlp), and
+# Alloy's exporters - Postgres, Kafka, containers, Keycloak, Alloy itself - push theirs with remote write
+# (/api/v1/write). Both receivers are switched on by flags in docker-compose.yaml.
+
+otlp:
+  # service.name becomes `job` and service.instance.id `instance`, the rest of the resource lands in target_info;
+  # service_name is kept as a label of every series too, for `sum by (service_name)` across the replicas of a service
+  promote_resource_attributes:
+    - service.name
+
+storage:
+  tsdb:
+    # pushed samples can arrive a little late or out of order (batching, a retried push)
+    out_of_order_time_window: 30m

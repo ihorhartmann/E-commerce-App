@@ -37,3 +37,28 @@ datasources:
           datasourceUid: tempo
           url: "$${__value.raw}"
           urlDisplayLabel: View trace
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: false
+    jsonData:
+      # pushed every 15s, by the services and by Alloy's scrapes alike: a rate needs a window of several of those
+      timeInterval: 15s
+
+  # read-only (docker/postgres/init-grafana-reader.sh): lists what Prometheus only counts, e.g. the stuck orders
+  - name: Postgres
+    type: grafana-postgresql-datasource
+    uid: postgres
+    access: proxy
+    url: postgres:5432
+    user: grafana_reader
+    editable: false
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1500
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
