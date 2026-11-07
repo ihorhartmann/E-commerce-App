@@ -9,7 +9,11 @@ import com.hartmann.feature.order.model.PlacedOrder
 
 /** The signed-in customer's orders - the order-service only ever shows a customer their own. */
 interface OrderApi {
-    suspend fun placeOrder(lines: List<OrderLine>, address: Address): PlacedOrder
+    /**
+     * Places the order. Sent again with the same [idempotencyKey], lines and address, it is answered with the order
+     * already placed for that key instead of placing another one.
+     */
+    suspend fun placeOrder(lines: List<OrderLine>, address: Address, idempotencyKey: String): PlacedOrder
 
     suspend fun listOrders(page: Int, size: Int): Page<OrderSummary>
 

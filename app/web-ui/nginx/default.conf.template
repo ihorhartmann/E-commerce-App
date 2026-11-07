@@ -2,8 +2,13 @@
 # nginx serves the app's static files and forwards everything the gateway handles to it, so that the browser sees
 # one origin: the session cookie, CSRF and the OAuth2 redirects work without CORS.
 
+# The gateway's address is looked up again every 10s, in Docker's DNS: resolved only once, at startup, it would go
+# stale as soon as the gateway is restarted with another IP, and every request would fail with 502 until nginx is
+# restarted too. A shared zone is what lets nginx update the address at runtime.
 upstream gateway {
-    server ${GATEWAY_ADDRESS};
+    zone gateway 64k;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    server ${GATEWAY_ADDRESS} resolve;
     keepalive 16;
 }
 

@@ -18,6 +18,7 @@ import dev.mokkery.answering.throws
 import dev.mokkery.every
 import dev.mokkery.everySuspend
 import dev.mokkery.matcher.any
+import dev.mokkery.matcher.capture.capture
 import dev.mokkery.mock
 import dev.mokkery.verify
 import dev.mokkery.verify.VerifyMode.Companion.exactly
@@ -31,6 +32,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 // filler values every order of these tests needs, never what a test is about
@@ -52,7 +54,7 @@ class CheckoutViewModelTest {
 
     /** A ViewModel whose order is placed and waits for its payment. */
     private fun TestScope.payingViewModel(orderId: Long, clientSecret: String, total: Money): CheckoutViewModel {
-        everySuspend { orderApi.placeOrder(any(), any()) } returns PlacedOrder(orderId, total, clientSecret)
+        everySuspend { orderApi.placeOrder(any(), any(), any()) } returns PlacedOrder(orderId, total, clientSecret)
         val viewModel = viewModel(listOf(CartItem(1, "Keyboard", total, 1, 12)))
         viewModel.updateAddress(ADDRESS)
         viewModel.placeOrder()
@@ -112,7 +114,7 @@ class CheckoutViewModelTest {
         val clientSecret = "pi_secret"
         val total = Money(15800, CURRENCY)
         val address = Address(" Kyiv ", "01001", "Khreshchatyk St, 1")
-        everySuspend { orderApi.placeOrder(any(), any()) } returns PlacedOrder(orderId, total, clientSecret)
+        everySuspend { orderApi.placeOrder(any(), any(), any()) } returns PlacedOrder(orderId, total, clientSecret)
         val viewModel = viewModel(listOf(CartItem(productId, "Keyboard", Money(7900, CURRENCY), quantity, 12)))
         viewModel.updateAddress(address)
 
@@ -121,7 +123,7 @@ class CheckoutViewModelTest {
 
         assertEquals(CheckoutStep.Paying(orderId, clientSecret, total), viewModel.state.value.step)
         assertFalse(viewModel.state.value.busy)
-        verifySuspend(exactly(1)) { orderApi.placeOrder(listOf(OrderLine(productId, quantity)), address.trimmed()) }
+        verifySuspend(exactly(1)) { orderApi.placeOrder(listOf(OrderLine(productId, quantity)), address.trimmed(), any()) }
         verify(exactly(1)) { cartStore.clear() }
     }
 
@@ -129,7 +131,7 @@ class CheckoutViewModelTest {
     fun `placeOrder - finishes with an error when the order's payment couldn't be started`() = runTest {
         val orderId = 42L
         val price = Money(7900, CURRENCY)
-        everySuspend { orderApi.placeOrder(any(), any()) } returns PlacedOrder(orderId, price, null)
+        everySuspend { orderApi.placeOrder(any(), any(), any()) } returns PlacedOrder(orderId, price, null)
         val viewModel = viewModel(listOf(CartItem(1, "Keyboard", price, 1, 12)))
         viewModel.updateAddress(ADDRESS)
 
@@ -150,7 +152,7 @@ class CheckoutViewModelTest {
         runCurrent()
 
         assertEquals("Your cart is empty.", viewModel.state.value.validationError)
-        verifySuspend(not) { orderApi.placeOrder(any(), any()) }
+        verifySuspend(not) { orderApi.placeOrder(any(), any(), any()) }
     }
 
     @Test
@@ -162,13 +164,13 @@ class CheckoutViewModelTest {
         runCurrent()
 
         assertEquals(setOf(AddressField.POSTAL_CODE, AddressField.LINE1), viewModel.state.value.invalidFields)
-        verifySuspend(not) { orderApi.placeOrder(any(), any()) }
+        verifySuspend(not) { orderApi.placeOrder(any(), any(), any()) }
     }
 
     @Test
     fun `placeOrder - keeps the cart when the order can't be placed`() = runTest {
         val error = IllegalStateException("insufficient stock")
-        everySuspend { orderApi.placeOrder(any(), any()) } throws error
+        everySuspend { orderApi.placeOrder(any(), any(), any()) } throws error
         val viewModel = viewModel(listOf(CartItem(1, "Keyboard", Money(7900, CURRENCY), 1, 12)))
         viewModel.updateAddress(ADDRESS)
 
@@ -179,6 +181,41 @@ class CheckoutViewModelTest {
         assertFalse(viewModel.state.value.busy)
         verify(exactly(1)) { errorHandler.handle(error) }
         verify(not) { cartStore.clear() }
+    }
+
+    @Test
+    fun `placeOrder - sends the same order again under the same Idempotency-Key`() = runTest {
+        val keys = mutableListOf<String>()
+        everySuspend { orderApi.placeOrder(any(), any(), capture(keys)) } throws IllegalStateException("gateway timeout")
+        val viewModel = viewModel(listOf(CartItem(1, "Keyboard", Money(7900, CURRENCY), 1, 12)))
+        viewModel.updateAddress(ADDRESS)
+
+        viewModel.placeOrder()
+        runCurrent()
+        viewModel.placeOrder()
+        runCurrent()
+
+        assertEquals(2, keys.size)
+        assertEquals(keys[0], keys[1])
+        verifySuspend(exactly(2)) { orderApi.placeOrder(any(), any(), any()) }
+    }
+
+    @Test
+    fun `placeOrder - sends an order with another address under a new Idempotency-Key`() = runTest {
+        val keys = mutableListOf<String>()
+        everySuspend { orderApi.placeOrder(any(), any(), capture(keys)) } throws IllegalStateException("gateway timeout")
+        val viewModel = viewModel(listOf(CartItem(1, "Keyboard", Money(7900, CURRENCY), 1, 12)))
+        viewModel.updateAddress(ADDRESS)
+        viewModel.placeOrder()
+        runCurrent()
+
+        viewModel.updateAddress(ADDRESS.copy(line2 = "apt. 5"))
+        viewModel.placeOrder()
+        runCurrent()
+
+        assertEquals(2, keys.size)
+        assertNotEquals(keys[0], keys[1])
+        verifySuspend(exactly(2)) { orderApi.placeOrder(any(), any(), any()) }
     }
 
     @Test
