@@ -11,7 +11,10 @@ import com.hartmann.usecase.port.out.internal.InventoryClient
 import com.hartmann.usecase.port.out.internal.PaymentClient
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics
 import io.github.resilience4j.retry.Retry
+import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.observation.ObservationRegistry
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
@@ -44,10 +47,11 @@ class HttpClientConfig {
         @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
         @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
         observationRegistry: ObservationRegistry,
+        meterRegistry: MeterRegistry,
     ): InventoryClient = Resilience4jInventoryClient(
         HttpInventoryClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor, observationRegistry)),
         retry("inventory-service"),
-        circuitBreaker("inventory-service", Resilience4jInventoryClient.circuitBreakerConfig()),
+        circuitBreaker("inventory-service", Resilience4jInventoryClient.circuitBreakerConfig(), meterRegistry),
     )
 
     @Bean
@@ -58,10 +62,11 @@ class HttpClientConfig {
         @Qualifier(LoggingClientHttpRequestInterceptor.BEAN_NAME) loggingInterceptor: ClientHttpRequestInterceptor,
         @Qualifier(ServiceTokenConfig.SERVICE_TOKEN_INTERCEPTOR_BEAN_NAME) serviceTokenInterceptor: ClientHttpRequestInterceptor,
         observationRegistry: ObservationRegistry,
+        meterRegistry: MeterRegistry,
     ): PaymentClient = Resilience4jPaymentClient(
         HttpPaymentClient(restClient(baseUrl, readTimeout, httpClient, loggingInterceptor, serviceTokenInterceptor, observationRegistry)),
         retry("payment-service"),
-        circuitBreaker("payment-service", Resilience4jPaymentClient.circuitBreakerConfig()),
+        circuitBreaker("payment-service", Resilience4jPaymentClient.circuitBreakerConfig(), meterRegistry),
     )
 
     private fun restClient(
@@ -95,8 +100,12 @@ class HttpClientConfig {
             }
         }
 
-    private fun circuitBreaker(name: String, config: CircuitBreakerConfig): CircuitBreaker =
-        CircuitBreaker.of(name, config).apply {
+    // Its state, calls and failure rate as resilience4j.circuitbreaker.* metrics, tagged with its name - Resilience4j
+    // binds the breakers of a registry, so each gets a registry of its own.
+    private fun circuitBreaker(name: String, config: CircuitBreakerConfig, meterRegistry: MeterRegistry): CircuitBreaker {
+        val registry = CircuitBreakerRegistry.ofDefaults()
+        TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(registry).bindTo(meterRegistry)
+        return registry.circuitBreaker(name, config).apply {
             eventPublisher.onStateTransition {
                 LOG.atWarn().setMessage("circuit breaker state changed")
                     .addKeyValue("client", name)
@@ -105,4 +114,5 @@ class HttpClientConfig {
                     .log()
             }
         }
+    }
 }

@@ -27,6 +27,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver
 class SecurityConfig {
     private companion object {
         const val ERROR_PATH = "/error"
+        // /health and its probes, /health/liveness and /health/readiness - polled without a token
+        const val HEALTH_PATHS = "/health/**"
         const val ORDERS_PATH = "/api/v1/orders"
         const val CLIENT_ROLE = "CLIENT"
     }
@@ -43,6 +45,7 @@ class SecurityConfig {
         http {
             authorizeHttpRequests {
                 authorize(ERROR_PATH, permitAll)
+                authorize(HttpMethod.GET, HEALTH_PATHS, permitAll)
                 authorize(HttpMethod.POST, ORDERS_PATH, hasRole(CLIENT_ROLE))
                 authorize(HttpMethod.POST, "$ORDERS_PATH/*/cancel", hasRole(CLIENT_ROLE))
                 authorize(HttpMethod.GET, "$ORDERS_PATH/**", hasRole(CLIENT_ROLE))

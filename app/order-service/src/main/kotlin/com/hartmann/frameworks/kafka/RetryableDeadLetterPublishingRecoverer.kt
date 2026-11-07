@@ -2,6 +2,7 @@ package com.hartmann.frameworks.kafka
 
 import com.hartmann.interfaceadapter.`in`.kafka.failureKeyValues
 import com.hartmann.usecase.port.common.kafka.KafkaConst
+import io.micrometer.core.instrument.Metrics
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -11,7 +12,8 @@ import java.time.Duration
 
 /**
  * Publishes a record that failed for good to its dead-letter topic, retrying the publish until it succeeds, and logs
- * it as dead-lettered once it is - the one line that tells a message given up on from one still being retried.
+ * it as dead-lettered once it is - the one line that tells a message given up on from one still being retried - and
+ * counts it.
  * [failureKeyValues] describes the failure on that line: its code and attributes.
  */
 class RetryableDeadLetterPublishingRecoverer(
@@ -21,6 +23,9 @@ class RetryableDeadLetterPublishingRecoverer(
 
     companion object {
         private val LOG = LoggerFactory.getLogger(RetryableDeadLetterPublishingRecoverer::class.java)
+
+        // counted per message once it is published to its dead-letter topic - the same name the Go services use
+        private const val DEAD_LETTERED = "ecommerce.kafka.message.dead_lettered"
 
         private const val TRACEPARENT = "traceparent"
         private const val TRACEPARENT_PARTS = 4
@@ -41,6 +46,7 @@ class RetryableDeadLetterPublishingRecoverer(
                 .addKeyValue("offset", record.offset())
             failureKeyValues(exception).forEach { (key, value) -> event.addKeyValue(key, value) }
             event.log()
+            Metrics.counter(DEAD_LETTERED, "topic", record.topic(), "message.type", messageTypeOf(record)).increment()
         } finally {
             mdcKeys.forEach(MDC::remove)
         }

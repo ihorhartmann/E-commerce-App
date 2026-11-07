@@ -9,6 +9,8 @@ import com.hartmann.entities.exception.TransientException
 import com.hartmann.entities.exception.UnavailableException
 import com.hartmann.entities.exception.attributesOf
 import com.hartmann.entities.exception.outermostOf
+import com.hartmann.interfaceadapter.common.metrics.TRANSPORT_HTTP
+import com.hartmann.interfaceadapter.common.metrics.recordFailureMetric
 import com.hartmann.interfaceadapter.`in`.http.exception.AccessForbiddenException
 import com.hartmann.interfaceadapter.`in`.http.exception.HttpErrorCode
 import com.hartmann.interfaceadapter.`in`.http.exception.IdempotencyKeyReusedException
@@ -186,6 +188,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     // logging.structured.format.*) writes each as its own field: the request, the code and status, the
     // exception's message and the attributes of every OrderServiceException in its cause chain. A 5xx also
     // gets the stack trace; anything else doesn't need one.
+    // Each one is counted by its code too.
     private fun logFailure(exception: Exception, code: ErrorCode, status: HttpStatusCode, request: HttpServletRequest?) {
         val event = if (status.is5xxServerError) {
             LOG.atError().setCause(exception).setMessage("request failed")
@@ -200,5 +203,6 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
             .addKeyValue("exceptionMessage", exception.message)
         attributesOf(exception).forEach { (key, value) -> event.addKeyValue(key, value) }
         event.log()
+        recordFailureMetric(code.code, TRANSPORT_HTTP)
     }
 }

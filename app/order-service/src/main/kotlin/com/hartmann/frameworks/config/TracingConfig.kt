@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.core.env.Environment
+import org.springframework.http.server.observation.ServerRequestObservationContext
 import org.springframework.http.server.observation.ServerRequestObservationConvention
 import org.springframework.kafka.support.micrometer.KafkaListenerObservationConvention
 import org.springframework.kafka.support.micrometer.KafkaTemplateObservationConvention
@@ -35,10 +36,19 @@ class TracingConfig(environment: Environment) {
 
         /** The prefix of datasource-micrometer's observations - a SQL statement's is `jdbc.query`. */
         const val JDBC_OBSERVATION_PREFIX = "jdbc."
+
+        // /health and its probes, /health/liveness and /health/readiness
+        const val HEALTH_PATH = "/health"
     }
 
     init {
         REQUIRED_ENV_VARS.forEach { environment.getRequiredProperty(it) }
+    }
+
+    /** Health checks and probes are polled every few seconds: neither a trace each, nor a series of the HTTP metrics. */
+    @Bean
+    fun skipHealthCheckObservations() = ObservationPredicate { _, context ->
+        !(context is ServerRequestObservationContext && context.carrier?.requestURI?.startsWith(HEALTH_PATH) == true)
     }
 
     /**

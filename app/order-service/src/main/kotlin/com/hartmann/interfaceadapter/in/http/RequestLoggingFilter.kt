@@ -15,7 +15,11 @@ import org.springframework.web.filter.OncePerRequestFilter
 class RequestLoggingFilter : OncePerRequestFilter() {
     companion object {
         private val LOG = LoggerFactory.getLogger(RequestLoggingFilter::class.java)
+        private const val HEALTH_PATH = "/health"
     }
+
+    // health checks and probes are polled every few seconds - a line each would bury the requests that matter
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = request.requestURI.startsWith(HEALTH_PATH)
 
     override fun doFilterInternal(
         request: HttpServletRequest,

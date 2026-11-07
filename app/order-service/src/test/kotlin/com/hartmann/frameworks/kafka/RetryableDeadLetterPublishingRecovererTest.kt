@@ -7,6 +7,8 @@ import ch.qos.logback.core.read.ListAppender
 import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.usecase.port.out.repository.exception.RepositoryErrorCode
+import io.micrometer.core.instrument.Metrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -40,6 +42,29 @@ class RetryableDeadLetterPublishingRecovererTest {
         recoverer.accept(record, exception)
 
         verify(exactly = 1) { delegate.accept(record, exception) }
+    }
+
+    @Test
+    fun `accept - counts the published record as dead-lettered, by its topic and message type`() {
+        val headers = RecordHeaders().apply { add(KafkaConst.MESSAGE_TYPE, KafkaConst.PAYMENT_COMPLETED_EVENT.toByteArray()) }
+        val topic = "payment.events"
+        val typedRecord = ConsumerRecord(topic, 0, 0L, 0L, TimestampType.CREATE_TIME, 0, 0, "key", "value", headers, Optional.empty())
+        every { delegate.accept(typedRecord, exception) } returns Unit
+        val recoverer = RetryableDeadLetterPublishingRecoverer(delegate, Duration.ofMillis(1))
+        val registry = SimpleMeterRegistry()
+        Metrics.addRegistry(registry)
+
+        try {
+            recoverer.accept(typedRecord, exception)
+        } finally {
+            Metrics.removeRegistry(registry)
+        }
+
+        val deadLettered = registry.find("ecommerce.kafka.message.dead_lettered")
+            .tags("topic", topic, "message.type", KafkaConst.PAYMENT_COMPLETED_EVENT)
+            .counter()
+        assertEquals(1.0, deadLettered?.count())
+        verify(exactly = 1) { delegate.accept(typedRecord, exception) }
     }
 
     @Test
