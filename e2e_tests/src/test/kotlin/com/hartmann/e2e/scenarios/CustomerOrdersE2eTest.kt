@@ -31,7 +31,8 @@ class CustomerOrdersE2eTest : E2eScenarioTest() {
 
         val secondOrderSummary = client1Orders.items.first()
         assertThat(secondOrderSummary.totalPrice.amount).isEqualByComparingTo(secondOrder.totalPrice.amount)
-        assertThat(secondOrderSummary.itemCount).isEqualTo(secondOrder.items.size)
+        // the units ordered, not the lines: one line of 2 mice is 2 items
+        assertThat(secondOrderSummary.itemCount).isEqualTo(secondOrder.items.sumOf { it.quantity })
     }
 
     @Test
