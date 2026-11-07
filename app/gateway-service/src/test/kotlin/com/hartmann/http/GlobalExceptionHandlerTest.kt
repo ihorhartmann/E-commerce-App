@@ -1,5 +1,7 @@
 package com.hartmann.http
 
+import io.micrometer.core.instrument.Metrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
@@ -130,5 +132,39 @@ class GlobalExceptionHandlerTest {
         val thrown = assertThrows<IllegalStateException> { handler.handle(exchange, exception).block() }
 
         assertSame(exception, thrown)
+    }
+
+    @Test
+    fun `handle - counts the failure by its code`() {
+        val registry = SimpleMeterRegistry()
+        Metrics.addRegistry(registry)
+
+        try {
+            handler.handle(exchange("/api/v1/orders"), RuntimeException("routing failed", ConnectException("Connection refused"))).block()
+        } finally {
+            Metrics.removeRegistry(registry)
+        }
+
+        val failures = registry.find(GlobalExceptionHandler.FAILURES)
+            .tags("error.code", ErrorCode.SERVICE_UNAVAILABLE.code, "transport", "http")
+            .counter()
+        assertEquals(1.0, failures?.count())
+    }
+
+    @Test
+    fun `handle - counts nothing when the response has already been sent`() {
+        val exchange = exchange("/api/v1/orders")
+        exchange.response.setComplete().block()
+        val registry = SimpleMeterRegistry()
+        Metrics.addRegistry(registry)
+
+        try {
+            assertThrows<IllegalStateException> { handler.handle(exchange, IllegalStateException("failed mid-response")).block() }
+        } finally {
+            Metrics.removeRegistry(registry)
+        }
+
+        // the meters of the global registry outlive a test, and come into each new registry, with nothing counted yet
+        assertEquals(0.0, registry.find(GlobalExceptionHandler.FAILURES).counters().sumOf { it.count() })
     }
 }

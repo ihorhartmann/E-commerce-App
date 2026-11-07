@@ -36,12 +36,14 @@ Routes live in `application.yml`, not in code.
   minimal - a fixed mapping, not the services' exception hierarchy:
     * a route that doesn't exist (404), a method not allowed (405);
     * a service that can't be reached (503) or doesn't answer within the `httpclient` timeouts in `application.yml`
-      (504), logged with the route and the URL the request was sent to;
+      or its route's own `response-timeout` - the order-service's outlasts its calls to the inventory, payment and
+      Stripe - (504), logged with the route and the URL the request was sent to;
     * a request that isn't authenticated (401) or fails the CSRF check (403) - `SecurityConfig` hands Spring
       Security's entry point and access-denied handler to it;
     * anything else, e.g. a failure of `CurrentUserController`, as a 500.
 
-  It logs each failure once: a 5xx as an error, anything else as a warning.
+  It logs each failure once: a 5xx as an error, anything else as a warning - and counts it by its code, as
+  `ecommerce.errors`, like the services do.
 * A service that answers with an error itself is passed on as it is: the service logged it, and `RequestLoggingFilter`
   adds only a debug line with the status. Its `received`/`successfully handled http request` lines are debug too -
   every routed request is logged by its service and recorded in its trace anyway.

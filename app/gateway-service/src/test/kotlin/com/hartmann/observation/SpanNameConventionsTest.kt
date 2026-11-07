@@ -1,11 +1,14 @@
 package com.hartmann.observation
 
+import io.micrometer.common.KeyValue
+import io.micrometer.common.KeyValues
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.cloud.gateway.filter.headers.observation.GatewayContext
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.server.reactive.observation.ServerRequestObservationContext
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import org.springframework.mock.http.server.reactive.MockServerHttpResponse
@@ -62,6 +65,57 @@ class SpanNameConventionsTest {
         val context = ServerRequestObservationContext(MockServerHttpRequest.get("/nowhere").build(), MockServerHttpResponse(), emptyMap())
 
         assertEquals("GET", HttpServerSpanNameConvention().getContextualName(context))
+    }
+
+    @Test
+    fun `getName - names the incoming requests' timer as OpenTelemetry's semantic conventions do`() {
+        assertEquals("http.server.request.duration", HttpServerSpanNameConvention().name)
+    }
+
+    @Test
+    fun `getLowCardinalityKeyValues - tags a routed request with its method, status and the route's path pattern`() {
+        val routePath = "/api/v1/orders/**"
+        val response = MockServerHttpResponse().apply { statusCode = HttpStatus.CREATED }
+        val context = ServerRequestObservationContext(
+            MockServerHttpRequest.post("/api/v1/orders").build(),
+            response,
+            mapOf(ServerWebExchangeUtils.GATEWAY_PREDICATE_MATCHED_PATH_ATTR to routePath),
+        )
+        context.setResponse(response)
+
+        val actual = HttpServerSpanNameConvention().getLowCardinalityKeyValues(context)
+
+        assertEquals(
+            KeyValues.of(
+                "http.request.method", "POST",
+                "http.response.status_code", "201",
+                "http.route", routePath,
+                "error.type", KeyValue.NONE_VALUE,
+            ),
+            actual,
+        )
+    }
+
+    @Test
+    fun `getLowCardinalityKeyValues - tags a request no route or handler matched by its 404 as NOT_FOUND`() {
+        val response = MockServerHttpResponse().apply { statusCode = HttpStatus.NOT_FOUND }
+        val context = ServerRequestObservationContext(MockServerHttpRequest.get("/nowhere").build(), response, emptyMap())
+        context.setResponse(response)
+
+        val actual = HttpServerSpanNameConvention().getLowCardinalityKeyValues(context)
+
+        assertEquals("NOT_FOUND", actual.first { it.key == "http.route" }.value)
+    }
+
+    @Test
+    fun `getLowCardinalityKeyValues - tags a request no route or handler matched with another status as UNKNOWN`() {
+        val response = MockServerHttpResponse().apply { statusCode = HttpStatus.UNAUTHORIZED }
+        val context = ServerRequestObservationContext(MockServerHttpRequest.get("/nowhere").build(), response, emptyMap())
+        context.setResponse(response)
+
+        val actual = HttpServerSpanNameConvention().getLowCardinalityKeyValues(context)
+
+        assertEquals("UNKNOWN", actual.first { it.key == "http.route" }.value)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.hartmann.http
 
+import io.micrometer.core.instrument.Metrics
 import org.slf4j.LoggerFactory
 import org.springframework.cloud.gateway.route.Route
 import org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_REQUEST_URL_ATTR
@@ -47,6 +48,11 @@ class GlobalExceptionHandler(codecConfigurer: ServerCodecConfigurer) : ErrorWebE
 
         const val CODE_PROPERTY = "code"
         const val RETRYABLE_PROPERTY = "retryable"
+
+        // Recorded in Micrometer's global registry, which Spring Boot adds its own registry to - without one, e.g. in a
+        // unit test, nothing is recorded
+        const val FAILURES = "ecommerce.errors"
+        private const val TRANSPORT_HTTP = "http"
     }
 
     private val responseContext = object : ServerResponse.Context {
@@ -97,8 +103,11 @@ class GlobalExceptionHandler(codecConfigurer: ServerCodecConfigurer) : ErrorWebE
     private fun causes(exception: Throwable): Sequence<Throwable> = generateSequence(exception) { it.cause }
 
     // Every value as a key-value pair of its own, so the structured log format writes each as its own field. A failure
-    // on the way to a service also names the route and the service's URL it was sent to.
+    // on the way to a service also names the route and the service's URL it was sent to. Each one is counted by its
+    // code too, under the name the services count theirs - an error a service answered with is counted by that service.
     private fun logFailure(exchange: ServerWebExchange, error: ErrorCode, exception: Throwable) {
+        Metrics.counter(FAILURES, "error.code", error.code, "transport", TRANSPORT_HTTP).increment()
+
         val event = if (error.status.is5xxServerError) {
             LOG.atError().setCause(exception).setMessage("request failed")
         } else {

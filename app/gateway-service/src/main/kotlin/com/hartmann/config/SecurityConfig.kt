@@ -47,7 +47,7 @@ class SecurityConfig {
         val accessDeniedHandler = ServerAccessDeniedHandler { exchange, exception -> errorHandler.handle(exchange, exception) }
 
         authorizeExchange {
-            authorize(HEALTH_PATH, permitAll)
+            authorize(HEALTH_PATHS, permitAll)
             authorize(STRIPE_WEBHOOK_PATH, permitAll)
             // the catalog is public: browsing products needs no login, ordering them does
             authorize(pathMatchers(HttpMethod.GET, PRODUCTS_PATH), permitAll)
@@ -142,7 +142,8 @@ class SecurityConfig {
     private companion object {
         const val KEYCLOAK_REGISTRATION_ID = "keycloak"
 
-        const val HEALTH_PATH = "/health"
+        // /health and its probes, /health/liveness and /health/readiness
+        const val HEALTH_PATHS = "/health/**"
         const val STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe"
         const val PRODUCTS_PATH = "/api/v1/products/**"
         const val CURRENT_USER_PATH = "/api/v1/me"
