@@ -50,6 +50,7 @@ object DockerComposeStack {
         requiredEnv("ORDER_SERVICE_CLIENT_SECRET")
         requiredEnv("WEB_UI_PORT")
         requiredEnv("GRAFANA_PORT")
+        requiredEnv("GRAFANA_DB_PASSWORD")
         requiredEnv("ALLOY_UI_PORT")
         TestUser.entries.forEach { requiredEnv(it.passwordEnv) }
     }
