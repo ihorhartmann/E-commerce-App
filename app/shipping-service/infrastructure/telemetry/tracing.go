@@ -4,10 +4,8 @@ import (
 	"context"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -25,7 +23,7 @@ func InitTracing(ctx context.Context, endpoint, serviceName string) (func(contex
 		return nil, err
 	}
 
-	serviceResource, err := resource.Merge(resource.Default(), resource.NewSchemaless(attribute.String("service.name", serviceName)))
+	serviceResource, err := newServiceResource(serviceName)
 	if err != nil {
 		return nil, err
 	}

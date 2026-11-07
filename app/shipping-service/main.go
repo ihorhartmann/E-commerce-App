@@ -30,13 +30,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel/metric/noop"
 	"gorm.io/gorm"
 )
 
 const (
-	healthPath = "/health"
-	// how long shutdown waits for the buffered spans to reach the collector
-	tracingShutdownTimeout = 5 * time.Second
+	// how long shutdown waits for the buffered spans and the last metrics to reach the collector
+	telemetryShutdownTimeout = 5 * time.Second
 )
 
 func main() {
@@ -58,10 +58,20 @@ func main() {
 		slog.Error("failed to set up tracing", "error", err)
 		os.Exit(1)
 	}
+	shutdownMetrics, err := telemetry.InitMetrics(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
+	if err != nil {
+		slog.Error("failed to set up metrics", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := gormconn.NewDB(config)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		slog.Error("failed to get database connection pool", "error", err)
 		os.Exit(1)
 	}
 
@@ -112,12 +122,17 @@ func main() {
 	// own logger and its own panic recovery, which would write a plain 500 instead of a ProblemDetail.
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
+	// before any middleware: the probes are polled every few seconds, need no token, and are neither traced, nor
+	// logged, nor counted
+	healthController := shippinghttp.NewHealthController(sqlDB)
+	healthController.RegisterRoutes(router)
+
 	router.Use(
-		// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
-		// excepted, polled every few seconds
-		otelgin.Middleware(config.OTELServiceName, otelgin.WithFilter(func(r *http.Request) bool {
-			return r.URL.Path != healthPath
-		})),
+		// outermost: the duration of every request, by its final status
+		middleware.MetricsMiddleware,
+		// a server span per request, continuing the caller's trace, around everything below; its own metrics are
+		// left out - MetricsMiddleware records the same as the other services
+		otelgin.Middleware(config.OTELServiceName, otelgin.WithMeterProvider(noop.NewMeterProvider())),
 		middleware.HandleMiddlewareError,
 		middleware.Recover,
 		middleware.LoggingMiddleware,
@@ -130,10 +145,6 @@ func main() {
 	)
 	router.NoRoute(func(c *gin.Context) { _ = c.Error(httperror.ErrRouteNotFound) })
 	router.NoMethod(func(c *gin.Context) { _ = c.Error(httperror.ErrMethodNotAllowed) })
-
-	router.GET(healthPath, func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
 
 	apiV1 := router.Group("/api/v1")
 	shippinghttp.NewShipmentController(shipmentService).RegisterRoutes(apiV1)
@@ -150,9 +161,15 @@ func main() {
 		}
 	}()
 
+	// migrations, topics, the consumer, the relay and the HTTP server are all up
+	healthController.SetReady(true)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	// first: the replica stops getting new requests before anything it needs for them is closed
+	healthController.SetReady(false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -172,11 +189,14 @@ func main() {
 
 	closeDB(db)
 
-	// last: everything that creates spans has stopped, so this flushes all of them
-	tracingCtx, cancelTracing := context.WithTimeout(context.Background(), tracingShutdownTimeout)
-	defer cancelTracing()
-	if err = shutdownTracing(tracingCtx); err != nil {
+	// last: everything that creates spans and records metrics has stopped, so this flushes all of them
+	telemetryCtx, cancelTelemetry := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+	defer cancelTelemetry()
+	if err = shutdownTracing(telemetryCtx); err != nil {
 		slog.Error("failed to flush traces", "error", err)
+	}
+	if err = shutdownMetrics(telemetryCtx); err != nil {
+		slog.Error("failed to flush metrics", "error", err)
 	}
 
 	slog.Info("application shut down successfully")

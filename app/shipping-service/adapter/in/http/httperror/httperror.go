@@ -27,6 +27,7 @@ const (
 func Write(c *gin.Context, err error) {
 	found := apperror.OutermostError(err)
 	status := StatusOf(err)
+	recordFailureMetric(c.Request.Context(), found.Code())
 
 	if status >= http.StatusInternalServerError {
 		slog.ErrorContext(c.Request.Context(), "request failed",

@@ -29,13 +29,13 @@ func NewDB(config *env.Config) (*gorm.DB, error) {
 
 	// GORM's own lines - a failed or a slow statement - go through the slog handler main.go installs, as JSON like any
 	// other line: the statement as prepared, never the values bound to it
-	logger := logger.NewSlogLogger(slog.Default(), logger.Config{
+	gormLog := logger.NewSlogLogger(slog.Default(), logger.Config{
 		LogLevel:                  logger.Warn,
 		SlowThreshold:             slowStatementThreshold,
 		ParameterizedQueries:      true,
 		IgnoreRecordNotFoundError: true,
 	})
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true, Logger: logger})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true, Logger: gormLog})
 	if err != nil {
 		return nil, err
 	}

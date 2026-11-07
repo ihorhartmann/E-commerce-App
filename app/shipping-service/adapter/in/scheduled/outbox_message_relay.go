@@ -57,6 +57,7 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 	messages, err := r.repository.FetchUnsent(ctx, outboxRelayBatchSize)
 	if err != nil {
 		slog.ErrorContext(ctx, "outbox relay failed to fetch unsent messages", apperror.LogAttr(err))
+		recordRelayFailureMetric(ctx, relayStageFetch)
 		return
 	}
 	if len(messages) == 0 {
@@ -65,8 +66,10 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 
 	if err = r.producer.SendBatch(messages); err != nil {
 		slog.ErrorContext(ctx, "outbox relay failed to publish message batch", "count", len(messages), apperror.LogAttr(err))
+		recordRelayFailureMetric(ctx, relayStagePublish)
 		return
 	}
+	recordPublishedMetric(ctx, messages)
 
 	messageIDs := make([]uuid.UUID, len(messages))
 	for i, message := range messages {
@@ -75,5 +78,6 @@ func (r *OutboxMessageRelay) relay(ctx context.Context) {
 
 	if err = r.repository.MarkSentBatch(ctx, messageIDs, time.Now()); err != nil {
 		slog.ErrorContext(ctx, "outbox relay failed to mark message batch sent", "count", len(messageIDs), apperror.LogAttr(err))
+		recordRelayFailureMetric(ctx, relayStageMark)
 	}
 }

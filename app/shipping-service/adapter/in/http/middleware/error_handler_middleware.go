@@ -13,19 +13,22 @@ const handledErrorContextKey = "handledError"
 
 // Errors are written as responses at two points of the chain, both by httperror.Write:
 //
-//	HandleMiddlewareError -> Recover -> Logging -> Auth -> Idempotency -> HandleControllerError -> controller
-//	   |                                                                     writes errors of controllers (and
-//	   |                                                                     of NoRoute/NoMethod) right after them
-//	   writes errors of the middleware above HandleControllerError - auth, idempotency - and panics
-//	   Recover caught
+//	Metrics -> otelgin -> HandleMiddlewareError -> Recover -> Logging -> Auth -> Idempotency -> HandleControllerError -> controller
+//	                         |                                                                     writes errors of controllers (and
+//	                         |                                                                     of NoRoute/NoMethod) right after them
+//	                         writes errors of the middleware above HandleControllerError - auth, idempotency - and panics
+//	                         Recover caught
 //
 // Gin handlers don't return an error: they add it to the context with c.Error, and the error
 // handlers - ordinary middleware, unlike Fiber's ErrorHandler - write the last one after c.Next. A
 // controller's error has to be written below the idempotency middleware, which needs the final
-// response to decide whether to cache it.
+// response to decide whether to cache it. MetricsMiddleware and otelgin stay above both: they read
+// the status from the written response (otelgin can't be told to look at c.Errors), so every error
+// must be written by the time they get back from c.Next.
 
-// HandleMiddlewareError must be registered as the first middleware, where Fiber has its
-// ErrorHandler. It writes the error left in the context by the middleware below it.
+// HandleMiddlewareError must be the first of the error handling chain, where Fiber has its
+// ErrorHandler: only MetricsMiddleware and otelgin are registered above it - they add no errors of
+// their own. It writes the error left in the context by the middleware below it.
 func HandleMiddlewareError(c *gin.Context) {
 	c.Next()
 

@@ -208,6 +208,13 @@ The outbox keeps a message's trace: `adapter/out/outbox` stores the current span
 `kafkaGoMessageProducer.SendBatch` sends it in a producer span that is a child of that one. Pass the request's or
 message's `ctx` down to the repositories (`c.Request.Context()` in a controller), so their SQL spans join its trace.
 
+`telemetry.InitMetrics`, right after it, installs the global meter provider (and the Go runtime's metrics): the
+connection pool's metrics come from `otelgorm`, the requests' from `middleware.MetricsMiddleware` (registered first,
+otelgin's own metrics are off), the messages' from the kafka-go consumer (`infrastructure/kafkago/kafkago_metrics.go`),
+the outbox relay's from `adapter/in/scheduled/outbox_metrics.go`, the error codes from `httperror.Write` - see the root
+CLAUDE.md for the names. `adapter/in/http.HealthController` answers the probes; its routes are registered before any
+middleware.
+
 `telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
 `ctx` a line is logged with, and the attrs that `ctx` carries from `adapter/common/logging.WithAttrs` - the kafka-go
 consumer gives the handler's `ctx` the message's ids that way.
@@ -252,12 +259,14 @@ return ErrNotAssignedCourier.
 
 HTTP error responses are RFC 9457 problem details, written only by `httperror.Write`. It is called at two points of
 the middleware chain, in this order in `main.go` (see `adapter/in/http/middleware/error_handler_middleware.go`):
-`HandleMiddlewareError` -> `Recover` -> `LoggingMiddleware` -> `AuthMiddleware` -> `IdempotencyMiddleware` ->
-`HandleControllerError` -> routes - the same as inventory, with `HandleMiddlewareError` where Fiber has its
-`ErrorHandler`. Gin handlers return no error: they add it with `c.Error`, and both error handlers are ordinary
-middleware that write the last one after `c.Next()`. `HandleControllerError` writes a controller's error
+`MetricsMiddleware` -> `otelgin` -> `HandleMiddlewareError` -> `Recover` -> `LoggingMiddleware` -> `AuthMiddleware` ->
+`IdempotencyMiddleware` -> `HandleControllerError` -> routes - the same as inventory, with `HandleMiddlewareError`
+where Fiber has its `ErrorHandler`. Gin handlers return no error: they add it with `c.Error`, and both error handlers
+are ordinary middleware that write the last one after `c.Next()`. `HandleControllerError` writes a controller's error
 right after it, so `IdempotencyMiddleware` sees the final response; `HandleMiddlewareError` writes the errors of the
-middleware below it. The router is built with `gin.New()`, not `gin.Default()`, whose own logger and recovery would
+middleware below it. `MetricsMiddleware` and `otelgin` stay above both: they read the status from the written
+response - unlike inventory's, which gets the error back from `c.Next()` - so every error must be written by the time
+they get back. The router is built with `gin.New()`, not `gin.Default()`, whose own logger and recovery would
 bypass this chain; unknown routes and methods go through it too (`NoRoute`/`NoMethod`). A status that differs from
 the category's default (401, 403, 405, 422) is listed in `httperror.StatusOf`.
 
