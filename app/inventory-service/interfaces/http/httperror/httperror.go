@@ -28,6 +28,7 @@ func Write(c *fiber.Ctx, err error) error {
 	err = fromFiberError(err)
 	found := apperror.OutermostError(err)
 	status := StatusOf(err)
+	recordFailureMetric(c.UserContext(), found.Code())
 
 	if status >= http.StatusInternalServerError {
 		slog.ErrorContext(c.UserContext(), "request failed",

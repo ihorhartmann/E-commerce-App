@@ -134,6 +134,12 @@ that the instrumentation uses: `otelfiber` for HTTP, `otelgorm` for SQL, and the
 message; any other span without a parent (a sweep's query) is dropped. Pass the request's or message's `ctx` down to
 the repositories (`c.UserContext()` in a controller, not `c.Context()`), so their SQL spans join its trace.
 
+`telemetry.InitMetrics`, right after it, installs the global meter provider (and the Go runtime's metrics): the
+connection pool's metrics come from `otelgorm`, the requests' from `middleware.MetricsMiddleware` (registered first,
+otelfiber's own metrics are off), the messages' from the consumer (`interfaces/kafka/kafkago/kafkago_metrics.go`), the
+error codes from `httperror.Write` - see the root CLAUDE.md for the names. `interfaces/http.HealthController` answers the
+probes; its routes are registered before any middleware.
+
 `telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
 `ctx` a line is logged with, and the attrs that `ctx` carries from `application/port/common/logging.WithAttrs` - the
 Kafka consumer gives the handler's `ctx` the message's ids that way. `logging` lives in `application/port/common`, as

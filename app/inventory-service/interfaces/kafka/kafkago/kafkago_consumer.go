@@ -21,8 +21,11 @@ import (
 )
 
 const (
-	reconnectBackoff    = 2 * time.Second
-	startupFetchTimeout = 5 * time.Second
+	reconnectBackoff = 2 * time.Second
+	// startupJoinTimeout is how long a new reader gets to join its consumer group - longer than a rebalance with other
+	// members takes, kafka-go's rebalance timeout being 30s
+	startupJoinTimeout = 30 * time.Second
+	joinPollInterval   = 200 * time.Millisecond
 )
 
 type messageHandler = func(ctx context.Context, messageType kafka.MessageType, messageID uuid.UUID, correlationID string, payload []byte) error
@@ -66,21 +69,30 @@ func NewKafkaGoMessageConsumer(brokers []string, topic, groupID string) common.K
 
 func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, messageType kafka.MessageType, messageId uuid.UUID, correlationId string, payload []byte) error) {
 	c.wg.Go(func() {
-		// Until the first message arrives, each fetch has a time limit, and if it runs out we
-		// throw away the Reader and start a new one. This is needed because kafka-go's Reader
-		// can get stuck forever if the broker isn't ready yet when the app starts - it won't
-		// error, it just waits. Once one message arrives, we know the Reader works, so later
-		// fetches wait with no time limit. Long quiet gaps between messages are normal and must
-		// not cause a reconnect.
-		ready := false
+		// A new Reader must join its consumer group within startupJoinTimeout, or it is thrown away and a new one
+		// started: kafka-go's Reader can get stuck forever if the broker isn't ready yet when the app starts - it
+		// won't error, it just waits. Once it has joined and got its partitions, the broker is proven reachable, and
+		// fetches wait with no time limit: a quiet topic is normal and must not cause a reconnect.
+		joined := false
 
 		for {
 			reader := c.lockedReader()
 
-			ctx, cancel := c.fetchContext(ready)
-			message, err := reader.FetchMessage(ctx)
-			cancel()
+			if !joined {
+				if !c.awaitJoin(reader) {
+					if c.closing.Load() {
+						return
+					}
+					slog.Warn("kafka consumer didn't join its group during startup, reconnecting")
+					if !c.reconnect(reader) {
+						return
+					}
+					continue
+				}
+				joined = true
+			}
 
+			message, err := reader.FetchMessage(context.Background())
 			if err != nil {
 				if errors.Is(err, io.EOF) || errors.Is(err, kafkago.ErrGroupClosed) {
 					if !c.closing.Load() {
@@ -89,19 +101,14 @@ func (c *kafkaGoMessageConsumer) ConsumeAsync(handle func(ctx context.Context, m
 					return
 				}
 
-				if !ready && errors.Is(err, context.DeadlineExceeded) {
-					slog.Warn("kafka consumer made no progress during startup, reconnecting")
-				} else {
-					slog.Error("kafka consumer read error, reconnecting", "error", err)
-				}
-
+				slog.Error("kafka consumer read error, reconnecting", "error", err)
 				if !c.reconnect(reader) {
 					return
 				}
+				// the new reader has to join the group first
+				joined = false
 				continue
 			}
-
-			ready = true
 
 			if !c.process(c.retryCtx, message, handle) {
 				return
@@ -126,8 +133,11 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 	ctx, span := startProcessSpan(ctx, message, c.groupID)
 	defer span.End()
 
+	start := time.Now()
 	messageType, messageID, correlationID, err := parseHeaders(message.Headers)
 	if err != nil {
+		rawMessageType, _ := headerValue(message.Headers, kafka.MessageTypeHeader)
+		recordAttemptMetric(ctx, message.Topic, kafka.MessageType(rawMessageType), start, err)
 		slog.WarnContext(ctx, "kafka message rejected", apperror.LogAttr(err))
 		return c.sendDeadLetter(ctx, message, err)
 	}
@@ -144,7 +154,9 @@ func (c *kafkaGoMessageConsumer) process(ctx context.Context, message kafkago.Me
 	// back-offs short, never a handler in the middle of its work
 	handlerCtx := context.WithoutCancel(ctx)
 	err = runWithRetry(ctx, c.retryDelays, func() error {
+		attemptStart := time.Now()
 		err = handleSafely(handlerCtx, handle, messageType, messageID, correlationID, message.Value)
+		recordAttemptMetric(ctx, message.Topic, messageType, attemptStart, err)
 		if err != nil {
 			logFailure(ctx, err)
 		}
@@ -194,18 +206,26 @@ func (c *kafkaGoMessageConsumer) sendDeadLetter(ctx context.Context, message kaf
 	}
 
 	slog.ErrorContext(ctx, "kafka message dead-lettered", "topic", message.Topic, "partition", message.Partition, "offset", message.Offset, apperror.LogAttr(cause))
+	messageType, _ := headerValue(message.Headers, kafka.MessageTypeHeader)
+	recordDeadLetteredMetric(ctx, message.Topic, kafka.MessageType(messageType))
 	markDeadLettered(trace.SpanFromContext(ctx), cause)
 	return true
 }
 
-// fetchContext returns the context.Context to fetch with and its cancel func. Before the reader
-// is proven healthy (ready == false), the fetch is bounded by startupFetchTimeout; afterwards it
-// blocks indefinitely, so cancel is a no-op.
-func (c *kafkaGoMessageConsumer) fetchContext(ready bool) (context.Context, context.CancelFunc) {
-	if ready {
-		return context.Background(), func() {}
+// awaitJoin waits up to startupJoinTimeout for reader to join its consumer group and get its partitions - a Reader
+// starts joining as soon as it is created, and counts a rebalance in its stats once it has joined. It returns false
+// if the time runs out, or if the consumer is closed meanwhile. Reading the stats resets them; nothing else reads them.
+func (c *kafkaGoMessageConsumer) awaitJoin(reader *kafkago.Reader) bool {
+	deadline := time.Now().Add(startupJoinTimeout)
+	for time.Now().Before(deadline) {
+		if reader.Stats().Rebalances > 0 {
+			return true
+		}
+		if err := sleep(c.retryCtx, joinPollInterval); err != nil {
+			return false
+		}
 	}
-	return context.WithTimeout(context.Background(), startupFetchTimeout)
+	return false
 }
 
 // lockedReader reads c.reader under readerMu, since Close (called from another goroutine) can run
@@ -216,9 +236,9 @@ func (c *kafkaGoMessageConsumer) lockedReader() *kafkago.Reader {
 	return c.reader
 }
 
-// reconnect replaces a reader that failed to make progress (a fetch error, or - during startup - a
-// fetch that neither erred nor returned a message within startupFetchTimeout) with a fresh one on
-// the same topic/group, after a short backoff.
+// reconnect replaces a reader that failed to make progress (a fetch error, or - during startup - not
+// joining its consumer group within startupJoinTimeout) with a fresh one on the same topic/group,
+// after a short backoff.
 // Returns false if the consumer was closed during the backoff, telling the caller to stop instead of
 // retrying.
 func (c *kafkaGoMessageConsumer) reconnect(broken *kafkago.Reader) bool {
