@@ -18,6 +18,13 @@ import java.io.IOException;
 @Component
 public class RequestLoggingFilter extends OncePerRequestFilter {
     private static final Logger LOG = LoggerFactory.getLogger(RequestLoggingFilter.class);
+    private static final String HEALTH_PATH = "/health";
+
+    // health checks and probes are polled every few seconds - a line each would bury the requests that matter
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith(HEALTH_PATH);
+    }
 
     @Override
     protected void doFilterInternal(

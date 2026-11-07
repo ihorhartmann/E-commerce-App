@@ -27,6 +27,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 @Configuration
 public class SecurityConfig {
     private static final String ERROR_PATH = "/error";
+    // /health and its probes, /health/liveness and /health/readiness - polled without a token
+    private static final String HEALTH_PATHS = "/health/**";
     private static final String PAYMENTS_PATH = "/api/v1/payments";
     private static final String REFUNDS_PATH = "/api/v1/refunds";
     private static final String STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe";
@@ -46,6 +48,7 @@ public class SecurityConfig {
         return http
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(ERROR_PATH).permitAll()
+                        .requestMatchers(HttpMethod.GET, HEALTH_PATHS).permitAll()
                         // authenticated by the Stripe signature, not by a user token
                         .requestMatchers(HttpMethod.POST, STRIPE_WEBHOOK_PATH).permitAll()
                         // synchronous call from the order-service with its own token, never a user's; not exposed by the gateway

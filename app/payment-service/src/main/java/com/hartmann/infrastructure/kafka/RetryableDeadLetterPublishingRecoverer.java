@@ -2,6 +2,7 @@ package com.hartmann.infrastructure.kafka;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.adapter.in.kafka.KafkaFailures;
+import io.micrometer.core.instrument.Metrics;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
@@ -17,12 +18,16 @@ import java.util.List;
 
 /**
  * Publishes a record that failed for good to its dead-letter topic, retrying the publish until it succeeds, and logs
- * it as dead-lettered once it is - the one line that tells a message given up on from one still being retried.
+ * it as dead-lettered once it is - the one line that tells a message given up on from one still being retried - and
+ * counts it.
  * KafkaFailures.failureKeyValues describes the failure on that line: its code and attributes.
  */
 public class RetryableDeadLetterPublishingRecoverer implements ConsumerRecordRecoverer {
 
     private static final Logger LOG = LoggerFactory.getLogger(RetryableDeadLetterPublishingRecoverer.class);
+
+    // counted per message once it is published to its dead-letter topic - the same name the other services use
+    private static final String DEAD_LETTERED = "ecommerce.kafka.message.dead_lettered";
 
     private static final String TRACEPARENT = "traceparent";
     private static final int TRACEPARENT_PARTS = 4;
@@ -51,6 +56,8 @@ public class RetryableDeadLetterPublishingRecoverer implements ConsumerRecordRec
                     .addKeyValue("offset", record.offset());
             KafkaFailures.failureKeyValues(exception).forEach(event::addKeyValue);
             event.log();
+            var messageType = KafkaMetricsInterceptor.messageTypeOf(record);
+            Metrics.counter(DEAD_LETTERED, "topic", record.topic(), "message.type", messageType).increment();
         } finally {
             mdcKeys.forEach(MDC::remove);
         }

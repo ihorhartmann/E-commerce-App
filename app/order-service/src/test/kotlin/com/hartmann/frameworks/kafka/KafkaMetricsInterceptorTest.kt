@@ -6,7 +6,9 @@ import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import com.hartmann.usecase.port.out.repository.exception.RepositoryErrorCode
 import io.micrometer.core.instrument.Metrics
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import io.mockk.Called
 import io.mockk.mockk
+import io.mockk.verify
 import org.apache.kafka.clients.consumer.Consumer
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.header.internals.RecordHeaders
@@ -52,68 +54,70 @@ class KafkaMetricsInterceptorTest {
 
     @Test
     fun `success - records the attempt as a success, by its topic and message type`() {
-        val topic = "payment.events"
-        val record = record(topic, KafkaConst.PAYMENT_COMPLETED_EVENT)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT)
 
         interceptor.intercept(record, consumer)
         interceptor.success(record, consumer)
 
-        assertEquals(1, attempts(topic, KafkaConst.PAYMENT_COMPLETED_EVENT, "success"))
+        assertEquals(1, attempts(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, "success"))
         assertEquals(0.0, registry.find("ecommerce.errors").counters().sumOf { it.count() })
+        verify { consumer wasNot Called }
     }
 
     @Test
     fun `success - records nothing for a record that wasn't intercepted`() {
-        val record = record("payment.events", KafkaConst.PAYMENT_COMPLETED_EVENT)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT)
 
         interceptor.success(record, consumer)
 
         assertEquals(0, recordedAttempts())
+        verify { consumer wasNot Called }
     }
 
     @Test
     fun `failure - records a failure a retry can fix as failed, and counts it as an internal error`() {
-        val topic = "payment.events"
-        val record = record(topic, KafkaConst.PAYMENT_COMPLETED_EVENT)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT)
 
         interceptor.intercept(record, consumer)
         interceptor.failure(record, RuntimeException("connection reset"), consumer)
 
-        assertEquals(1, attempts(topic, KafkaConst.PAYMENT_COMPLETED_EVENT, "failed"))
+        assertEquals(1, attempts(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, "failed"))
         assertEquals(1.0, failures(HttpErrorCode.INTERNAL_ERROR.code))
+        verify { consumer wasNot Called }
     }
 
     @Test
     fun `failure - records a permanent failure as rejected, and counts it by its code`() {
-        val topic = "payment.events"
-        val record = record(topic, KafkaConst.PAYMENT_COMPLETED_EVENT)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT)
 
         interceptor.intercept(record, consumer)
         interceptor.failure(record, OrderNotFoundException(7L), consumer)
 
-        assertEquals(1, attempts(topic, KafkaConst.PAYMENT_COMPLETED_EVENT, "rejected"))
+        assertEquals(1, attempts(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT, "rejected"))
         assertEquals(1.0, failures(RepositoryErrorCode.ORDER_NOT_FOUND.code))
+        verify { consumer wasNot Called }
     }
 
     @Test
     fun `success - records a record without a messageType header as unknown`() {
-        val topic = "payment.events"
-        val record = record(topic, null)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, null)
 
         interceptor.intercept(record, consumer)
         interceptor.success(record, consumer)
 
-        assertEquals(1, attempts(topic, "unknown", "success"))
+        assertEquals(1, attempts(KafkaConst.PAYMENT_EVENTS_TOPIC, "unknown", "success"))
+        verify { consumer wasNot Called }
     }
 
     @Test
     fun `afterRecord - forgets the attempt's start, so nothing more is recorded for it`() {
-        val record = record("payment.events", KafkaConst.PAYMENT_COMPLETED_EVENT)
+        val record = record(KafkaConst.PAYMENT_EVENTS_TOPIC, KafkaConst.PAYMENT_COMPLETED_EVENT)
 
         interceptor.intercept(record, consumer)
         interceptor.afterRecord(record, consumer)
         interceptor.success(record, consumer)
 
         assertEquals(0, recordedAttempts())
+        verify { consumer wasNot Called }
     }
 }

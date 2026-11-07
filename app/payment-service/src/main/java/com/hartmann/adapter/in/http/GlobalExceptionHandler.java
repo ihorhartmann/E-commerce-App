@@ -1,5 +1,6 @@
 package com.hartmann.adapter.in.http;
 
+import com.hartmann.adapter.common.metrics.FailureMetrics;
 import com.hartmann.adapter.in.http.exception.AccessForbiddenException;
 import com.hartmann.adapter.in.http.exception.HttpErrorCode;
 import com.hartmann.adapter.in.http.exception.IdempotencyKeyReusedException;
@@ -198,6 +199,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     // logging.structured.format.*) writes each as its own field: the request, the code and status, the
     // exception's message and the attributes of every PaymentServiceException in its cause chain. A 5xx also
     // gets the stack trace; anything else doesn't need one.
+    // Each one is counted by its code too.
     private static void logFailure(Exception exception, ErrorCode code, HttpStatusCode status, HttpServletRequest request) {
         LoggingEventBuilder event;
         if (status.is5xxServerError()) {
@@ -213,5 +215,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .addKeyValue("exceptionMessage", exception.getMessage());
         attributesOf(exception).forEach(event::addKeyValue);
         event.log();
+        FailureMetrics.recordFailureMetric(code.code(), FailureMetrics.TRANSPORT_HTTP);
     }
 }

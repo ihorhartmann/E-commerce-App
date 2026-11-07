@@ -7,6 +7,8 @@ import ch.qos.logback.core.read.ListAppender;
 import com.hartmann.adapter.common.kafka.KafkaConst;
 import com.hartmann.application.port.out.repository.exception.PaymentNotFoundException;
 import com.hartmann.application.port.out.repository.exception.RepositoryErrorCode;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.record.TimestampType;
@@ -51,6 +53,30 @@ class RetryableDeadLetterPublishingRecovererTest {
         recoverer.accept(record, exception);
 
         verify(delegate, times(1)).accept(record, exception);
+    }
+
+    @Test
+    void accept_countsThePublishedRecordAsDeadLetteredByItsTopicAndMessageType() {
+        var headers = new RecordHeaders();
+        headers.add(KafkaConst.MESSAGE_TYPE, KafkaConst.REFUND_REQUESTED_COMMAND.getBytes(StandardCharsets.UTF_8));
+        var typedRecord = new ConsumerRecord<Object, Object>(KafkaConst.PAYMENT_COMMANDS_TOPIC, 0, 0L, 0L,
+                TimestampType.CREATE_TIME, 0, 0, "key", "value", headers, Optional.empty());
+        var recoverer = new RetryableDeadLetterPublishingRecoverer(delegate, Duration.ofMillis(1));
+        var registry = new SimpleMeterRegistry();
+        Metrics.addRegistry(registry);
+
+        try {
+            recoverer.accept(typedRecord, exception);
+        } finally {
+            Metrics.removeRegistry(registry);
+        }
+
+        var deadLettered = registry.find("ecommerce.kafka.message.dead_lettered")
+                .tags("topic", KafkaConst.PAYMENT_COMMANDS_TOPIC, "message.type", KafkaConst.REFUND_REQUESTED_COMMAND)
+                .counter();
+        assertThat(deadLettered).isNotNull();
+        assertThat(deadLettered.count()).isEqualTo(1);
+        verify(delegate, times(1)).accept(typedRecord, exception);
     }
 
     @Test
