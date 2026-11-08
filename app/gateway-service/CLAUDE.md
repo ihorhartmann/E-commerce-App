@@ -47,6 +47,8 @@ Routes live in `application.yml`, not in code.
 * A service that answers with an error itself is passed on as it is: the service logged it, and `RequestLoggingFilter`
   adds only a debug line with the status. Its `received`/`successfully handled http request` lines are debug too -
   every routed request is logged by its service and recorded in its trace anyway.
+* `X-Correlation-Id` is dropped from every request (a default filter): only the services send each other the saga's
+  correlation id, for their log lines - a client's value would end up in them.
 * `spring.reactor.context-propagation: auto` restores the request's trace into the MDC on every reactive step, so the
   gateway's log lines carry `traceId` and `spanId` like the services'.
 
