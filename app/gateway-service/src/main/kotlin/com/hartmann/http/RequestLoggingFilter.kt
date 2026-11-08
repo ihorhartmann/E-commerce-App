@@ -22,9 +22,15 @@ import reactor.core.publisher.Mono
 class RequestLoggingFilter : WebFilter {
     companion object {
         private val LOG = LoggerFactory.getLogger(RequestLoggingFilter::class.java)
+        private const val HEALTH_PATH = "/health"
     }
 
     override fun filter(exchange: ServerWebExchange, chain: WebFilterChain): Mono<Void> {
+        // health checks and probes are polled every few seconds - a line each would bury the requests that matter
+        if (exchange.request.path.value().startsWith(HEALTH_PATH)) {
+            return chain.filter(exchange)
+        }
+
         LOG.atDebug().setMessage("received http request")
             .addKeyValue("method", exchange.request.method.name())
             .addKeyValue("path", exchange.request.path.value())

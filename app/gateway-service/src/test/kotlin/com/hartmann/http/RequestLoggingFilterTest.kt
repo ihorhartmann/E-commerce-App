@@ -71,4 +71,19 @@ class RequestLoggingFilterTest {
 
         assertEquals(listOf(Level.DEBUG to "received http request"), messages())
     }
+
+    @Test
+    fun `filter - passes a health check on without logging it`() {
+        val exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/health/readiness"))
+        var passedOn = false
+        val chain = WebFilterChain {
+            passedOn = true
+            Mono.empty()
+        }
+
+        filter.filter(exchange, chain).block()
+
+        assertEquals(true, passedOn)
+        assertEquals(emptyList<Pair<Level, String>>(), messages())
+    }
 }
