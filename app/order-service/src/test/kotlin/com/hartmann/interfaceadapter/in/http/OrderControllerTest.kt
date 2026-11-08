@@ -200,6 +200,29 @@ class OrderControllerTest {
     }
 
     @Test
+    fun `placeOrder - returns 400 when an item fails validation`() {
+        val invalidRequestJson = """
+            {
+              "items": [{"productId": 1, "quantity": 0}],
+              "address": {"city": "Kyiv", "postalCode": "01001", "line1": "Khreshchatyk 1"}
+            }
+        """.trimIndent()
+
+        mockMvc.post("/api/v1/orders") {
+            with(clientJwt())
+            contentType = MediaType.APPLICATION_JSON
+            header("Idempotency-Key", "key-item")
+            content = invalidRequestJson
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value(HttpErrorCode.VALIDATION_FAILED.code) }
+            jsonPath("$.errors[?(@.field == 'items[0].quantity')]") { exists() }
+        }
+
+        verify(placeOrderUseCase, never()).execute(any(), any(), any())
+    }
+
+    @Test
     fun `placeOrder - returns 409 when reservation reports insufficient stock`() {
         whenever(placeOrderUseCase.execute(any(), any(), any()))
             .thenThrow(InsufficientStockException(1L, RuntimeException("no stock")))

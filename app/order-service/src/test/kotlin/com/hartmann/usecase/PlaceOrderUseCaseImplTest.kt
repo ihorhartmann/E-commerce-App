@@ -101,7 +101,7 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
         // nothing to compensate, so no transaction of its own is opened around the remote calls
         verify(exactly = 0) { transactionManager.getTransaction(any()) }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 
     @Test
@@ -125,10 +125,10 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 0) { kafkaProducer.publishCancelReservation(any(), any()) }
         // tagged before the reservation, so a checkout that fails right there is found by its order id too
         verifyOrder {
-            correlationTagger.tagCurrentSpan(orderId.toString())
+            correlationTagger.tag(orderId.toString())
             inventoryClient.reserve(orderId, requestedItems)
         }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 
     @Test
@@ -147,7 +147,7 @@ class PlaceOrderUseCaseImplTest {
         verify(exactly = 1) { orderRepository.create(any()) }
         verify(exactly = 1) { kafkaProducer.publishCancelReservation(orderId.toString(), orderId) }
         verify(exactly = 0) { paymentClient.submitPayment(any(), any()) }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 
     @Test
@@ -175,6 +175,6 @@ class PlaceOrderUseCaseImplTest {
             transactionManager.commit(any())
         }
         verify(exactly = 1) { transactionManager.commit(any()) }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 }

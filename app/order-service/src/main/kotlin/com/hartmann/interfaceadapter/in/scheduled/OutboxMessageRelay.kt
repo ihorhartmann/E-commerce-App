@@ -48,7 +48,17 @@ class OutboxMessageRelay(
 
         try {
             messages.forEach { message ->
-                traceContextPropagator.withParent(message.traceparent) { kafkaTemplate.send(toRecord(message)).get() }
+                traceContextPropagator.withParent(message.traceparent) {
+                    // in the trace of the work that wrote the message, and with the saga's ids, so the line shows up
+                    // next to that work's own lines
+                    LOG.atDebug().setMessage("sending kafka message")
+                        .addKeyValue("topic", message.topic)
+                        .addKeyValue(KafkaConst.MESSAGE_TYPE, message.messageType)
+                        .addKeyValue(KafkaConst.MESSAGE_ID, message.messageId)
+                        .addKeyValue(KafkaConst.CORRELATION_ID, message.correlationId)
+                        .log()
+                    kafkaTemplate.send(toRecord(message)).get()
+                }
             }
         } catch (e: Exception) {
             LOG.atError().setMessage("outbox relay failed to publish message batch")

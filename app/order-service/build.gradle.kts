@@ -46,6 +46,10 @@ dependencies {
 
 kotlin {
     jvmToolchain(26)
+    compilerOptions {
+        // annotations on type arguments (List<@Valid OrderItemRequest>) reach the bytecode, so Bean Validation sees them
+        freeCompilerArgs.add("-Xemit-jvm-type-annotations")
+    }
 }
 
 tasks.test {

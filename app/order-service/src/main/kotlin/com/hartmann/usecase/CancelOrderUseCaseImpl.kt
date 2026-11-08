@@ -21,7 +21,7 @@ class CancelOrderUseCaseImpl(
     override fun execute(orderId: Long, customerId: UUID): Order {
         val correlationId = orderId.toString()
         // the order id is the saga's correlation id
-        correlationTagger.tagCurrentSpan(correlationId)
+        correlationTagger.tag(correlationId)
         var order = orderRepository.getOrder(orderId)
         // "not found" rather than "forbidden": another customer's order must not even be confirmed to exist
         if (!order.isOwnedBy(customerId)) {
