@@ -3,13 +3,16 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
 	"go.uber.org/mock/gomock"
 
+	"shippingservice/application/port/common/logging"
 	portin "shippingservice/application/port/in"
 	"shippingservice/application/port/in/dto"
 	idempotencydto "shippingservice/application/port/out/idempotency/dto"
@@ -301,6 +304,53 @@ func TestShipmentServiceImpl_StartDelivery(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, transitioned) {
 			t.Errorf("StartDelivery() = %+v, want %+v", got, transitioned)
+		}
+	})
+
+	t.Run("publishes the status change with the correlation id the request came with", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) { return s, nil }).Times(1)
+		correlationID := "corr-from-request"
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), correlationID, gomock.Any()).Return(nil).Times(1)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+
+		_, err := service.StartDelivery(logging.WithCorrelationID(context.Background(), correlationID), id, uuid.New())
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("logs the rest of a request that came without a correlation id with the one derived from the order", func(t *testing.T) {
+		id := uint64(1)
+		shipment := testShipment(t, id, model.Created, model.HolderInventory, uuid.Nil)
+		shipmentRepo := repomocks.NewMockShipmentRepository(gomock.NewController(t))
+		producer := kafkamocks.NewMockShipmentKafkaProducer(gomock.NewController(t))
+
+		shipmentRepo.EXPECT().GetByID(gomock.Any(), id).Return(shipment, nil).Times(1)
+		shipmentRepo.EXPECT().Update(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, s *model.Shipment) (*model.Shipment, error) { return s, nil }).Times(1)
+		correlationID := "100"
+		producer.EXPECT().PublishShipmentStatusChanged(gomock.Any(), correlationID, gomock.Any()).Return(nil).Times(1)
+
+		service := NewShipmentServiceImpl(shipmentRepo, producer, idempotencymocks.NewMockProcessedKafkaMessageStore(gomock.NewController(t)), noopTxExecutor{})
+		requestCtx := logging.WithCorrelationID(context.Background(), "")
+
+		_, err := service.StartDelivery(requestCtx, id, uuid.New())
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		wantAttrs := []slog.Attr{slog.String(logging.CorrelationIDKey, correlationID)}
+		if gotAttrs := logging.Attrs(requestCtx); !slices.EqualFunc(gotAttrs, wantAttrs, slog.Attr.Equal) {
+			t.Errorf("logging.Attrs(request) = %v, want %v", gotAttrs, wantAttrs)
 		}
 	})
 

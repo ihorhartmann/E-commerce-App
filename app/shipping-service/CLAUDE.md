@@ -60,6 +60,9 @@ This layer depends only on the `Domain` layer.
 ```text
 application/
 ├── port/
+│   ├── common/
+│   │   ├── kafka/
+│   │   └── logging/
 │   ├── in/
 │   └── out/
 │       ├── repository/
@@ -110,7 +113,6 @@ This layer may depend on the `Application` and `Domain` layers.
 adapter/
 ├── common/
 │   ├── kafka/
-│   ├── logging/
 │   └── ...
 │
 ├── in/
@@ -216,8 +218,11 @@ CLAUDE.md for the names. `adapter/in/http.HealthController` answers the probes; 
 middleware.
 
 `telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
-`ctx` a line is logged with, and the attrs that `ctx` carries from `adapter/common/logging.WithAttrs` - the kafka-go
-consumer gives the handler's `ctx` the message's ids that way.
+`ctx` a line is logged with, and the attrs that `ctx` carries from `application/port/common/logging.WithAttrs` - the
+kafka-go consumer gives the handler's `ctx` the message's ids that way - and the saga's correlation id of the request:
+`middleware.LoggingMiddleware` takes it from the `X-Correlation-Id` header (`logging.WithCorrelationID`), or the service
+derives it from the shipment as soon as it has loaded it (`logging.ResolveCorrelationID`). `logging` lives in
+`application/port/common`, as the services, the adapters and the handler (`Infrastructure`) all use it.
 
 ## Error handling
 

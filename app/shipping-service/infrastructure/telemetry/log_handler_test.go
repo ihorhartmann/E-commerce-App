@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"shippingservice/adapter/common/logging"
+	"shippingservice/application/port/common/logging"
 	"testing"
 
 	"go.opentelemetry.io/otel/trace"

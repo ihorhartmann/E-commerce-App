@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"shippingservice/adapter/common/logging"
+	"shippingservice/application/port/common/logging"
 
 	"go.opentelemetry.io/otel/trace"
 )

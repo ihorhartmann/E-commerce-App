@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"shippingservice/adapter/common/kafka"
-	"shippingservice/adapter/common/logging"
+	"shippingservice/application/port/common/logging"
 
 	kafkago "github.com/segmentio/kafka-go"
 

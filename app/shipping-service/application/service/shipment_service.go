@@ -8,6 +8,7 @@ import (
 	"math"
 
 	commonkafka "shippingservice/application/port/common/kafka"
+	"shippingservice/application/port/common/logging"
 	portin "shippingservice/application/port/in"
 	"shippingservice/application/port/in/dto"
 	"shippingservice/application/port/out/idempotency"
@@ -187,14 +188,15 @@ func (s *ShipmentServiceImpl) CancelByOrder(ctx context.Context, msg idempotency
 // ConfirmReturnedToInventory only changes the shipment's holder, not its status, so it publishes
 // PublishShipmentReturnedToInventory directly instead of going through applyTransition (which
 // always re-publishes the current status via PublishShipmentStatusChanged). It's triggered over
-// REST, with no incoming saga correlationID to reuse - the orderId is the only available
-// correlation point, so it's derived here instead.
+// REST, by a courier who knows only the shipment: the correlation id the request came with, if any, is
+// reused, otherwise it is derived from the orderId - and logged with every line of the request from here on.
 func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id uint64, courierID uuid.UUID) (*model.Shipment, error) {
 	return transaction.Execute(ctx, s.txExecutor, func(ctx context.Context) (*model.Shipment, error) {
 		shipment, err := s.shipmentRepository.GetByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
+		correlationID := logging.ResolveCorrelationID(ctx, commonkafka.FormatKafkaId(shipment.OrderId()))
 
 		if err = requireAssignedCourier(shipment, courierID, (*model.Shipment).ConfirmReturnedToInventory); err != nil {
 			return nil, err
@@ -205,7 +207,6 @@ func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id
 			return nil, err
 		}
 
-		correlationID := commonkafka.FormatKafkaId(shipment.OrderId())
 		if err = s.shipmentProducer.PublishShipmentReturnedToInventory(ctx, correlationID, shipment); err != nil {
 			return nil, err
 		}
@@ -214,8 +215,9 @@ func (s *ShipmentServiceImpl) ConfirmReturnedToInventory(ctx context.Context, id
 	})
 }
 
-// applyTransition is triggered over REST, with no incoming saga correlationID to reuse - the
-// orderId is the only available correlation point, so it's derived here instead.
+// applyTransition is triggered over REST, by a courier who knows only the shipment: the correlation id the
+// request came with, if any, is reused, otherwise it is derived from the orderId - and logged with every line
+// of the request from here on.
 func (s *ShipmentServiceImpl) applyTransition(
 	ctx context.Context,
 	id uint64,
@@ -226,6 +228,7 @@ func (s *ShipmentServiceImpl) applyTransition(
 		if err != nil {
 			return nil, err
 		}
+		correlationID := logging.ResolveCorrelationID(ctx, commonkafka.FormatKafkaId(shipment.OrderId()))
 
 		if err = transition(shipment); err != nil {
 			return nil, err
@@ -236,7 +239,6 @@ func (s *ShipmentServiceImpl) applyTransition(
 			return nil, err
 		}
 
-		correlationID := commonkafka.FormatKafkaId(shipment.OrderId())
 		if err = s.shipmentProducer.PublishShipmentStatusChanged(ctx, correlationID, shipment); err != nil {
 			return nil, err
 		}
