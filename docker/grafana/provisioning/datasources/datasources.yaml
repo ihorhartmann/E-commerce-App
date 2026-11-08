@@ -20,7 +20,7 @@ datasources:
         filterByTraceID: true
         tags:
           - key: service.name
-            value: service
+            value: service_name
 
   - name: Loki
     type: loki

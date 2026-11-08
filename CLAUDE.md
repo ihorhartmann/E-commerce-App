@@ -170,10 +170,22 @@ database connections and other resources if there are such.
 # Logging
 
 * Every service logs to stdout, one JSON object per line, with the same field names: `@timestamp`, `level`,
-  `message`, `traceId`, `spanId`, and - while a Kafka message is handled - `messageType`, `messageId`,
-  `correlationId`. Spring services get it from `logging.structured.format.console: logstash`, Go services from
-  `telemetry.NewLogHandler`. Alloy reads the lines from Docker and pushes them to Loki, labelled with the compose service
-  and the level only.
+  `message`, `traceId`, `spanId`, `correlationId` (the saga's, see below), and - while a Kafka message is handled -
+  `messageType`, `messageId`. Spring services get it from `logging.structured.format.console: logstash`, Go services
+  from `telemetry.NewLogHandler`. Alloy reads the lines from Docker and pushes them to Loki, labelled with the compose
+  service, as `service_name` (OpenTelemetry's name, which Grafana's Logs Drilldown groups by), and the level only;
+  Loki adds `detected_level` (structured metadata) for the Drilldown's level filter.
+* Every line of a saga's work carries its `correlationId`, so one query finds all of them across the services:
+    * work that came with one keeps it - a Kafka message in its header, a call from another of our services in the
+      `X-Correlation-Id` HTTP header (the gateway drops it from a client's request) - and passes it on: in the headers
+      of the messages it writes to the outbox, and in `X-Correlation-Id` of its own calls to our services;
+    * work that starts a chain - a client's request, a Stripe webhook, a courier's request, a scheduler - derives it
+      from what it handles, as soon as it knows it: `CorrelationTagger.tag` in Spring (the span and the MDC),
+      `logging.ResolveCorrelationID` in Go (a request's `ctx`);
+    * whoever starts the work removes it from the MDC once the work is done (the request filter, the Kafka consumer);
+      a loop over many sagas in one unit of work (a sweep) logs it per line as a key-value instead.
+* An outbox relay logs each message it sends as DEBUG `sending kafka message` (`topic`, `messageType`, `messageId`,
+  `correlationId`), in the trace the message was written in.
 * The trace and the Kafka message's ids come from the context, not from each log call: in Spring from the MDC
   (Micrometer Tracing's, and the one the Kafka consumer fills), in Go from the `ctx` - so log with slog's `*Context`
   functions (`slog.InfoContext(ctx, ...)`) wherever a request's or a message's `ctx` is at hand, and give every line of

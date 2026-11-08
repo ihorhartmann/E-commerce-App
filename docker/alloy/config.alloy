@@ -125,14 +125,15 @@ discovery.docker "containers" {
   }
 }
 
-// Every stream is labelled with its compose service - order-service, kafka, ... - the same name the service's spans
-// carry as service.name, so a span leads to its logs.
+// Every stream is labelled with its compose service - order-service, kafka, ... - as service_name: OpenTelemetry's name
+// for it, which the service's spans carry as service.name, so a span leads to its logs, and the label Grafana's Logs
+// Drilldown groups the logs by.
 discovery.relabel "containers" {
   targets = []
 
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-    target_label  = "service"
+    target_label  = "service_name"
   }
 }
 
@@ -148,7 +149,7 @@ loki.source.docker "containers" {
 // containers (Kafka, Postgres, Keycloak, ...) log plain text, passed on as it is.
 loki.process "services" {
   stage.match {
-    selector = "{service=~\".+-service\"}"
+    selector = "{service_name=~\".+-service\"}"
 
     stage.json {
       expressions = {

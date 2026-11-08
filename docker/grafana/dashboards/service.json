@@ -1912,7 +1912,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"$service\", level=~\"WARN|ERROR\"}",
+          "expr": "{service_name=\"$service\", level=~\"WARN|ERROR\"}",
           "queryType": "range",
           "refId": "A"
         }
@@ -1947,7 +1947,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=\"$service\"}",
+          "expr": "{service_name=\"$service\"}",
           "queryType": "range",
           "refId": "A"
         }

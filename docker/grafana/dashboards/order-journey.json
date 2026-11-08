@@ -107,7 +107,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service=~\".+-service\"} | json correlationId=\"correlationId\" | correlationId != \"\" | correlationId = \"$order\"",
+          "expr": "{service_name=~\".+-service\"} | json correlationId=\"correlationId\" | correlationId != \"\" | correlationId = \"$order\"",
           "queryType": "range",
           "refId": "A"
         }
