@@ -142,8 +142,10 @@ probes; its routes are registered before any middleware.
 
 `telemetry.NewLogHandler` is the `slog` handler `main.go` installs: JSON lines on stdout, with the trace and span of the
 `ctx` a line is logged with, and the attrs that `ctx` carries from `application/port/common/logging.WithAttrs` - the
-Kafka consumer gives the handler's `ctx` the message's ids that way. `logging` lives in `application/port/common`, as
-both the consumer (`Interfaces`) and the handler (`Infrastructure`) use it.
+Kafka consumer gives the handler's `ctx` the message's ids that way - and the saga's correlation id an HTTP request
+brought in its `X-Correlation-Id` header (`middleware.LoggingMiddleware`, `logging.WithCorrelationID`). `logging` lives
+in `application/port/common`, as both the consumer and the middleware (`Interfaces`) and the handler
+(`Infrastructure`) use it.
 
 ---
 
