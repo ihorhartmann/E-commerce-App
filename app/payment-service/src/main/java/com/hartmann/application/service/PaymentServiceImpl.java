@@ -9,6 +9,7 @@ import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedEx
 import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
+import com.hartmann.application.port.out.tracing.CorrelationTagger;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Money;
@@ -24,15 +25,18 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
     private final PaymentKafkaProducer paymentKafkaProducer;
+    private final CorrelationTagger correlationTagger;
 
     public PaymentServiceImpl(
             PaymentRepository paymentRepository,
             PaymentGateway paymentGateway,
-            PaymentKafkaProducer paymentKafkaProducer
+            PaymentKafkaProducer paymentKafkaProducer,
+            CorrelationTagger correlationTagger
     ) {
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
         this.paymentKafkaProducer = paymentKafkaProducer;
+        this.correlationTagger = correlationTagger;
     }
 
     @Override
@@ -72,6 +76,9 @@ public class PaymentServiceImpl implements PaymentService {
     @Transactional
     public Payment updateStatusByExternalId(String externalId, PaymentStatus status) {
         var payment = paymentRepository.getByExternalId(externalId);
+        // a webhook brings no correlation id: the payment's order is its saga's, so it is derived from it
+        var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
+        correlationTagger.tag(correlationId);
         if (!payment.applyGatewayStatus(status)) {
             // a redelivered event reporting the status the payment already has
             return payment;
@@ -80,7 +87,6 @@ public class PaymentServiceImpl implements PaymentService {
         payment = paymentRepository.updateStatus(payment.id(), payment.version(), payment.status());
 
         if (payment.status() == PaymentStatus.CONFIRMED) {
-            var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
             paymentKafkaProducer.publishPaymentCompleted(correlationId, payment.orderId());
         }
         // ATTEMPT_DECLINED is non-terminal - the customer may still retry the same PaymentIntent
@@ -95,9 +101,13 @@ public class PaymentServiceImpl implements PaymentService {
         var expired = paymentRepository.expireOverdue();
 
         for (var payment : expired) {
+            // the payment's order is its saga's correlation id; logged with this line only, not in the log context,
+            // which would carry it on to the next payment of the sweep
+            var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
             LOG.atInfo().setMessage("expired payment")
                     .addKeyValue("paymentId", payment.id())
                     .addKeyValue("orderId", payment.orderId())
+                    .addKeyValue("correlationId", correlationId)
                     .log();
 
             // A payment that was never submitted never left INITIATED - the gateway call itself
@@ -105,7 +115,6 @@ public class PaymentServiceImpl implements PaymentService {
             // submitPayment's HTTP call failed. Only PENDING/ATTEMPT_DECLINED-origin expiries are
             // news to order-service, which is still waiting on an outcome for those.
             if (payment.wasSubmitted()) {
-                var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
                 paymentKafkaProducer.publishPaymentExpired(correlationId, payment.orderId());
             }
         }

@@ -9,6 +9,7 @@ import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedEx
 import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailableException;
 import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
+import com.hartmann.application.port.out.tracing.CorrelationTagger;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
@@ -46,12 +47,14 @@ class PaymentServiceImplTest {
     private PaymentGateway paymentGateway;
     @Mock
     private PaymentKafkaProducer paymentKafkaProducer;
+    @Mock
+    private CorrelationTagger correlationTagger;
 
     private PaymentService paymentService;
 
     @BeforeEach
     void setUp() {
-        paymentService = new PaymentServiceImpl(paymentRepository, paymentGateway, paymentKafkaProducer);
+        paymentService = new PaymentServiceImpl(paymentRepository, paymentGateway, paymentKafkaProducer, correlationTagger);
     }
 
     private Money testAmount() {
@@ -154,6 +157,7 @@ class PaymentServiceImplTest {
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(confirmedPayment);
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verify(paymentKafkaProducer, times(1)).publishPaymentCompleted(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
@@ -163,14 +167,16 @@ class PaymentServiceImplTest {
         var id = 1L;
         var externalId = "pi_test";
         var status = PaymentStatus.ATTEMPT_DECLINED;
-        var payment = testPayment(id, 100L, PaymentStatus.PENDING);
-        var declinedPayment = testPayment(id, 100L, status);
+        var orderId = 100L;
+        var payment = testPayment(id, orderId, PaymentStatus.PENDING);
+        var declinedPayment = testPayment(id, orderId, status);
         when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
         when(paymentRepository.updateStatus(id, payment.version(), status)).thenReturn(declinedPayment);
 
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isEqualTo(declinedPayment);
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verifyNoInteractions(paymentKafkaProducer);
     }
 
@@ -179,12 +185,14 @@ class PaymentServiceImplTest {
         var externalId = "pi_test";
         var status = PaymentStatus.CONFIRMED;
         // e.g. Stripe redelivering payment_intent.succeeded for an already confirmed payment
-        var payment = testPayment(1L, 100L, status);
+        var orderId = 100L;
+        var payment = testPayment(1L, orderId, status);
         when(paymentRepository.getByExternalId(externalId)).thenReturn(payment);
 
         var result = paymentService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isSameAs(payment);
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verify(paymentRepository, times(0)).updateStatus(anyLong(), anyLong(), any());
         verifyNoInteractions(paymentKafkaProducer);
     }
@@ -198,6 +206,7 @@ class PaymentServiceImplTest {
         paymentService.expireOverduePayments();
 
         verify(paymentKafkaProducer, times(1)).publishPaymentExpired(KafkaUtils.formatKafkaId(orderId), orderId);
+        verifyNoInteractions(correlationTagger);
     }
 
     @Test

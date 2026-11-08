@@ -120,6 +120,12 @@
             <artifactId>datasource-micrometer-spring-boot</artifactId>
             <version>2.3.0</version>
         </dependency>
+        <!-- spans recorded in memory, to assert on in tests; versioned by Spring Boot, like all of OpenTelemetry -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-testing</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka-test</artifactId>
