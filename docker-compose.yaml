@@ -177,7 +177,28 @@ services:
       - app-network
     volumes:
       - ./docker/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./docker/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
+
+  # entrypoint.sh renders its configuration from the variables below first.
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    networks:
+      - app-network
+    environment:
+      # empty defaults, so the stacks that don't start it (the e2e tests) need none of them; entrypoint.sh stops
+      # the container if one is missing
+      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST:-}
+      ALERT_SMTP_USERNAME: ${ALERT_SMTP_USERNAME:-}
+      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      # where the emails' links lead
+      GRAFANA_URL: http://localhost:${GRAFANA_PORT}
+    volumes:
+      - ./docker/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
 
   alloy:
     image: grafana/alloy:v1.21.2
@@ -509,5 +530,6 @@ volumes:
   tempo-data:
   loki-data:
   prometheus-data:
+  alertmanager-data:
   alloy-data:
   grafana-data:

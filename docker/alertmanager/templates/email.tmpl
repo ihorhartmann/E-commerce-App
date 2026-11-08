@@ -1,0 +1,74 @@
+{{/*
+  The emails Alertmanager sends (alertmanager.yml): one template per severity - a critical one in red, to act on at
+  once, a warning in amber, to look at during the day - both green once everything in them is resolved. They share
+  the list of alerts below. ${GRAFANA_URL} is filled in by entrypoint.sh.
+*/}}
+
+{{ define "email.critical.subject" }}[CRITICAL{{ if eq .Status "resolved" }} - RESOLVED{{ end }}] {{ .GroupLabels.alertname }}{{ with .GroupLabels.service }} - {{ . }}{{ end }}{{ if gt (len .Alerts.Firing) 1 }} ({{ len .Alerts.Firing }}){{ end }}{{ end }}
+
+{{ define "email.warning.subject" }}[WARNING{{ if eq .Status "resolved" }} - RESOLVED{{ end }}] {{ .GroupLabels.alertname }}{{ with .GroupLabels.service }} - {{ . }}{{ end }}{{ if gt (len .Alerts.Firing) 1 }} ({{ len .Alerts.Firing }}){{ end }}{{ end }}
+
+{{ define "email.critical.html" }}<!doctype html>
+<html>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2328">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d0d7de;border-radius:8px;border-collapse:separate;overflow:hidden">
+  <tr>
+    <td style="background:{{ if eq .Status "resolved" }}#1a7f37{{ else }}#cf222e{{ end }};color:#ffffff;padding:18px 24px">
+      <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase">Critical - act now</div>
+      <div style="font-size:22px;font-weight:bold;margin-top:4px">{{ if eq .Status "resolved" }}Resolved: {{ end }}{{ .GroupLabels.alertname }}</div>
+      {{ with .GroupLabels.service }}<div style="font-size:14px;margin-top:4px">{{ . }}</div>{{ end }}
+    </td>
+  </tr>
+  <tr><td style="padding:20px 24px">{{ template "email.alerts" . }}</td></tr>
+  {{ template "email.footer" . }}
+</table>
+</body>
+</html>{{ end }}
+
+{{ define "email.warning.html" }}<!doctype html>
+<html>
+<body style="margin:0;padding:24px;background:#f4f5f7;font-family:Arial,Helvetica,sans-serif;color:#1f2328">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #d0d7de;border-radius:8px;border-collapse:separate;overflow:hidden">
+  <tr>
+    <td style="background:{{ if eq .Status "resolved" }}#1a7f37{{ else }}#bf8700{{ end }};color:#ffffff;padding:18px 24px">
+      <div style="font-size:12px;letter-spacing:1px;text-transform:uppercase">Warning - look at it today</div>
+      <div style="font-size:22px;font-weight:bold;margin-top:4px">{{ if eq .Status "resolved" }}Resolved: {{ end }}{{ .GroupLabels.alertname }}</div>
+      {{ with .GroupLabels.service }}<div style="font-size:14px;margin-top:4px">{{ . }}</div>{{ end }}
+    </td>
+  </tr>
+  <tr><td style="padding:20px 24px">{{ template "email.alerts" . }}</td></tr>
+  {{ template "email.footer" . }}
+</table>
+</body>
+</html>{{ end }}
+
+{{ define "email.alerts" }}
+{{ range .Alerts.Firing }}{{ template "email.alert" . }}{{ end }}
+{{ if .Alerts.Resolved }}
+<div style="margin:20px 0 10px;font-size:13px;font-weight:bold;color:#1a7f37;text-transform:uppercase;letter-spacing:1px">Resolved</div>
+{{ range .Alerts.Resolved }}{{ template "email.alert" . }}{{ end }}
+{{ end }}
+{{ end }}
+
+{{ define "email.alert" }}
+<div style="border:1px solid #d0d7de;border-radius:6px;padding:14px 16px;margin-bottom:12px">
+  <div style="font-size:16px;font-weight:bold">{{ .Annotations.summary }}</div>
+  {{ with .Annotations.description }}<div style="margin-top:6px;line-height:1.45">{{ . }}</div>{{ end }}
+  <table cellpadding="0" cellspacing="0" style="margin-top:10px;font-size:13px;color:#57606a">
+    <tr><td style="padding:2px 16px 2px 0">since</td><td>{{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</td></tr>
+    {{ if eq .Status "resolved" }}<tr><td style="padding:2px 16px 2px 0">resolved</td><td>{{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</td></tr>{{ end }}
+    {{ range .Labels.SortedPairs }}{{ if and (ne .Name "alertname") (ne .Name "severity") }}<tr><td style="padding:2px 16px 2px 0">{{ .Name }}</td><td>{{ .Value }}</td></tr>{{ end }}{{ end }}
+  </table>
+  {{ with .Annotations.dashboard }}<div style="margin-top:12px"><a href="${GRAFANA_URL}{{ . }}" style="display:inline-block;padding:7px 14px;background:#0969da;color:#ffffff;text-decoration:none;border-radius:6px;font-size:13px">Open in Grafana</a></div>{{ end }}
+</div>
+{{ end }}
+
+{{ define "email.footer" }}
+<tr>
+  <td style="padding:14px 24px;border-top:1px solid #d0d7de;font-size:12px;color:#57606a">
+    <a href="${GRAFANA_URL}/alerting/groups?alertmanager=Alertmanager" style="color:#0969da">All alerts</a> -
+    <a href="${GRAFANA_URL}/alerting/silences?alertmanager=Alertmanager" style="color:#0969da">Silence</a>
+    - sent by Alertmanager from the rules in docker/prometheus/rules
+  </td>
+</tr>
+{{ end }}

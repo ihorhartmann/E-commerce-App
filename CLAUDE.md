@@ -224,6 +224,12 @@ database connections and other resources if there are such.
   exporter.
 * A metric counts, it never lists: which orders are stuck is no label of a series, but a table Grafana reads straight
   from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`).
+* Alerts are Prometheus rules (`docker/prometheus/rules`), on symptoms only, each with a `severity` (`critical` - act
+  now, `warning` - look at it today), a `service`, and `summary`/`description`/`dashboard` annotations; Alertmanager
+  (`docker/alertmanager`) mails them, one template per severity, and a critical alert mutes the warnings of its
+  service. A new alert goes there - not into Grafana - with a unit test in `docker/prometheus/tests/alerts_test.yaml`
+  (`promtool test rules`: when it fires, its labels and its text); `entrypoint.sh check` checks Alertmanager's
+  configuration and routing offline. CI runs both (`unit-alerting`).
 * Every service answers `/health/liveness` (the process is up - no dependency checked) and `/health/readiness` (and
   `/health`): the startup has finished, the shutdown hasn't begun, and the database answers - Kafka and the other
   services are no part of it. Spring gets them from Actuator (`probes.enabled`, readiness group `readinessState,db`), Go

@@ -12,3 +12,17 @@ storage:
   tsdb:
     # pushed samples can arrive a little late or out of order (batching, a retried push)
     out_of_order_time_window: 30m
+
+global:
+  # the alert rules are evaluated as often as the metrics arrive
+  evaluation_interval: 15s
+
+# The alerts: Prometheus evaluates them and hands those that fire to Alertmanager, which
+# groups them and sends the emails (docker/alertmanager).
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]

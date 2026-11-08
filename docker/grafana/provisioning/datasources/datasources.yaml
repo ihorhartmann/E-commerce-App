@@ -48,6 +48,17 @@ datasources:
       # pushed every 15s, by the services and by Alloy's scrapes alike: a rate needs a window of several of those
       timeInterval: 15s
 
+  # the alerts Prometheus fires (docker/prometheus/rules), in Grafana's Alerting pages - and their silences
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false
+
   # read-only (docker/postgres/init-grafana-reader.sh): lists what Prometheus only counts, e.g. the stuck orders
   - name: Postgres
     type: grafana-postgresql-datasource

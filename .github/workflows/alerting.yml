@@ -1,0 +1,30 @@
+name: Alerting - Unit Tests
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "docker/prometheus/**"
+      - "docker/alertmanager/**"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # rules/alerts.yaml against the made-up series of tests/alerts_test.yaml - when each alert fires, with which
+      # labels and which text
+      - name: Test the alert rules
+        run: >-
+          docker run --rm -v "$PWD/docker/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v3.15.1
+          test rules /p/tests/alerts_test.yaml
+
+      # rendered with made-up values: the syntax, the email templates, and which receiver each severity reaches
+      - name: Check Alertmanager's configuration and routing
+        run: >-
+          docker run --rm -v "$PWD/docker/alertmanager:/etc/alertmanager:ro"
+          -e ALERT_SMTP_SMARTHOST=smtp.example.com:587 -e ALERT_SMTP_USERNAME=ci@example.com
+          -e ALERT_SMTP_PASSWORD=ci-password -e ALERT_EMAIL_FROM=ci@example.com -e ALERT_EMAIL_TO=ci@example.com
+          -e GRAFANA_URL=http://localhost:8089
+          --entrypoint /bin/sh prom/alertmanager:v0.34.2 /etc/alertmanager/entrypoint.sh check
