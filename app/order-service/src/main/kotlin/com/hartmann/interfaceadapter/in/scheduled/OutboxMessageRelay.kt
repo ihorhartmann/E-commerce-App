@@ -4,6 +4,7 @@ import com.hartmann.usecase.port.common.kafka.KafkaConst
 import com.hartmann.usecase.port.out.outbox.OutboxMessageRepository
 import com.hartmann.usecase.port.out.outbox.dto.OutboxMessage
 import com.hartmann.usecase.port.common.tracing.TraceContextPropagator
+import io.micrometer.core.instrument.Metrics
 import org.apache.kafka.clients.producer.ProducerRecord
 import org.apache.kafka.common.header.internals.RecordHeader
 import org.slf4j.LoggerFactory
@@ -18,6 +19,8 @@ import java.time.Instant
  * KafkaTemplate, and marks the whole batch sent once every message in it publishes successfully.
  * Each message is sent as a child of the span it was written in - one batch can hold messages of
  * as many different traces.
+ *
+ * Counts the published messages by type, and the failed runs.
  */
 @Component
 class OutboxMessageRelay(
@@ -28,6 +31,12 @@ class OutboxMessageRelay(
     companion object {
         private val LOG = LoggerFactory.getLogger(OutboxMessageRelay::class.java)
         private const val BATCH_SIZE = 100
+
+        // the same names the other services use; how many messages wait, and for how long, is read from the database
+        // itself (Alloy's postgres exporter), once for all replicas
+        private const val RELAY_FAILURES = "ecommerce.outbox.relay.failures"
+        private const val PUBLISHED_MESSAGES = "ecommerce.outbox.messages.published"
+        private const val STAGE_PUBLISH = "publish"
     }
 
     @Scheduled(fixedDelay = 200)
@@ -39,12 +48,28 @@ class OutboxMessageRelay(
 
         try {
             messages.forEach { message ->
-                traceContextPropagator.withParent(message.traceparent) { kafkaTemplate.send(toRecord(message)).get() }
+                traceContextPropagator.withParent(message.traceparent) {
+                    // in the trace of the work that wrote the message, and with the saga's ids, so the line shows up
+                    // next to that work's own lines
+                    LOG.atDebug().setMessage("sending kafka message")
+                        .addKeyValue("topic", message.topic)
+                        .addKeyValue(KafkaConst.MESSAGE_TYPE, message.messageType)
+                        .addKeyValue(KafkaConst.MESSAGE_ID, message.messageId)
+                        .addKeyValue(KafkaConst.CORRELATION_ID, message.correlationId)
+                        .log()
+                    kafkaTemplate.send(toRecord(message)).get()
+                }
             }
         } catch (e: Exception) {
-            LOG.error("outbox relay failed to publish message batch, count={}", messages.size, e)
+            LOG.atError().setMessage("outbox relay failed to publish message batch")
+                .setCause(e)
+                .addKeyValue("count", messages.size)
+                .log()
+            Metrics.counter(RELAY_FAILURES, "stage", STAGE_PUBLISH).increment()
             return
         }
+
+        messages.forEach { Metrics.counter(PUBLISHED_MESSAGES, "message.type", it.messageType).increment() }
 
         val messageIds = messages.map { it.messageId }
         repository.markSentBatch(messageIds, Instant.now())

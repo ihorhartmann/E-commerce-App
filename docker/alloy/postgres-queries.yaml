@@ -1,0 +1,124 @@
+# Metrics read from the services' own tables by Alloy's postgres exporter, every scrape. They describe the system, not
+# a replica: counted once, however many replicas a service runs - which a gauge in every replica couldn't be. Each
+# query becomes metrics named `<query>_<column>`, its LABEL columns their labels.
+#
+# A query whose table doesn't exist yet - the service hasn't run its migrations - fails until it does, and its metrics
+# are missing until then.
+
+# How many messages wait in each service's outbox, and how long the oldest has: a relay that is stuck or can't reach
+# Kafka shows up here first.
+ecommerce_outbox:
+  query: |
+    SELECT 'order-service' AS service, count(*) AS pending,
+           COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0) AS oldest_age_seconds
+    FROM orders.outbox_messages WHERE sent_at IS NULL
+    UNION ALL
+    SELECT 'payment-service', count(*), COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0)
+    FROM payment.outbox_messages WHERE sent_at IS NULL
+    UNION ALL
+    SELECT 'shipping-service', count(*), COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0)
+    FROM shipping.outbox_messages WHERE sent_at IS NULL
+  metrics:
+    - service:
+        usage: LABEL
+        description: The service whose outbox it is
+    - pending:
+        usage: GAUGE
+        description: Outbox messages not yet published to Kafka
+    - oldest_age_seconds:
+        usage: GAUGE
+        description: Age of the oldest message not yet published, 0 when there is none
+
+# Orders by status and cancellation reason. Orders are never deleted and a terminal status never changes, so the
+# increase of a terminal count is how many orders got there: increase(...{status="CANCELLED"}[1h]) by reason.
+ecommerce_orders:
+  query: |
+    SELECT status, COALESCE(cancellation_reason, '') AS reason, count(*) AS count
+    FROM orders.orders GROUP BY status, cancellation_reason
+  metrics:
+    - status:
+        usage: LABEL
+        description: The order's status
+    - reason:
+        usage: LABEL
+        description: Why it was cancelled, empty for an order that wasn't
+    - count:
+        usage: GAUGE
+        description: Orders in this status
+
+# Orders stuck in a status the saga should have moved them out of long ago: waiting for the payment, or for the
+# shipping-service's answer to a cancellation, for over 30 minutes. Every such status is listed, with 0 when none is
+# stuck in it, so the series exists for an alert to compare.
+ecommerce_orders_stuck:
+  query: |
+    SELECT s.status, count(o.id) AS count
+    FROM (VALUES ('PLACED'), ('CANCEL_REQUESTED')) AS s (status)
+    LEFT JOIN orders.orders o
+      ON o.status = s.status AND COALESCE(o.updated_at, o.created_at) < now() - INTERVAL '30 minutes'
+    GROUP BY s.status
+  metrics:
+    - status:
+        usage: LABEL
+        description: The status the orders are stuck in
+    - count:
+        usage: GAUGE
+        description: Orders in this status for over 30 minutes
+
+# How long the saga takes, over the orders that reached a stage in the last hour: from placing the order to the
+# confirmed payment, and to the delivery.
+ecommerce_order_saga:
+  query: |
+    SELECT 'paid' AS stage, count(*) AS count,
+           COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM payment_confirmed_at - created_at)), 0) AS p50_seconds,
+           COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM payment_confirmed_at - created_at)), 0) AS p95_seconds
+    FROM orders.orders WHERE payment_confirmed_at > now() - INTERVAL '1 hour'
+    UNION ALL
+    SELECT 'delivered', count(*),
+           COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM shipment_delivered_at - created_at)), 0),
+           COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM shipment_delivered_at - created_at)), 0)
+    FROM orders.orders WHERE shipment_delivered_at > now() - INTERVAL '1 hour'
+  metrics:
+    - stage:
+        usage: LABEL
+        description: The stage the orders reached - paid or delivered
+    - count:
+        usage: GAUGE
+        description: Orders that reached the stage in the last hour
+    - p50_seconds:
+        usage: GAUGE
+        description: Median time from placing the order to the stage, 0 without any order
+    - p95_seconds:
+        usage: GAUGE
+        description: 95th percentile of the time from placing the order to the stage, 0 without any order
+
+# Payments and refunds by status; FAILED and EXPIRED payments, and FAILED refunds, are the ones to look at.
+ecommerce_payments:
+  query: SELECT status, count(*) AS count FROM payment.payments GROUP BY status
+  metrics:
+    - status:
+        usage: LABEL
+        description: The payment's status
+    - count:
+        usage: GAUGE
+        description: Payments in this status
+
+ecommerce_refunds:
+  query: SELECT status, count(*) AS count FROM payment.refunds GROUP BY status
+  metrics:
+    - status:
+        usage: LABEL
+        description: The refund's status
+    - count:
+        usage: GAUGE
+        description: Refunds in this status
+
+# Shipments by status - created, in delivery, delivered, cancelled, lost.
+ecommerce_shipments:
+  query: SELECT status, count(*) AS count FROM shipping.shipments GROUP BY status
+  metrics:
+    - status:
+        usage: LABEL
+        description: The shipment's status
+    - count:
+        usage: GAUGE
+        description: Shipments in this status

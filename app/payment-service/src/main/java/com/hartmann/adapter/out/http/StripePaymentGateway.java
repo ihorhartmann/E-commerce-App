@@ -37,6 +37,9 @@ public class StripePaymentGateway implements PaymentGateway {
     // Stripe calls go through the SDK's own HTTP client, which Spring's observations don't see: without a span of its
     // own, the time spent in Stripe would show up as an unexplained gap in the payment service's span
     private static final String STRIPE_REQUEST_OBSERVATION = "stripe.request";
+    private static final String OPERATION_KEY = "operation";
+    private static final String OPERATION_CREATE_PAYMENT_INTENT = "create_payment_intent";
+    private static final String OPERATION_CREATE_REFUND = "create_refund";
 
     private final StripeClient stripeClient;
     private final ObservationRegistry observationRegistry;
@@ -60,11 +63,14 @@ public class StripePaymentGateway implements PaymentGateway {
                 .setMaxNetworkRetries(PAYMENT_INTENT_MAX_NETWORK_RETRIES)
                 .build();
 
-        LOG.debug("sending create PaymentIntent request orderId={}", orderId);
+        LOG.atDebug().setMessage("sending create PaymentIntent request").addKeyValue("orderId", orderId).log();
         try {
-            PaymentIntent intent = observed("stripe create payment intent",
+            PaymentIntent intent = observed("stripe create payment intent", OPERATION_CREATE_PAYMENT_INTENT,
                     () -> stripeClient.v1().paymentIntents().create(params, requestOptions));
-            LOG.info("successfully created PaymentIntent orderId={} paymentIntentId={}", orderId, intent.getId());
+            LOG.atInfo().setMessage("successfully created PaymentIntent")
+                    .addKeyValue("orderId", orderId)
+                    .addKeyValue("paymentIntentId", intent.getId())
+                    .log();
 
             return new SubmitPaymentResult(intent.getId(), intent.getClientSecret());
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
@@ -89,10 +95,18 @@ public class StripePaymentGateway implements PaymentGateway {
                 .setIdempotencyKey("refund-" + refund.idempotencyKey())
                 .build();
 
-        LOG.debug("sending create Refund request paymentIntentId={} refundId={}", paymentExternalId, refund.id());
+        LOG.atDebug().setMessage("sending create Refund request")
+                .addKeyValue("paymentIntentId", paymentExternalId)
+                .addKeyValue("refundId", refund.id())
+                .log();
         try {
-            var stripeRefund = observed("stripe create refund", () -> stripeClient.v1().refunds().create(params, requestOptions));
-            LOG.info("successfully created Refund paymentIntentId={} stripeRefundId={}", paymentExternalId, stripeRefund.getId());
+            var stripeRefund = observed("stripe create refund", OPERATION_CREATE_REFUND,
+                    () -> stripeClient.v1().refunds().create(params, requestOptions));
+            LOG.atInfo().setMessage("successfully created Refund")
+                    .addKeyValue("paymentIntentId", paymentExternalId)
+                    .addKeyValue("refundId", refund.id())
+                    .addKeyValue("stripeRefundId", stripeRefund.getId())
+                    .log();
 
             return new SubmitRefundResult(stripeRefund.getId(), StripeRefundStatusMapper.fromStripeStatus(stripeRefund.getStatus()));
         } catch (RateLimitException | ApiConnectionException | ApiException e) {
@@ -105,10 +119,12 @@ public class StripePaymentGateway implements PaymentGateway {
         }
     }
 
-    // A span named contextualName around one Stripe call, marked failed when the call throws.
-    private <T> T observed(String contextualName, StripeCall<T> call) throws StripeException {
+    // A span named contextualName around one Stripe call, marked failed when the call throws - and, from the same
+    // observation, the stripe.request timer: the latency and the failures of each operation.
+    private <T> T observed(String contextualName, String operation, StripeCall<T> call) throws StripeException {
         var observation = Observation.createNotStarted(STRIPE_REQUEST_OBSERVATION, observationRegistry)
                 .contextualName(contextualName)
+                .lowCardinalityKeyValue(OPERATION_KEY, operation)
                 .start();
         try (var ignored = observation.openScope()) {
             return call.call();

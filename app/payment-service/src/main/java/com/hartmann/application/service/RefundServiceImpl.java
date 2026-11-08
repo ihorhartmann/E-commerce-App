@@ -9,6 +9,7 @@ import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
+import com.hartmann.application.port.out.tracing.CorrelationTagger;
 import com.hartmann.application.service.exception.ConflictingRefundNotFoundException;
 import com.hartmann.application.service.exception.RefundIdempotencyKeyReusedException;
 import com.hartmann.domain.model.Refund;
@@ -29,6 +30,7 @@ public class RefundServiceImpl implements RefundService {
     private final PaymentRepository paymentRepository;
     private final PaymentGateway paymentGateway;
     private final PaymentKafkaProducer paymentKafkaProducer;
+    private final CorrelationTagger correlationTagger;
     private final TransactionTemplate transactionTemplate;
 
     public RefundServiceImpl(
@@ -36,12 +38,14 @@ public class RefundServiceImpl implements RefundService {
             PaymentRepository paymentRepository,
             PaymentGateway paymentGateway,
             PaymentKafkaProducer paymentKafkaProducer,
+            CorrelationTagger correlationTagger,
             PlatformTransactionManager transactionManager
     ) {
         this.refundRepository = refundRepository;
         this.paymentRepository = paymentRepository;
         this.paymentGateway = paymentGateway;
         this.paymentKafkaProducer = paymentKafkaProducer;
+        this.correlationTagger = correlationTagger;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -140,6 +144,10 @@ public class RefundServiceImpl implements RefundService {
     @Transactional
     public Refund updateStatusByExternalId(String externalId, RefundStatus status) {
         var refund = refundRepository.getByExternalId(externalId);
+        // a webhook brings no correlation id: the refunded payment's order is its saga's, so it is derived from it
+        var payment = paymentRepository.getById(refund.paymentId());
+        var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
+        correlationTagger.tag(correlationId);
         if (!refund.applyGatewayStatus(status)) {
             // a redelivered event reporting the status the refund already has
             return refund;
@@ -149,8 +157,6 @@ public class RefundServiceImpl implements RefundService {
 
         // A terminal status is final, so a refund that just changed into one got there for the first time.
         if (refund.status().isTerminal()) {
-            var payment = paymentRepository.getById(refund.paymentId());
-            var correlationId = KafkaUtils.formatKafkaId(payment.orderId());
             if (refund.status() == RefundStatus.SUCCEEDED) {
                 paymentKafkaProducer.publishRefundCompleted(correlationId, payment.orderId(), refund.amount());
             } else {

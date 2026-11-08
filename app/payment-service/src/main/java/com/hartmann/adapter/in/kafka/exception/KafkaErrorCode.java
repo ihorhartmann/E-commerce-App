@@ -4,8 +4,8 @@ import com.hartmann.domain.exception.ErrorCode;
 
 /** Codes of messages the Kafka consumer rejects before handing them to the services. */
 public enum KafkaErrorCode implements ErrorCode {
-    INVALID_MESSAGE_HEADER("Invalid message header"),
-    MALFORMED_PAYLOAD("Malformed message payload");
+    INVALID_MESSAGE_HEADERS("Invalid Kafka message headers"),
+    MALFORMED_MESSAGE("Malformed Kafka message payload");
 
     private final String title;
 

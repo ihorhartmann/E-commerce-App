@@ -9,7 +9,7 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Positive
 
 data class PlaceOrderRequest(
-    @field:NotEmpty @field:Valid val items: List<OrderItemRequest>,
+    @field:NotEmpty val items: List<@Valid OrderItemRequest>,
     @field:NotNull @field:Valid val address: AddressRequest,
 )
 

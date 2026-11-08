@@ -12,3 +12,64 @@ datasources:
       streamingEnabled:
         search: true
         metrics: true
+      # "Logs for this span": the lines of the span's service that carry its trace id
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -1m
+        spanEndTimeShift: 1m
+        filterByTraceID: true
+        tags:
+          - key: service.name
+            value: service_name
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      # a link from a line to its trace, from the trace id Alloy keeps as the line's structured metadata
+      derivedFields:
+        - name: traceId
+          matcherType: label
+          matcherRegex: traceId
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: false
+    jsonData:
+      # pushed every 15s, by the services and by Alloy's scrapes alike: a rate needs a window of several of those
+      timeInterval: 15s
+
+  # the alerts Prometheus fires (docker/prometheus/rules), in Grafana's Alerting pages - and their silences
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false
+
+  # read-only (docker/postgres/init-grafana-reader.sh): lists what Prometheus only counts, e.g. the stuck orders
+  - name: Postgres
+    type: grafana-postgresql-datasource
+    uid: postgres
+    access: proxy
+    url: postgres:5432
+    user: grafana_reader
+    editable: false
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1500
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD

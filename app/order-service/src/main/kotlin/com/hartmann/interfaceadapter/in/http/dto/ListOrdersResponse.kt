@@ -32,6 +32,6 @@ private fun toOrderSummaryResponseDto(order: Order): OrderSummaryResponseDto = O
     id = order.id,
     status = order.status.name,
     totalPrice = toMoneyResponseDto(order.totalPrice()),
-    itemCount = order.items.size,
+    itemCount = order.items.sumOf { it.quantity },
     createdAt = order.createdAt,
 )

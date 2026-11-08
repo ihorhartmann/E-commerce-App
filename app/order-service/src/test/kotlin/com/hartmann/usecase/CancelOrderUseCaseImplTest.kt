@@ -55,7 +55,7 @@ class CancelOrderUseCaseImplTest {
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         verify(exactly = 1) { orderRepository.save(order) }
         verify(exactly = 1) { orderKafkaProducer.publishCancelShipment(orderId.toString(), orderId) }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 
     @Test
@@ -70,7 +70,7 @@ class CancelOrderUseCaseImplTest {
         assertSame(order, actual)
         verify(exactly = 0) { orderRepository.save(any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelShipment(any(), any()) }
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 
     @Test
@@ -87,6 +87,6 @@ class CancelOrderUseCaseImplTest {
         verify(exactly = 0) { orderRepository.save(any()) }
         verify(exactly = 0) { orderKafkaProducer.publishCancelShipment(any(), any()) }
         // tagged before the order is even read, so a rejected cancellation is found by its order id too
-        verify(exactly = 1) { correlationTagger.tagCurrentSpan(orderId.toString()) }
+        verify(exactly = 1) { correlationTagger.tag(orderId.toString()) }
     }
 }

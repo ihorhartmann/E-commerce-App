@@ -2,6 +2,7 @@ package env
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"strconv"
 )
@@ -31,4 +32,20 @@ func GetIntEnv(envVar string) (int, error) {
 	}
 
 	return val, nil
+}
+
+// GetLogLevelEnv reads an optional log level - DEBUG, INFO, WARN or ERROR, in any case - and is fallback when envVar
+// isn't set.
+func GetLogLevelEnv(envVar string, fallback slog.Level) (slog.Level, error) {
+	value, ok := os.LookupEnv(envVar)
+	if !ok {
+		return fallback, nil
+	}
+
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(value)); err != nil {
+		return 0, errors.Join(errors.New(envVar+invalidEnvVarValueErrMsg), err)
+	}
+
+	return level, nil
 }

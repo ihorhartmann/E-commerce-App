@@ -48,7 +48,7 @@ func (s *ProcessedKafkaMessageSweep) StartAsync(ctx context.Context) {
 func (s *ProcessedKafkaMessageSweep) sweep(ctx context.Context) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Error("processed_kafka_messages sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+			slog.ErrorContext(ctx, "processed_kafka_messages sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
 		}
 	}()
 
@@ -56,7 +56,7 @@ func (s *ProcessedKafkaMessageSweep) sweep(ctx context.Context) {
 	for {
 		deleted, err := s.store.DeleteExpired(ctx, cutoff, processedMessageSweepBatchSize)
 		if err != nil {
-			slog.Error("processed_kafka_messages sweep failed", apperror.LogAttr(err))
+			slog.ErrorContext(ctx, "processed_kafka_messages sweep failed", apperror.LogAttr(err))
 			return
 		}
 		if deleted == 0 {

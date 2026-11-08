@@ -167,6 +167,76 @@ is missing, the service must not start and must log an error.
 All services must have graceful shutdown, so that on receiving a termination signal the service can close all Kafka,
 database connections and other resources if there are such.
 
+# Logging
+
+* Every service logs to stdout, one JSON object per line, with the same field names: `@timestamp`, `level`,
+  `message`, `traceId`, `spanId`, `correlationId` (the saga's, see below), and - while a Kafka message is handled -
+  `messageType`, `messageId`. Spring services get it from `logging.structured.format.console: logstash`, Go services
+  from `telemetry.NewLogHandler`. Alloy reads the lines from Docker and pushes them to Loki, labelled with the compose
+  service, as `service_name` (OpenTelemetry's name, which Grafana's Logs Drilldown groups by), and the level only;
+  Loki adds `detected_level` (structured metadata) for the Drilldown's level filter.
+* Every line of a saga's work carries its `correlationId`, so one query finds all of them across the services:
+    * work that came with one keeps it - a Kafka message in its header, a call from another of our services in the
+      `X-Correlation-Id` HTTP header (the gateway drops it from a client's request) - and passes it on: in the headers
+      of the messages it writes to the outbox, and in `X-Correlation-Id` of its own calls to our services;
+    * work that starts a chain - a client's request, a Stripe webhook, a courier's request, a scheduler - derives it
+      from what it handles, as soon as it knows it: `CorrelationTagger.tag` in Spring (the span and the MDC),
+      `logging.ResolveCorrelationID` in Go (a request's `ctx`);
+    * whoever starts the work removes it from the MDC once the work is done (the request filter, the Kafka consumer);
+      a loop over many sagas in one unit of work (a sweep) logs it per line as a key-value instead.
+* An outbox relay logs each message it sends as DEBUG `sending kafka message` (`topic`, `messageType`, `messageId`,
+  `correlationId`), in the trace the message was written in.
+* The trace and the Kafka message's ids come from the context, not from each log call: in Spring from the MDC
+  (Micrometer Tracing's, and the one the Kafka consumer fills), in Go from the `ctx` - so log with slog's `*Context`
+  functions (`slog.InfoContext(ctx, ...)`) wherever a request's or a message's `ctx` is at hand, and give every line of
+  a unit of work a value with `logging.WithAttrs`. Don't pass those fields to a single log call again: Spring Boot's
+  structured logging drops a line that has a key twice - in the MDC and as a key-value, or as two key-values - so a
+  key-value whose key may already be there (an exception's attributes) is left out, as `failureKeyValues` does.
+* A log message is a constant text, the same for the same event in every service (`received http request`,
+  `successfully processed kafka message`, `kafka message dead-lettered`, ...); every value goes in as a key-value of
+  its own - `LOG.atInfo().setMessage(...).addKeyValue(...)` in Spring, slog attrs in Go - never into the message, so
+  Loki can filter on it and count the event.
+* Levels: ERROR - a failure that needs attention (a 5xx, a dead-lettered message); WARN - something unusual but
+  handled (a rejected request or message, a retry); INFO - one or two lines per unit of work in normal operation
+  (a request or message handled, a refund created); DEBUG - the detail for an investigation (`received ...`,
+  `sending ...`). A Kafka message that fails is logged the same way in every service: each failed attempt as a WARN -
+  `kafka message rejected` for a permanent failure, `kafka message handling failed` for a transient one (retried) -
+  and, once it gives up, a single ERROR `kafka message dead-lettered`; one ERROR is one message to redrive. Every
+  service logs INFO and up by default; `LOG_LEVEL` in `.env` sets it for all of them (in
+  docker-compose it becomes `LOG_LEVEL` for the Go services and `LOGGING_LEVEL_COM_HARTMANN` for the Spring ones).
+
+# Metrics and health
+
+* Every service pushes its metrics over OTLP to Alloy, which forwards them to Prometheus, every 15s, with
+  `service.name` and a `service.instance.id` per replica (the host name). Durations are in seconds, with the same
+  explicit buckets everywhere (`0.005 ... 10`s), so the percentiles of every service compare.
+* A metric that several services record has the same name and attributes in every one of them:
+  `http.server.request.duration` (`http.request.method`, `http.route`, `http.response.status_code`),
+  `ecommerce.kafka.message.duration` (`topic`, `message.type`, `outcome` = `success`/`failed`/`rejected`, one per attempt),
+  `ecommerce.kafka.message.dead_lettered`, `ecommerce.errors` (`error.code`, `transport`), and the outbox relay's
+  `ecommerce.outbox.messages.published`/`ecommerce.outbox.relay.failures`. Attributes are low-cardinality only: a route
+  pattern, never a path; a code, never an id.
+* Custom meters are recorded globally - Micrometer's `Metrics.globalRegistry` in Spring, the global `otel.Meter` in Go -
+  not injected, so code without a registry (a unit test) records nothing.
+* What describes the system rather than a replica - the outbox backlog, orders by status, stuck orders, saga durations,
+  payments and shipments by status - is read from the database by Alloy's postgres exporter
+  (`docker/alloy/postgres-queries.yaml`), never kept as a gauge in each replica. Consumer lag comes from Alloy's Kafka
+  exporter.
+* A metric counts, it never lists: which orders are stuck is no label of a series, but a table Grafana reads straight
+  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`).
+* Alerts are Prometheus rules (`docker/prometheus/rules`), on symptoms only, each with a `severity` (`critical` - act
+  now, `warning` - look at it today), a `service`, and `summary`/`description`/`dashboard` annotations; Alertmanager
+  (`docker/alertmanager`) mails them, one template per severity, and a critical alert mutes the warnings of its
+  service. A new alert goes there - not into Grafana - with a unit test in `docker/prometheus/tests/alerts_test.yaml`
+  (`promtool test rules`: when it fires, its labels and its text); `entrypoint.sh check` checks Alertmanager's
+  configuration and routing offline. CI runs both (`unit-alerting`).
+* Every service answers `/health/liveness` (the process is up - no dependency checked) and `/health/readiness` (and
+  `/health`): the startup has finished, the shutdown hasn't begun, and the database answers - Kafka and the other
+  services are no part of it. Spring gets them from Actuator (`probes.enabled`, readiness group `readinessState,db`), Go
+  from its `HealthController`, set ready at the end of `main.go`'s startup and not ready as the first step of the
+  shutdown. Health requests need no token and are neither traced, nor logged, nor counted. docker-compose waits for
+  readiness (`service_healthy`).
+
 # Kafka topics, retries and dead-lettering
 
 * Every topic a service produces to or consumes from must be declared explicitly in that service's configuration, never
@@ -180,6 +250,10 @@ database connections and other resources if there are such.
   redriven well after the fact.
 * A failing message is retried in place, blocking its partition, with exponential back-off: 5 attempts in total, waiting
   1s, 2s, 4s, 8s between them (15s), and then published to its DLT. All services use these same numbers.
+* The consumer checks the business headers itself (`messageType`, `messageId`, `correlationId`) - in Spring they are
+  `@Header(required = false)` parameters, not ones Spring's binding rejects - so a message missing one fails with our
+  `INVALID_MESSAGE_HEADERS` code like any other invalid message, instead of a framework exception that bypasses the
+  consumer. The Kafka error codes are the same in every service (`INVALID_MESSAGE_HEADERS`, `MALFORMED_MESSAGE`).
 * Failures are classified, and only transient ones are retried:
     * permanent failures - malformed payload, missing/invalid headers, a business rule rejecting the message, a
       referenced entity that doesn't exist, a request rejected outright by a third party - go straight to the DLT
@@ -202,6 +276,12 @@ database connections and other resources if there are such.
 * Redriving from a DLT is always a manual, deliberate action, never automatic: republish to the original topic with the
   same key, payload and business headers (never a new `messageId`), without the failure headers, and only after the
   cause has been fixed.
+* What still waits in the DLTs is the lag of the `dlt-redrive` consumer group, which nothing consumes with: its offset
+  in each DLT is a bookmark - everything before it has been redriven or discarded. `kafka-init`
+  (`docker/kafka/init-dlt-redrive.sh`) sets it at the start of every DLT that has none yet and never moves an existing
+  one; the Grafana dashboards show the lag. After redriving or discarding a message, move the bookmark past it:
+  `kafka-consumer-groups.sh --group dlt-redrive --topic <dlt>:<partition> --reset-offsets --to-offset <its offset + 1>
+  --execute`. Kafka keeps the bookmarks 30 days (`KAFKA_OFFSETS_RETENTION_MINUTES`), as long as the DLT messages.
 
 # Exceptions, errors, DTOs, and Repository Entities
 

@@ -1,5 +1,6 @@
 package com.hartmann.feature.order
 
+import com.hartmann.core.network.IDEMPOTENCY_KEY_HEADER
 import com.hartmann.core.network.bodyOrThrow
 import com.hartmann.core.model.Page
 import com.hartmann.feature.order.dto.ListOrdersResponse
@@ -15,6 +16,7 @@ import com.hartmann.feature.order.model.OrderSummary
 import com.hartmann.feature.order.model.PlacedOrder
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -22,9 +24,10 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 
 class KtorOrderApi private constructor(private val client: HttpClient) : OrderApi {
-    override suspend fun placeOrder(lines: List<OrderLine>, address: Address): PlacedOrder =
+    override suspend fun placeOrder(lines: List<OrderLine>, address: Address, idempotencyKey: String): PlacedOrder =
         toPlacedOrder(
             client.post(ORDERS_PATH) {
+                header(IDEMPOTENCY_KEY_HEADER, idempotencyKey)
                 contentType(ContentType.Application.Json)
                 setBody(toPlaceOrderRequest(lines, address))
             }.bodyOrThrow<OrderResponse>()

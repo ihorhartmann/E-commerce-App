@@ -9,7 +9,6 @@ import (
 	"inventoryservice/interfaces/kafka/kafkago"
 	"inventoryservice/interfaces/scheduled"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,19 +30,22 @@ import (
 )
 
 const (
-	healthPath = "/health"
-	// how long shutdown waits for the buffered spans to reach the collector
-	tracingShutdownTimeout = 5 * time.Second
+	// how long shutdown waits for the buffered spans and the last metrics to reach the collector
+	telemetryShutdownTimeout = 5 * time.Second
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	// JSON lines on stdout, for Alloy to push to Loki; a line logged with a ctx gets its trace and its logging.WithAttrs.
+	// INFO until the configuration says which level - a configuration that fails to load is logged as JSON too.
+	logLevel := new(slog.LevelVar)
+	slog.SetDefault(slog.New(telemetry.NewLogHandler(os.Stdout, logLevel)))
 
 	config, err := env.LoadFromEnv()
 	if err != nil {
 		slog.Error("failed to load configuration", "error", err)
 		os.Exit(1)
 	}
+	logLevel.Set(config.LogLevel)
 
 	// first, so the database, Kafka and HTTP instrumentation below all find the provider installed
 	shutdownTracing, err := telemetry.InitTracing(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
@@ -51,10 +53,20 @@ func main() {
 		slog.Error("failed to set up tracing", "error", err)
 		os.Exit(1)
 	}
+	shutdownMetrics, err := telemetry.InitMetrics(context.Background(), config.OTELExporterOTLPEndpoint, config.OTELServiceName)
+	if err != nil {
+		slog.Error("failed to set up metrics", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := gormconn.NewDB(config)
 	if err != nil {
 		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		slog.Error("failed to get database connection pool", "error", err)
 		os.Exit(1)
 	}
 
@@ -97,12 +109,19 @@ func main() {
 	// The order matters - see error_handler_middleware.go.
 	app := fiber.New(fiber.Config{
 		ErrorHandler: middleware.HandleMiddlewareError,
+		// Fiber's startup banner is plain text on stdout, between the JSON lines
+		DisableStartupMessage: true,
 	})
-	// outermost: a server span per request, continuing the caller's trace, around everything below - health checks
-	// excepted, polled every few seconds
+	// before any middleware: the probes are polled every few seconds, need no token, and are neither traced, nor
+	// logged, nor counted
+	healthController := inhttp.NewHealthController(sqlDB)
+	healthController.RegisterRoutes(app)
+
+	// outermost: the duration of every request, by its final status
+	app.Use(middleware.MetricsMiddleware)
+	// a server span per request, continuing the caller's trace, around everything below
 	app.Use(otelfiber.Middleware(
 		otelfiber.WithoutMetrics(true),
-		otelfiber.WithNext(func(c *fiber.Ctx) bool { return c.Path() == healthPath }),
 		otelfiber.WithSpanNameFormatter(func(c *fiber.Ctx) string { return c.Method() + " " + c.Route().Path }),
 	))
 	app.Use(middleware.Recover)
@@ -113,10 +132,6 @@ func main() {
 	// last, right before the routes: a controller's error must be the response by the time it gets
 	// back to the idempotency middleware
 	app.Use(middleware.HandleControllerError)
-
-	app.Get(healthPath, func(c *fiber.Ctx) error {
-		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "ok"})
-	})
 
 	apiV1 := app.Group("/api/v1")
 	inhttp.NewProductController(productUseCases).RegisterRoutes(apiV1)
@@ -129,9 +144,15 @@ func main() {
 		}
 	}()
 
+	// migrations, topics, the consumer and the HTTP server are all up
+	healthController.SetReady(true)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	// first: the replica stops getting new requests before anything it needs for them is closed
+	healthController.SetReady(false)
 
 	if err = reservationConsumer.Close(); err != nil {
 		slog.Error("error closing kafka consumer", "error", err)
@@ -147,11 +168,14 @@ func main() {
 
 	closeDB(db)
 
-	// last: everything that creates spans has stopped, so this flushes all of them
-	tracingCtx, cancelTracing := context.WithTimeout(context.Background(), tracingShutdownTimeout)
-	defer cancelTracing()
-	if err = shutdownTracing(tracingCtx); err != nil {
+	// last: everything that creates spans and records metrics has stopped, so this flushes all of them
+	telemetryCtx, cancelTelemetry := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+	defer cancelTelemetry()
+	if err = shutdownTracing(telemetryCtx); err != nil {
 		slog.Error("failed to flush traces", "error", err)
+	}
+	if err = shutdownMetrics(telemetryCtx); err != nil {
+		slog.Error("failed to flush metrics", "error", err)
 	}
 
 	slog.Info("application shut down successfully")

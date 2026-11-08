@@ -35,7 +35,7 @@ class PlaceOrderUseCaseImpl(
         val orderId = orderRepository.nextId()
         val correlationId = orderId.toString()
         // the order id is the saga's correlation id: tagged before anything can fail, so a failed checkout is found too
-        correlationTagger.tagCurrentSpan(correlationId)
+        correlationTagger.tag(correlationId)
         val reservedItems = inventoryClient.reserve(orderId, requestedItems)
 
         val order = try {

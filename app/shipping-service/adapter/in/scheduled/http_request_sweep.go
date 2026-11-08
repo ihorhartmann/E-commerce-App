@@ -47,7 +47,7 @@ func (s *HTTPRequestSweep) StartAsync(ctx context.Context) {
 func (s *HTTPRequestSweep) sweep(ctx context.Context) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			slog.Error("idempotent_http_requests sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
+			slog.ErrorContext(ctx, "idempotent_http_requests sweep panicked", apperror.LogAttr(apperror.FromPanic(recovered)))
 		}
 	}()
 
@@ -55,7 +55,7 @@ func (s *HTTPRequestSweep) sweep(ctx context.Context) {
 	for {
 		deleted, err := s.store.DeleteExpired(ctx, cutoff, httpRequestSweepBatchSize)
 		if err != nil {
-			slog.Error("idempotent_http_requests sweep failed", apperror.LogAttr(err))
+			slog.ErrorContext(ctx, "idempotent_http_requests sweep failed", apperror.LogAttr(err))
 			return
 		}
 		if deleted == 0 {

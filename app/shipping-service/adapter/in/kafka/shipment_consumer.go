@@ -72,7 +72,7 @@ func (c *ShipmentKafkaConsumer) handleCancelShipment(ctx context.Context, msg id
 
 	cancelled, err := c.shipmentService.CancelByOrder(ctx, msg, command.OrderID)
 	if err == nil && !cancelled {
-		slog.Info("nothing to cancel: the shipment has already ended, or the command was already handled", "orderId", command.OrderID, "correlationId", msg.CorrelationID)
+		slog.InfoContext(ctx, "nothing to cancel: the shipment has already ended, or the command was already handled", "orderId", command.OrderID)
 	}
 
 	return err

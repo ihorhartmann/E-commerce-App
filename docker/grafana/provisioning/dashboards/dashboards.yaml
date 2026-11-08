@@ -1,0 +1,13 @@
+apiVersion: 1
+
+# The dashboards of docker/grafana/dashboards, loaded at startup and re-read every 30s. A change made in the UI can't be
+# saved over a provisioned dashboard: export its JSON (Share -> Export) into that folder instead.
+providers:
+  - name: ecommerce
+    folder: E-commerce
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

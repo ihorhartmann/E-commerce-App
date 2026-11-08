@@ -1,0 +1,300 @@
+# The alerts, evaluated by Prometheus every 15s and sent to Alertmanager, which mails
+# them (docker/alertmanager). We alert on symptoms - what a customer or the saga notices - not on every metric.
+#
+# Every alert has:
+#   severity    critical - act now; warning - look at it today. Alertmanager picks the email by it.
+#   service     what the alert is about (a compose service, or kafka/postgres); a critical alert of a service mutes
+#               its warnings.
+#   summary     one line with the value; description - what it means and where to look; dashboard - the Grafana
+#               path the email links to.
+# Thresholds are starting points: tune them on real traffic.
+
+groups:
+  - name: critical
+    rules:
+      # The services push their metrics (no scrape, so no `up`): a service whose metrics stopped coming for over a
+      # minute, after it reported within the last hour, is down - or can't reach Alloy.
+      - alert: ServiceDown
+        expr: count by (job) (last_over_time(target_info[1h])) unless count by (job) (last_over_time(target_info[1m]))
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $labels.job }} has sent no metrics for over a minute"
+          description: The service is down, restarting, or can't reach Alloy. Check `docker compose ps` and its logs.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: HighServerErrorRate
+        expr: |
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            / sum by (job) (rate(http_server_request_duration_seconds_count[5m])) > 0.05
+          and on (job) sum by (job) (increase(http_server_request_duration_seconds_count[5m])) >= 10
+        for: 2m
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of {{ $labels.job }}'s requests fail with a 5xx"
+          description: Over 5% of the requests of the last 5 minutes. On the gateway it's what the customers see.
+          dashboard: /d/ecommerce-service?var-service={{ $labels.job }}
+
+      - alert: SlowApi
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="gateway-service"}[5m]))) > 2
+        for: 10m
+        labels:
+          severity: critical
+          service: gateway-service
+        annotations:
+          summary: "p95 of the gateway's responses is {{ $value | humanizeDuration }}"
+          description: The 95th percentile has been over 2s for 10 minutes - the routes of the service dashboard show which.
+          dashboard: /d/ecommerce-service?var-service=gateway-service
+
+      # The saga stands: a consumer group falls further behind, minute after minute.
+      - alert: KafkaLagGrowing
+        expr: |
+          sum by (consumergroup, topic) (kafka_consumergroup_uncommitted_offsets{consumergroup!="dlt-redrive"}) > 50
+          and deriv(sum by (consumergroup, topic) (kafka_consumergroup_uncommitted_offsets{consumergroup!="dlt-redrive"})[10m:1m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+          service: "{{ $labels.consumergroup }}"
+        annotations:
+          summary: "{{ $labels.consumergroup }} is {{ $value }} messages behind on {{ $labels.topic }}, and growing"
+          description: The consumer is stuck or slower than the producers - a message blocking its partition with retries, or the service down.
+          dashboard: /d/ecommerce-overview
+
+      - alert: OutboxStuck
+        expr: ecommerce_outbox_oldest_age_seconds > 120
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.service }}"
+        annotations:
+          summary: "{{ $labels.service }}'s oldest unsent outbox message is {{ $value | humanizeDuration }} old"
+          description: The outbox relay doesn't publish - Kafka unreachable or the relay failing. The saga waits for these messages.
+          dashboard: /d/ecommerce-overview
+
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: Postgres doesn't answer
+          description: Alloy's exporter can't connect - every service's readiness fails with it.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: PostgresConnectionsExhausted
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          service: postgres
+        annotations:
+          summary: "Postgres uses {{ $value | humanizePercentage }} of max_connections"
+          description: Once it reaches 100%, new connections are refused. Look at the services' connection pools.
+          dashboard: /d/ecommerce-infrastructure
+
+      # The exporter connects to the broker: no broker, or no exporter metrics at all, is no Kafka.
+      - alert: KafkaBrokerDown
+        expr: kafka_brokers < 1 or absent(kafka_brokers)
+        for: 1m
+        labels:
+          severity: critical
+          service: kafka
+        annotations:
+          summary: No Kafka broker is reachable
+          description: Nothing is published or consumed - the outboxes fill up and the saga stands.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: KafkaPartitionOffline
+        expr: count by (topic) (kafka_topic_partition_leader == -1) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: kafka
+        annotations:
+          summary: "{{ $value }} partition(s) of {{ $labels.topic }} have no leader"
+          description: An offline partition accepts no writes and serves no reads.
+          dashboard: /d/ecommerce-infrastructure
+
+      # order-service's circuit breakers in front of inventory-service and payment-service.
+      - alert: CircuitBreakerOpen
+        expr: max by (name) (resilience4j_circuitbreaker_state{state=~"open|forced_open"}) == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.name }}"
+        annotations:
+          summary: "order-service's circuit breaker to {{ $labels.name }} is open"
+          description: Placing orders fails at once without calling it - the service is down or answers with errors.
+          dashboard: /d/ecommerce-service?var-service=order-service
+
+      - alert: PaymentGatewayUnavailable
+        expr: sum(increase(ecommerce_errors_total{error_code=~".*PAYMENT_GATEWAY_UNAVAILABLE"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: payment-service
+        annotations:
+          summary: "Stripe is unavailable: {{ $value | humanize }} failed calls in 5 minutes"
+          description: Payments can't be created or refunded - the Kafka commands are retried and may end in a DLT.
+          dashboard: /d/ecommerce-service?var-service=payment-service
+
+  - name: warning
+    rules:
+      # What still waits in the DLTs - the lag of the dlt-redrive bookmark (CLAUDE.md); it resolves once the message
+      # has been redriven or discarded and the bookmark moved past it.
+      - alert: MessageDeadLettered
+        expr: sum by (topic) (kafka_consumergroup_uncommitted_offsets{consumergroup="dlt-redrive"}) > 0
+        labels:
+          severity: warning
+          service: "{{ $labels.topic }}"
+        annotations:
+          summary: "{{ $value }} message(s) wait in {{ $labels.topic }}"
+          description: Each needs a decision - fix the cause and redrive it, or discard it - and then the dlt-redrive bookmark moved past it.
+          dashboard: /d/ecommerce-overview
+
+      - alert: OrdersStuck
+        expr: sum by (status) (ecommerce_orders_stuck_count) > 0
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "{{ $value }} order(s) stuck in {{ $labels.status }} for over 30 minutes"
+          description: The saga didn't move them on - the table on the saga dashboard lists which, with a link to each one's journey.
+          dashboard: /d/ecommerce-saga
+
+      # Payments that ended badly in the last hour - failed or expired - against the last day's share, once there are
+      # enough of them to compare.
+      - alert: PaymentFailuresHigh
+        expr: |
+          (sum(delta(ecommerce_payments_count{status=~"FAILED|EXPIRED"}[1h])) or vector(0))
+            / sum(delta(ecommerce_payments_count{status=~"CONFIRMED|FAILED|EXPIRED"}[1h])) > 0.1
+          and
+          (sum(delta(ecommerce_payments_count{status=~"FAILED|EXPIRED"}[1h])) or vector(0))
+            / sum(delta(ecommerce_payments_count{status=~"CONFIRMED|FAILED|EXPIRED"}[1h]))
+          > 2 * (
+            (sum(delta(ecommerce_payments_count{status=~"FAILED|EXPIRED"}[1d])) or vector(0))
+              / sum(delta(ecommerce_payments_count{status=~"CONFIRMED|FAILED|EXPIRED"}[1d]))
+          )
+          and sum(delta(ecommerce_payments_count{status=~"CONFIRMED|FAILED|EXPIRED"}[1h])) >= 5
+        labels:
+          severity: warning
+          service: payment-service
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of the last hour's payments failed or expired"
+          description: Over twice the last day's share - Stripe declining more cards, or customers abandoning the payment.
+          dashboard: /d/ecommerce-saga
+
+      - alert: DbPoolExhausted
+        expr: max by (job) (hikaricp_connections_pending) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $labels.job }}'s requests wait for a database connection"
+          description: The connection pool has been full for 5 minutes - slow queries holding connections, or a pool too small.
+          dashboard: /d/ecommerce-service?var-service={{ $labels.job }}
+
+      - alert: OptimisticLockConflicts
+        expr: sum by (job) (increase(ecommerce_errors_total{error_code=~".*CONCURRENT_UPDATE"}[10m])) > 5
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $value | humanize }} concurrent-update conflicts in {{ $labels.job }} in 10 minutes"
+          description: Writes to the same entity race each other; they are retried, but this many means a hot spot.
+          dashboard: /d/ecommerce-service?var-service={{ $labels.job }}
+
+      - alert: JvmHeapHigh
+        expr: sum by (job) (jvm_memory_used_bytes{area="heap"}) / sum by (job) (jvm_memory_max_bytes{area="heap"} > 0) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "{{ $labels.job }} uses {{ $value | humanizePercentage }} of its heap"
+          description: Over 90% for 10 minutes - an OutOfMemoryError may follow.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: ContainerMemoryHigh
+        expr: |
+          max by (container_label_com_docker_compose_service) (
+            container_memory_working_set_bytes{container_label_com_docker_compose_service!=""}
+              / (container_spec_memory_limit_bytes > 0)
+          ) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          service: "{{ $labels.container_label_com_docker_compose_service }}"
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} uses {{ $value | humanizePercentage }} of its memory limit"
+          description: Over 90% for 10 minutes - the container is killed when it reaches the limit.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: ContainerRestarted
+        expr: |
+          sum by (container_label_com_docker_compose_service) (
+            changes(container_start_time_seconds{container_label_com_docker_compose_service!~"|kafka-init"}[15m])
+          ) > 0
+        labels:
+          severity: warning
+          service: "{{ $labels.container_label_com_docker_compose_service }}"
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} restarted {{ $value }} time(s) in 15 minutes"
+          description: A crash, an out-of-memory kill or a failed startup - its logs before the restart say which.
+          dashboard: /d/ecommerce-infrastructure
+
+      # Where the volumes of Postgres, Kafka, Prometheus, Loki and Tempo live.
+      - alert: DiskAlmostFull
+        expr: 1 - max by (mountpoint) (node_filesystem_avail_bytes{mountpoint=~"/|/var/lib/docker"} / node_filesystem_size_bytes) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: host
+        annotations:
+          summary: "{{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+          description: Postgres, Kafka and the telemetry stores stop writing when it's full.
+          dashboard: /d/ecommerce-infrastructure
+
+      - alert: AuthFailuresHigh
+        expr: sum(rate(http_server_request_duration_seconds_count{job="gateway-service", http_response_status_code=~"401|403"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          service: gateway-service
+        annotations:
+          summary: "{{ $value | humanize }} rejected requests (401/403) per second on the gateway"
+          description: Expired sessions on a large scale, a misconfigured client, or someone probing the API.
+          dashboard: /d/ecommerce-service?var-service=gateway-service
+
+      - alert: FailedLoginsHigh
+        expr: sum(increase(keycloak_user_events_total{event="login", error!=""}[5m])) > 10
+        labels:
+          severity: warning
+          service: keycloak
+        annotations:
+          summary: "{{ $value | humanize }} failed logins in 5 minutes"
+          description: Possibly someone guessing passwords - the security panels show the errors.
+          dashboard: /d/ecommerce-overview
+
+      # Alloy drops what it can't take in or pass on: the dashboards then show less than happened.
+      - alert: TelemetryDropped
+        expr: |
+          (sum(rate(loki_write_dropped_entries_total[5m])) or vector(0))
+          + (sum(rate(otelcol_receiver_refused_spans_total[5m])) or vector(0))
+          + (sum(rate(otelcol_receiver_failed_spans_total[5m])) or vector(0))
+          + (sum(rate(otelcol_receiver_refused_metric_points_total[5m])) or vector(0))
+          + (sum(rate(otelcol_receiver_failed_metric_points_total[5m])) or vector(0))
+          > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: alloy
+        annotations:
+          summary: Alloy drops logs, spans or metrics
+          description: Loki, Tempo or Prometheus refuses Alloy's writes, or Alloy is overloaded - its own panels show which.
+          dashboard: /d/ecommerce-infrastructure

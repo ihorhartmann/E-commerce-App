@@ -26,10 +26,11 @@ class TracingConfig(environment: Environment) {
         REQUIRED_ENV_VARS.forEach { environment.getRequiredProperty(it) }
     }
 
-    /** Health checks are polled every few seconds and would otherwise each be a trace of their own. */
+    /** Health checks and probes are polled every few seconds and would otherwise each be a trace of their own, and a
+     * series of their own in the HTTP metrics. */
     @Bean
     fun skipHealthCheckObservations() = ObservationPredicate { _, context ->
-        !(context is ServerRequestObservationContext && context.carrier?.path?.value() == HEALTH_PATH)
+        !(context is ServerRequestObservationContext && context.carrier?.path?.value()?.startsWith(HEALTH_PATH) == true)
     }
 
     // Span names in one format across all services, the ones OpenTelemetry's semantic conventions give - Spring Boot

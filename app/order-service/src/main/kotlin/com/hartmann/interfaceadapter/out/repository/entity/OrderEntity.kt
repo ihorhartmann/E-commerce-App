@@ -18,6 +18,7 @@ import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
+import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 import org.hibernate.annotations.BatchSize
@@ -73,7 +74,17 @@ class OrderEntity(
 
     var createdAt: Instant = Instant.now(),
     var updatedAt: Instant? = null,
-)
+) {
+    /**
+     * Stamps the time of the change JPA is about to write - a step of the saga, a cancellation. JPA calls it only when
+     * the order did change, right before its UPDATE, so updatedAt is when the order last changed, and stays null for an
+     * order never changed since it was placed.
+     */
+    @PreUpdate
+    fun markUpdated() {
+        updatedAt = Instant.now()
+    }
+}
 
 fun toOrderEntity(order: Order): OrderEntity {
     val entity = OrderEntity(

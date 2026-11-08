@@ -5,6 +5,7 @@ import com.hartmann.domain.exception.ErrorCode;
 import com.hartmann.domain.exception.TransientException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.slf4j.MDC;
 
 import java.util.Map;
 
@@ -30,7 +31,11 @@ class KafkaFailuresTest {
 
     private static class TestConflictException extends ConflictException {
         TestConflictException(Throwable cause) {
-            super(TestErrorCode.TEST_CONFLICT, "conflict", Map.of(), cause);
+            this(cause, Map.of());
+        }
+
+        TestConflictException(Throwable cause, Map<String, ?> attributes) {
+            super(TestErrorCode.TEST_CONFLICT, "conflict", attributes, cause);
         }
     }
 
@@ -59,5 +64,35 @@ class KafkaFailuresTest {
     @Test
     void isPermanentFailure_isFalseForAnExceptionThatIsntOurs() {
         assertThat(KafkaFailures.isPermanentFailure(new IllegalStateException("database unavailable"))).isFalse();
+    }
+
+    @Test
+    void failureKeyValues_describesTheOutermostExceptionOfOursWithItsMessageCodeAndTheChainsAttributes() {
+        var paymentId = 7L;
+        var conflict = new TestConflictException(null, Map.of("paymentId", paymentId));
+
+        var actual = KafkaFailures.failureKeyValues(new RuntimeException("listener failed", conflict));
+
+        var expected = Map.of("exceptionMessage", conflict.getMessage(), "code", conflict.code().code(), "paymentId", paymentId);
+        assertThat(actual).isEqualTo(expected);
+    }
+
+    @Test
+    void failureKeyValues_isOnlyTheMessageForAnExceptionThatIsntOurs() {
+        var message = "database unavailable";
+
+        assertThat(KafkaFailures.failureKeyValues(new IllegalStateException(message))).isEqualTo(Map.of("exceptionMessage", message));
+    }
+
+    @Test
+    void failureKeyValues_leavesOutAKeyTheMdcHasAlready() {
+        var conflict = new TestConflictException(null, Map.of("messageType", "RefundRequested", "paymentId", 8L));
+
+        Map<String, Object> actual;
+        try (var _ = MDC.putCloseable("messageType", "RefundRequested")) {
+            actual = KafkaFailures.failureKeyValues(conflict);
+        }
+
+        assertThat(actual.keySet()).containsExactlyInAnyOrder("exceptionMessage", "code", "paymentId");
     }
 }

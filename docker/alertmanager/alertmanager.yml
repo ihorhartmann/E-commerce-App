@@ -1,0 +1,52 @@
+# Rendered by entrypoint.sh at startup: every ${...} below is replaced by the variable of the same name from .env.
+# The SMTP password is not among them - entrypoint.sh writes it to a file of its own, so no secret ever lands in a
+# file of the repository.
+global:
+  smtp_smarthost: ${ALERT_SMTP_SMARTHOST}
+  smtp_from: ${ALERT_EMAIL_FROM}
+  smtp_auth_username: ${ALERT_SMTP_USERNAME}
+  smtp_auth_password_file: /tmp/alertmanager/smtp_password
+  # port 587: STARTTLS
+  smtp_require_tls: true
+
+templates:
+  - /tmp/alertmanager/templates/*.tmpl
+
+# One email per alert and service; a critical one goes out at once, its changes - resolved, another one firing - within
+# a minute, and it repeats every hour while it fires; a warning waits a little for others to join it, its changes go
+# out every 5 minutes, and it repeats every 4 hours.
+route:
+  receiver: email-warning
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: email-critical
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+
+# While a service has a critical alert, its warnings say nothing new.
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [service]
+
+receivers:
+  - name: email-critical
+    email_configs:
+      - to: ${ALERT_EMAIL_TO}
+        send_resolved: true
+        headers:
+          Subject: '{{ template "email.critical.subject" . }}'
+        html: '{{ template "email.critical.html" . }}'
+
+  - name: email-warning
+    email_configs:
+      - to: ${ALERT_EMAIL_TO}
+        send_resolved: true
+        headers:
+          Subject: '{{ template "email.warning.subject" . }}'
+        html: '{{ template "email.warning.html" . }}'

@@ -16,6 +16,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
+import org.springframework.http.server.observation.ServerRequestObservationContext;
 import org.springframework.http.server.observation.ServerRequestObservationConvention;
 import org.springframework.kafka.support.micrometer.KafkaListenerObservationConvention;
 import org.springframework.kafka.support.micrometer.KafkaTemplateObservationConvention;
@@ -36,8 +37,19 @@ public class TracingConfig {
 
     private static final String JDBC_OBSERVATION_PREFIX = "jdbc.";
 
+    // /health and its probes, /health/liveness and /health/readiness
+    private static final String HEALTH_PATH = "/health";
+
     public TracingConfig(Environment environment) {
         REQUIRED_ENV_VARS.forEach(environment::getRequiredProperty);
+    }
+
+    // Health checks and probes are polled every few seconds: neither a trace each, nor a series of the HTTP metrics.
+    @Bean
+    public ObservationPredicate skipHealthCheckObservations() {
+        return (_, context) -> !(context instanceof ServerRequestObservationContext serverContext
+                && serverContext.getCarrier() != null
+                && serverContext.getCarrier().getRequestURI().startsWith(HEALTH_PATH));
     }
 
     // The outbox relay polls every 200ms and the sweeps run on timers: each run would be a trace of its own, nearly

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlin.uuid.Uuid
 
 private const val CSRF_HEADER = "X-XSRF-TOKEN"
-private const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
+const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 private val MUTATING_METHODS = setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete)
 
 /**
@@ -46,7 +46,8 @@ fun createHttpClient(): HttpClient = HttpClient(Js) {
 /**
  * Adds to every state-changing request the CSRF token the gateway expects back from a session (cookie) request, and
  * the Idempotency-Key the services require. The key is set once per request: [HttpRequestRetry] resends the same
- * request, so a retry reuses it.
+ * request, so a retry reuses it. A request that already carries one keeps it - the checkout sends its order again with
+ * the same key when the user retries it after an error.
  */
 private val MutatingRequestHeaders = createClientPlugin("MutatingRequestHeaders") {
     onRequest { request, _ ->

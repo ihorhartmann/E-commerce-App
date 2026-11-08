@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  # --- stage 1: unit tests, all 5 services and the web UI in parallel ---
+  # --- stage 1: unit tests, all 5 services, the web UI and the alerting in parallel ---
 
   unit-inventory:
     runs-on: ubuntu-latest
@@ -91,10 +91,27 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew jsNodeTest jsBrowserDistribution
 
+  # the alert rules and Alertmanager's routing, offline - the same steps as alerting.yml
+  unit-alerting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test the alert rules
+        run: >-
+          docker run --rm -v "$PWD/docker/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v3.15.1
+          test rules /p/tests/alerts_test.yaml
+      - name: Check Alertmanager's configuration and routing
+        run: >-
+          docker run --rm -v "$PWD/docker/alertmanager:/etc/alertmanager:ro"
+          -e ALERT_SMTP_SMARTHOST=smtp.example.com:587 -e ALERT_SMTP_USERNAME=ci@example.com
+          -e ALERT_SMTP_PASSWORD=ci-password -e ALERT_EMAIL_FROM=ci@example.com -e ALERT_EMAIL_TO=ci@example.com
+          -e GRAFANA_URL=http://localhost:8089
+          --entrypoint /bin/sh prom/alertmanager:v0.34.2 /etc/alertmanager/entrypoint.sh check
+
   # --- stage 2: REST + Kafka integration tests, only if every unit job above passed ---
 
   integration-inventory:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui, unit-alerting]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -108,7 +125,7 @@ jobs:
       - run: go test -tags=integration ./...
 
   integration-shipping:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui, unit-alerting]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -122,7 +139,7 @@ jobs:
       - run: go test -tags=integration ./...
 
   integration-order:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui, unit-alerting]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -137,7 +154,7 @@ jobs:
       - run: ./gradlew test -Pintegration
 
   integration-payment:
-    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui]
+    needs: [unit-inventory, unit-shipping, unit-order, unit-payment, unit-gateway, unit-web-ui, unit-alerting]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -177,6 +194,7 @@ jobs:
       GATEWAY_PORT: 8080
       WEB_UI_PORT: 3000
       GRAFANA_PORT: 8089
+      GRAFANA_DB_PASSWORD: e2e-grafana-reader-password
       ALLOY_UI_PORT: 12345
       GATEWAY_CLIENT_SECRET: e2e-gateway-secret
       ORDER_SERVICE_CLIENT_SECRET: e2e-order-service-secret

@@ -1,10 +1,10 @@
 package com.hartmann.config
 
+import org.springframework.boot.webflux.error.ErrorWebExceptionHandler
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
-import org.springframework.http.HttpStatus
 import org.springframework.security.config.web.server.ServerHttpSecurity
 import org.springframework.security.config.web.server.invoke
 import org.springframework.security.oauth2.client.oidc.web.server.logout.OidcClientInitiatedServerLogoutSuccessHandler
@@ -19,7 +19,8 @@ import org.springframework.security.oauth2.jwt.JwtValidators
 import org.springframework.security.oauth2.jwt.NimbusReactiveJwtDecoder
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder
 import org.springframework.security.web.server.SecurityWebFilterChain
-import org.springframework.security.web.server.authentication.HttpStatusServerEntryPoint
+import org.springframework.security.web.server.ServerAuthenticationEntryPoint
+import org.springframework.security.web.server.authorization.ServerAccessDeniedHandler
 import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository
 import org.springframework.security.web.server.csrf.CsrfToken
 import org.springframework.security.web.server.csrf.CsrfWebFilter
@@ -38,9 +39,15 @@ class SecurityConfig {
     fun securityWebFilterChain(
         http: ServerHttpSecurity,
         clientRegistrationRepository: ReactiveClientRegistrationRepository,
+        errorHandler: ErrorWebExceptionHandler,
     ): SecurityWebFilterChain = http {
+        // a request that isn't authenticated, or fails the CSRF check, is answered by GlobalExceptionHandler - a
+        // ProblemDetail, the same as every other error response
+        val authEntryPoint = ServerAuthenticationEntryPoint { exchange, exception -> errorHandler.handle(exchange, exception) }
+        val accessDeniedHandler = ServerAccessDeniedHandler { exchange, exception -> errorHandler.handle(exchange, exception) }
+
         authorizeExchange {
-            authorize(HEALTH_PATH, permitAll)
+            authorize(HEALTH_PATHS, permitAll)
             authorize(STRIPE_WEBHOOK_PATH, permitAll)
             // the catalog is public: browsing products needs no login, ordering them does
             authorize(pathMatchers(HttpMethod.GET, PRODUCTS_PATH), permitAll)
@@ -51,7 +58,10 @@ class SecurityConfig {
         // browser: Authorization Code + PKCE login, tokens kept in the server-side session, HttpOnly session cookie
         oauth2Login { }
         // Postman, e2e tests: their own Bearer access token
-        oauth2ResourceServer { jwt { } }
+        oauth2ResourceServer {
+            authenticationEntryPoint = authEntryPoint
+            jwt { }
+        }
         csrf {
             // readable by the SPA, which echoes it back in the X-XSRF-TOKEN header
             csrfTokenRepository = CookieServerCsrfTokenRepository.withHttpOnlyFalse()
@@ -59,10 +69,13 @@ class SecurityConfig {
             // the raw cookie value is expected back, not the BREACH-masked one meant for server-rendered forms
             csrfTokenRequestHandler = ServerCsrfTokenRequestAttributeHandler()
             requireCsrfProtectionMatcher = csrfProtectedRequestMatcher()
+            this.accessDeniedHandler = accessDeniedHandler
         }
         exceptionHandling {
-            // the SPA decides itself when to send the user to /oauth2/authorization/keycloak
-            authenticationEntryPoint = HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)
+            // a 401, not a redirect to the login page: the SPA decides itself when to send the user to
+            // /oauth2/authorization/keycloak
+            authenticationEntryPoint = authEntryPoint
+            this.accessDeniedHandler = accessDeniedHandler
         }
         logout {
             // ends the Keycloak session too, otherwise the next login would go through without a password
@@ -129,7 +142,8 @@ class SecurityConfig {
     private companion object {
         const val KEYCLOAK_REGISTRATION_ID = "keycloak"
 
-        const val HEALTH_PATH = "/health"
+        // /health and its probes, /health/liveness and /health/readiness
+        const val HEALTH_PATHS = "/health/**"
         const val STRIPE_WEBHOOK_PATH = "/api/v1/webhooks/stripe"
         const val PRODUCTS_PATH = "/api/v1/products/**"
         const val CURRENT_USER_PATH = "/api/v1/me"

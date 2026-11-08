@@ -14,4 +14,5 @@ const (
 	OIDCRolesClaimEnvVar           = "OIDC_ROLES_CLAIM"
 	OTELExporterOTLPEndpointEnvVar = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	OTELServiceNameEnvVar          = "OTEL_SERVICE_NAME"
+	LogLevelEnvVar                 = "LOG_LEVEL"
 )

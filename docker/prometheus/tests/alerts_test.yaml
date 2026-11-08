@@ -1,0 +1,180 @@
+# Unit tests of rules/alerts.yaml: made-up series, evaluated offline by `promtool test rules` - no Prometheus, no
+# Alertmanager, no email. Each test checks when an alert fires, with which labels Alertmanager routes it and which
+# text the email gets. Kept out of rules/, whose every *.yaml Prometheus loads as rules.
+#
+#   docker run --rm -v "$PWD/docker/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v3.15.1 \
+#     test rules /p/tests/alerts_test.yaml
+
+rule_files:
+  - ../rules/alerts.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- ServiceDown ---
+  - name: a service whose metrics stop coming is down; one still reporting is not
+    interval: 1m
+    input_series:
+      - series: 'target_info{job="order-service"}'
+        values: '1x10 _x10'
+      - series: 'target_info{job="payment-service"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ServiceDown
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels: { severity: critical, service: order-service, job: order-service }
+            exp_annotations:
+              summary: order-service has sent no metrics for over a minute
+              description: The service is down, restarting, or can't reach Alloy. Check `docker compose ps` and its logs.
+              dashboard: /d/ecommerce-infrastructure
+
+  # --- HighServerErrorRate ---
+  - name: over 5% of the requests failing with a 5xx fires after 2 minutes
+    interval: 1m
+    input_series:
+      # 9 requests a minute succeed, 1 fails: 10%
+      - series: 'http_server_request_duration_seconds_count{job="gateway-service", http_response_status_code="200"}'
+        values: '0+9x15'
+      - series: 'http_server_request_duration_seconds_count{job="gateway-service", http_response_status_code="503"}'
+        values: '0+1x15'
+    alert_rule_test:
+      # true from the first minutes, but pending for the 2 minutes of `for`
+      - eval_time: 2m
+        alertname: HighServerErrorRate
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: HighServerErrorRate
+        exp_alerts:
+          - exp_labels: { severity: critical, service: gateway-service, job: gateway-service }
+            exp_annotations:
+              summary: 10% of gateway-service's requests fail with a 5xx
+              description: Over 5% of the requests of the last 5 minutes. On the gateway it's what the customers see.
+              dashboard: /d/ecommerce-service?var-service=gateway-service
+
+  - name: a single failed request out of a handful is no alert
+    interval: 1m
+    input_series:
+      # 1 request in 5 minutes failing is 100%, but too few to tell
+      - series: 'http_server_request_duration_seconds_count{job="gateway-service", http_response_status_code="503"}'
+        values: '0x5 1x10'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: HighServerErrorRate
+        exp_alerts: []
+
+  # --- KafkaLagGrowing ---
+  - name: a lag that keeps growing fires; a lag that stays where it is doesn't
+    interval: 1m
+    input_series:
+      - series: 'kafka_consumergroup_uncommitted_offsets{consumergroup="order-service", topic="payment.events", partition="0"}'
+        values: '0+10x30'
+      - series: 'kafka_consumergroup_uncommitted_offsets{consumergroup="shipping-service", topic="shipping.commands", partition="0"}'
+        values: '100x30'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KafkaLagGrowing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: KafkaLagGrowing
+        exp_alerts:
+          - exp_labels: { severity: critical, service: order-service, consumergroup: order-service, topic: payment.events }
+            exp_annotations:
+              summary: order-service is 250 messages behind on payment.events, and growing
+              description: The consumer is stuck or slower than the producers - a message blocking its partition with retries, or the service down.
+              dashboard: /d/ecommerce-overview
+
+  # --- OutboxStuck ---
+  - name: an outbox message unsent for over 2 minutes fires after another minute
+    interval: 1m
+    input_series:
+      - series: 'ecommerce_outbox_oldest_age_seconds{service="payment-service"}'
+        values: '0+60x10'
+      - series: 'ecommerce_outbox_oldest_age_seconds{service="order-service"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: OutboxStuck
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: OutboxStuck
+        exp_alerts:
+          - exp_labels: { severity: critical, service: payment-service }
+            exp_annotations:
+              summary: "payment-service's oldest unsent outbox message is 4m 0s old"
+              description: The outbox relay doesn't publish - Kafka unreachable or the relay failing. The saga waits for these messages.
+              dashboard: /d/ecommerce-overview
+
+  # --- MessageDeadLettered ---
+  - name: a message waiting in a DLT fires at once and resolves once the bookmark moves past it
+    interval: 1m
+    input_series:
+      - series: 'kafka_consumergroup_uncommitted_offsets{consumergroup="dlt-redrive", topic="payment.commands.DLT", partition="0"}'
+        values: '0 1 1 0'
+      # an ordinary consumer's lag is no DLT
+      - series: 'kafka_consumergroup_uncommitted_offsets{consumergroup="payment-service", topic="payment.commands", partition="0"}'
+        values: '5 5 5 5'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: MessageDeadLettered
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: MessageDeadLettered
+        exp_alerts:
+          - exp_labels: { severity: warning, service: payment.commands.DLT, topic: payment.commands.DLT }
+            exp_annotations:
+              summary: 1 message(s) wait in payment.commands.DLT
+              description: Each needs a decision - fix the cause and redrive it, or discard it - and then the dlt-redrive bookmark moved past it.
+              dashboard: /d/ecommerce-overview
+      - eval_time: 3m
+        alertname: MessageDeadLettered
+        exp_alerts: []
+
+  # --- PaymentFailuresHigh ---
+  - name: an hour with many more failed payments than the day before fires
+    interval: 5m
+    input_series:
+      # a day of one confirmed payment every 5 minutes; then, for an hour, one failed for every confirmed
+      - series: 'ecommerce_payments_count{status="CONFIRMED"}'
+        values: '0+1x300'
+      - series: 'ecommerce_payments_count{status="FAILED"}'
+        values: '0x288 0+1x12'
+    alert_rule_test:
+      - eval_time: 24h
+        alertname: PaymentFailuresHigh
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: PaymentFailuresHigh
+        exp_alerts:
+          - exp_labels: { severity: warning, service: payment-service }
+            exp_annotations:
+              summary: 50% of the last hour's payments failed or expired
+              description: Over twice the last day's share - Stripe declining more cards, or customers abandoning the payment.
+              dashboard: /d/ecommerce-saga
+
+  # --- ContainerRestarted ---
+  - name: a container that started again restarted; kafka-init, which runs once, is no restart
+    interval: 1m
+    input_series:
+      - series: 'container_start_time_seconds{container_label_com_docker_compose_service="order-service"}'
+        values: '100x5 400x5'
+      - series: 'container_start_time_seconds{container_label_com_docker_compose_service="kafka-init"}'
+        values: '100x5 400x5'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ContainerRestarted
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ContainerRestarted
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: order-service
+              container_label_com_docker_compose_service: order-service
+            exp_annotations:
+              summary: order-service restarted 1 time(s) in 15 minutes
+              description: A crash, an out-of-memory kill or a failed startup - its logs before the restart say which.
+              dashboard: /d/ecommerce-infrastructure

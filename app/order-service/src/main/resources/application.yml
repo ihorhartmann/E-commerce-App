@@ -45,6 +45,8 @@ spring:
     bootstrap-servers: ${KAFKA_HOST}:${KAFKA_PORT}
     admin:
       fail-fast: true
+      # how long the startup waits for Kafka to declare the topics - as long as the Go services wait
+      operation-timeout: 60s
     consumer:
       group-id: order-service
       enable-auto-commit: false
@@ -64,19 +66,59 @@ spring:
       ack-mode: batch
       observation-enabled: true
 
-# Traces go to the collector (Alloy) over OTLP/HTTP. Spring Boot reads OTEL_EXPORTER_OTLP_ENDPOINT and
-# OTEL_SERVICE_NAME itself (no placeholders here - see TracingConfig)
 management:
+  endpoints:
+    web:
+      # /health, /health/liveness, /health/readiness - the same paths as the gateway and the Go services
+      base-path: /
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # the liveness and readiness groups outside Kubernetes too
+      probes:
+        enabled: true
+      group:
+        readiness:
+          # started, not shutting down, and the database answers. Kafka is no part of it: messages go out through the
+          # outbox, and the consumer retries on its own
+          include: readinessState,db
+  # Traces and metrics go to the collector (Alloy) over OTLP/HTTP. Spring Boot reads OTEL_EXPORTER_OTLP_ENDPOINT and
+  # OTEL_SERVICE_NAME itself for the traces (no placeholders - see TracingConfig)
   tracing:
     sampling:
       probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      # one per replica - the container id in Docker, the pod name in Kubernetes - so that the metrics of two replicas
+      # aren't the same series in Prometheus
+      "[service.instance.id]": ${HOSTNAME:${random.uuid}}
   observations:
     enable:
       "[spring.security]": false
   otlp:
     metrics:
       export:
-        enabled: false
+        # required by TracingConfig, so the placeholder always resolves
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/metrics
+        # the same step as the Go services' export interval
+        step: 15s
+        # timers in seconds, as OpenTelemetry's semantic conventions and the Go services have them
+        base-time-unit: seconds
+  metrics:
+    enable:
+      # The Kafka clients' own metrics - hundreds of them - and Spring Kafka's timers are left out: the consumer lag
+      # comes from Alloy's Kafka exporter, the handling of a message from ecommerce.kafka.* (KafkaMetricsInterceptor)
+      kafka: false
+      "[spring.kafka]": false
+    distribution:
+      # explicit buckets, the same as the Go services', so the percentiles of every service come from the same buckets
+      slo:
+        "[http.server.request.duration]": 5ms,10ms,25ms,50ms,75ms,100ms,250ms,500ms,750ms,1s,2500ms,5s,7500ms,10s
+        "[http.client.requests]": 5ms,10ms,25ms,50ms,75ms,100ms,250ms,500ms,750ms,1s,2500ms,5s,7500ms,10s
+        "[jdbc.query]": 1ms,5ms,10ms,25ms,50ms,100ms,250ms,500ms,1s,2500ms
+        "[ecommerce.kafka.message.duration]": 5ms,10ms,25ms,50ms,75ms,100ms,250ms,500ms,750ms,1s,2500ms,5s,7500ms,10s
+  # logs stay on stdout (Alloy reads them from there)
   logging:
     export:
       otlp:
@@ -88,3 +130,10 @@ jdbc:
   includes: QUERY
   datasource-proxy:
     include-parameter-values: false
+
+# one JSON object per line on stdout, which Alloy reads and pushes to Loki: the trace and span ids Micrometer Tracing
+# puts in the MDC, and the key-value pairs of a log event, become fields of their own
+logging:
+  structured:
+    format:
+      console: logstash

@@ -9,6 +9,7 @@ import com.hartmann.application.port.out.kafka.PaymentKafkaProducer;
 import com.hartmann.application.port.out.repository.PaymentRepository;
 import com.hartmann.application.port.out.repository.RefundRepository;
 import com.hartmann.application.port.out.repository.exception.DuplicateIdempotencyKeyException;
+import com.hartmann.application.port.out.tracing.CorrelationTagger;
 import com.hartmann.application.service.exception.ConflictingRefundNotFoundException;
 import com.hartmann.application.service.exception.RefundIdempotencyKeyReusedException;
 import com.hartmann.domain.model.Payment;
@@ -55,6 +56,8 @@ class RefundServiceImplTest {
     @Mock
     private PaymentKafkaProducer paymentKafkaProducer;
     @Mock
+    private CorrelationTagger correlationTagger;
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     private RefundServiceImpl refundService;
@@ -62,7 +65,7 @@ class RefundServiceImplTest {
     @BeforeEach
     void setUp() {
         refundService = new RefundServiceImpl(
-                refundRepository, paymentRepository, paymentGateway, paymentKafkaProducer, transactionManager
+                refundRepository, paymentRepository, paymentGateway, paymentKafkaProducer, correlationTagger, transactionManager
         );
     }
 
@@ -402,6 +405,7 @@ class RefundServiceImplTest {
 
         refundService.updateStatusByExternalId("re_test", status);
 
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verify(paymentKafkaProducer, times(1)).publishRefundCompleted(KafkaUtils.formatKafkaId(orderId), orderId, money(amount));
         verifyNoMoreInteractions(paymentKafkaProducer);
@@ -428,6 +432,7 @@ class RefundServiceImplTest {
         var paymentCaptor = ArgumentCaptor.forClass(Payment.class);
         verify(paymentRepository, times(1)).updateRefundedAmount(paymentCaptor.capture());
         assertThat(paymentCaptor.getValue().refundedAmount()).isEqualTo(money("0.00"));
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verify(paymentKafkaProducer, times(1)).publishRefundFailed(KafkaUtils.formatKafkaId(orderId), orderId);
         verifyNoMoreInteractions(paymentKafkaProducer);
     }
@@ -439,14 +444,18 @@ class RefundServiceImplTest {
 
         // e.g. submitRefund already published synchronously, and this call is a later
         // refund.updated webhook reporting the same already-terminal status.
-        var refund = testRefund(1L, 1L, UUID.randomUUID(), status, "40.00");
+        var paymentId = 1L;
+        var amount = "40.00";
+        var refund = testRefund(1L, paymentId, UUID.randomUUID(), status, amount);
         when(refundRepository.getByExternalId(externalId)).thenReturn(refund);
+        var orderId = 100L;
+        when(paymentRepository.getById(paymentId)).thenReturn(testPayment(paymentId, orderId, amount));
 
         var result = refundService.updateStatusByExternalId(externalId, status);
 
         assertThat(result).isSameAs(refund);
         verify(refundRepository, times(0)).updateStatus(anyLong(), anyLong(), any());
-        verify(paymentRepository, times(0)).getById(anyLong());
+        verify(correlationTagger, times(1)).tag(KafkaUtils.formatKafkaId(orderId));
         verify(paymentRepository, times(0)).updateRefundedAmount(any());
         verifyNoInteractions(paymentKafkaProducer);
     }

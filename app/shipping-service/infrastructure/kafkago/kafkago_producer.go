@@ -39,6 +39,7 @@ func (p *kafkaGoMessageProducer) SendBatch(messages []*dto.OutboxMessage) error 
 	spans := make([]trace.Span, len(messages))
 	for i, message := range messages {
 		spans[i] = startSendSpan(p.writer.Topic, message.Traceparent, &libMessages[i], message.MessageType, message.MessageID.String(), message.CorrelationID)
+		p.logSending(spans[i], message)
 	}
 
 	err := p.writer.WriteMessages(context.Background(), libMessages...)
@@ -52,6 +53,21 @@ func (p *kafkaGoMessageProducer) SendBatch(messages []*dto.OutboxMessage) error 
 	slog.Info("successfully sent kafka message batch", "count", len(messages))
 
 	return nil
+}
+
+// logSending logs a message about to be sent in its producer span - so in the trace of the work that wrote it to the
+// outbox - with the saga's ids, so the line shows up next to that work's own lines.
+func (p *kafkaGoMessageProducer) logSending(span trace.Span, message *dto.OutboxMessage) {
+	ctx := context.Background()
+	if span != nil {
+		ctx = trace.ContextWithSpan(ctx, span)
+	}
+	slog.DebugContext(ctx, "sending kafka message",
+		"topic", p.writer.Topic,
+		kafka.MessageTypeHeader, message.MessageType,
+		kafka.MessageIDHeader, message.MessageID.String(),
+		kafka.CorrelationIDHeader, message.CorrelationID,
+	)
 }
 
 func toLibMessages(messages []*dto.OutboxMessage) []kafkago.Message {

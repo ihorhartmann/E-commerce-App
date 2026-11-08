@@ -1,6 +1,7 @@
 package com.hartmann.infrastructure.observation;
 
 import com.hartmann.adapter.common.kafka.KafkaConst;
+import com.hartmann.adapter.common.tracing.CorrelationConst;
 import io.micrometer.common.KeyValue;
 import io.micrometer.common.KeyValues;
 import org.apache.kafka.common.header.Header;
@@ -12,7 +13,7 @@ import java.util.ArrayList;
 // Span names and attributes in one format across all services, the ones OpenTelemetry's semantic conventions give.
 public final class SpanNames {
     // The saga's correlation id - the conventions' name for what they also call a correlation id.
-    public static final String CONVERSATION_ID = "messaging.message.conversation_id";
+    public static final String CONVERSATION_ID = CorrelationConst.CONVERSATION_ID_KEY;
     public static final String MESSAGE_TYPE = "messaging.message.type";
     public static final String MESSAGE_ID = "messaging.message.id";
 

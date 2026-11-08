@@ -27,12 +27,13 @@ const (
 func Write(c *gin.Context, err error) {
 	found := apperror.OutermostError(err)
 	status := StatusOf(err)
+	recordFailureMetric(c.Request.Context(), found.Code())
 
 	if status >= http.StatusInternalServerError {
 		slog.ErrorContext(c.Request.Context(), "request failed",
 			"method", c.Request.Method, "path", c.Request.URL.Path, "status", status, apperror.LogAttr(err))
 	} else {
-		slog.WarnContext(c.Request.Context(), "request rejected",
+		slog.WarnContext(c.Request.Context(), "http request rejected",
 			"method", c.Request.Method, "path", c.Request.URL.Path, "status", status, apperror.LogAttr(err))
 	}
 

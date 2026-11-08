@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.uuid.Uuid
 
 data class CheckoutState(
     val address: Address = Address("", "", "", ""),
@@ -41,6 +42,9 @@ sealed interface CheckoutStep {
     data class Finished(val orderId: Long, val paid: Boolean) : CheckoutStep
 }
 
+/** One attempt to place an order, with the Idempotency-Key it is sent with every time the user tries it. */
+private data class PlaceOrderAttempt(val lines: List<OrderLine>, val address: Address, val idempotencyKey: String)
+
 class CheckoutViewModel(
     private val scope: CoroutineScope,
     private val orderApi: OrderApi,
@@ -52,6 +56,7 @@ class CheckoutViewModel(
     private val _state = MutableStateFlow(CheckoutState())
     val state: StateFlow<CheckoutState> = _state
     val cartItems: StateFlow<List<CartItem>> = cartStore.items
+    private var lastAttempt: PlaceOrderAttempt? = null
 
     fun updateAddress(address: Address) {
         // a highlighted field stops being highlighted as soon as it's filled in
@@ -80,10 +85,11 @@ class CheckoutViewModel(
             _state.update { it.copy(invalidFields = missingFields) }
             return
         }
+        val attempt = attemptFor(items.map { OrderLine(it.productId, it.quantity) }, address)
         _state.update { it.copy(busy = true) }
         scope.launchSafely(errorHandler) {
             try {
-                val order = orderApi.placeOrder(items.map { OrderLine(it.productId, it.quantity) }, address)
+                val order = orderApi.placeOrder(attempt.lines, attempt.address, attempt.idempotencyKey)
                 // the stock is reserved for the order now: the cart has done its job
                 cartStore.clear()
                 val step = if (order.clientSecret != null) {
@@ -97,6 +103,20 @@ class CheckoutViewModel(
                 _state.update { it.copy(busy = false) }
             }
         }
+    }
+
+    /**
+     * The attempt to place [lines] for [address]: the last one again if it was for the same order, otherwise a new one
+     * with a key of its own. A failed request may still have placed the order - the gateway gave up waiting, say, while
+     * the order-service went on - so trying again must not place a second one: sent with the same key, it is answered
+     * with the order already placed. A changed cart or address is another order, under another key: the services
+     * reject a key sent again with a different request.
+     */
+    private fun attemptFor(lines: List<OrderLine>, address: Address): PlaceOrderAttempt {
+        val attempt = lastAttempt?.takeIf { it.lines == lines && it.address == address }
+            ?: PlaceOrderAttempt(lines, address, Uuid.generateV7().toString())
+        lastAttempt = attempt
+        return attempt
     }
 
     fun mountPaymentForm(containerSelector: String) {

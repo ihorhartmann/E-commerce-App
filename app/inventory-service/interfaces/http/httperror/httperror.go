@@ -28,12 +28,13 @@ func Write(c *fiber.Ctx, err error) error {
 	err = fromFiberError(err)
 	found := apperror.OutermostError(err)
 	status := StatusOf(err)
+	recordFailureMetric(c.UserContext(), found.Code())
 
 	if status >= http.StatusInternalServerError {
 		slog.ErrorContext(c.UserContext(), "request failed",
 			"method", c.Method(), "path", c.Path(), "status", status, apperror.LogAttr(err))
 	} else {
-		slog.WarnContext(c.UserContext(), "request rejected",
+		slog.WarnContext(c.UserContext(), "http request rejected",
 			"method", c.Method(), "path", c.Path(), "status", status, apperror.LogAttr(err))
 	}
 

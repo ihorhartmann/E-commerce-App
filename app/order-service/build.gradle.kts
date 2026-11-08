@@ -15,6 +15,7 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-client")
@@ -28,6 +29,7 @@ dependencies {
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.4.0")
     implementation("io.github.resilience4j:resilience4j-retry:2.4.0")
+    implementation("io.github.resilience4j:resilience4j-micrometer:2.4.0")
     runtimeOnly("org.postgresql:postgresql:42.7.13")
     testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
@@ -44,6 +46,10 @@ dependencies {
 
 kotlin {
     jvmToolchain(26)
+    compilerOptions {
+        // annotations on type arguments (List<@Valid OrderItemRequest>) reach the bytecode, so Bean Validation sees them
+        freeCompilerArgs.add("-Xemit-jvm-type-annotations")
+    }
 }
 
 tasks.test {
