@@ -9,6 +9,7 @@ import com.hartmann.entities.model.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.ShipmentInfo
 import com.hartmann.entities.value.exception.InvalidAddressException
 import com.hartmann.entities.value.exception.ValueErrorCode
 import com.hartmann.frameworks.config.SecurityConfig
@@ -355,6 +356,37 @@ class OrderControllerTest {
             jsonPath("$.customerId") { value(customerId.toString()) }
             jsonPath("$.items[0].productId") { value(order.items.first().productId) }
             jsonPath("$.items[0].productName") { value(order.items.first().productName) }
+        }
+
+        verify(getOrderUseCase, times(1)).execute(orderId, customerId)
+    }
+
+    @Test
+    fun `getOrderById - shows the shipment without the goods' return to the warehouse`() {
+        val orderId = 1L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        val shipmentId = 7L
+        val pickedUpAt = Instant.parse("2026-11-09T10:00:00Z")
+        val order = Order.createExisting(
+            id = orderId,
+            customerId = customerId,
+            items = listOf(testItem()),
+            address = testAddress(),
+            status = OrderStatus.CANCELLED,
+            shipment = ShipmentInfo(shipmentId, pickedUpAt = pickedUpAt, returnedAt = Instant.parse("2026-11-09T12:00:00Z")),
+            cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+            createdAt = Instant.now(),
+        )
+        whenever(getOrderUseCase.execute(orderId, customerId)).thenReturn(order)
+
+        mockMvc.get("/api/v1/orders/{orderId}", orderId) {
+            with(clientJwt(customerId))
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.status") { value(OrderStatus.CANCELLED.name) }
+            jsonPath("$.shipment.id") { value(shipmentId) }
+            jsonPath("$.shipment.pickedUpAt") { value(pickedUpAt.toString()) }
+            jsonPath("$.shipment.returnedAt") { doesNotExist() }
         }
 
         verify(getOrderUseCase, times(1)).execute(orderId, customerId)

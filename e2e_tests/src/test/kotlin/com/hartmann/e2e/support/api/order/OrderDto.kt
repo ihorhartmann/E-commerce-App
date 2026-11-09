@@ -41,7 +41,6 @@ data class ShipmentInfoDto(
     val id: Long,
     val pickedUpAt: LocalDateTime?,
     val deliveredAt: LocalDateTime?,
-    val returnedAt: LocalDateTime?,
 )
 
 data class RefundDto(

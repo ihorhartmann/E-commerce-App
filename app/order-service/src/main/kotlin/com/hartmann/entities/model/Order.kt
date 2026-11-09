@@ -6,6 +6,7 @@ import com.hartmann.entities.model.exception.OrderNotCancellableException
 import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
 import com.hartmann.entities.model.exception.RefundAmountMismatchException
 import com.hartmann.entities.model.exception.RefundNotRequestedException
+import com.hartmann.entities.model.exception.ReturnNotAwaitedException
 import com.hartmann.entities.model.exception.ShipmentNotCreatedException
 import com.hartmann.entities.model.exception.UnrequestedShipmentCancellationException
 import com.hartmann.entities.value.Address
@@ -137,12 +138,10 @@ class Order private constructor(
      * cancelled it on their own just before. Otherwise the courier couldn't hand the goods over, and the reason
      * tells whether the customer refused them.
      *
-     * Cancelling before the courier picked up the goods moves the order to CANCEL_REQUESTED with
-     * nothing left to physically return. Cancelling once the courier already has the goods also
-     * moves it to CANCEL_REQUESTED, but flags [awaitingReturn] - [returnToStock] and
-     * [confirmRefund] each check whether the other already completed (refund confirmation is
-     * typically much faster than the courier's physical trip back) before finalizing to CANCELLED.
-     * Either way the order was already paid, so a refund of [refundAmount] is requested right away.
+     * Either way the order moves to CANCEL_REQUESTED and, as it was already paid, a refund of [refundAmount] is
+     * requested right away; [confirmRefund] finalizes it to CANCELLED. If the courier already has the goods, the
+     * order also flags [awaitingReturn]: their trip back to the warehouse is logistics, recorded by [returnToStock],
+     * and doesn't hold the customer's order back.
      */
     fun cancelShipment(shipmentCancellationReason: ShipmentCancellationReason) {
         requireOpenShipment("cancel shipment")
@@ -181,26 +180,23 @@ class Order private constructor(
     fun requiresReservationRelease(): Boolean = cancellationReason != null && !wasPickedUp()
 
     /**
-     * The courier physically returned the goods, which only happens once the shipment's cancellation is confirmed.
-     * Finalizes to CANCELLED if the refund already confirmed.
+     * The courier physically returned the goods of a cancelled shipment to the warehouse. Only the shipment records
+     * it: the order's status follows the customer's side - the refund - not where the goods are, so it's whatever
+     * [confirmRefund] made it. Reporting goods the order doesn't wait for, or reporting them twice, is rejected.
      */
     fun returnToStock() {
-        requireStatus("return to stock", OrderStatus.CANCEL_REQUESTED)
-        val currentRefund = requireRefund("return to stock")
-        val currentShipment = requireShipment("return to stock")
-        val returnedShipment = currentShipment.returnToInventory()
-        if (currentRefund.isConfirmed) {
-            status = OrderStatus.CANCELLED
+        if (!awaitingReturn) {
+            throw ReturnNotAwaitedException(id)
         }
-        shipment = returnedShipment
+        val currentShipment = requireShipment("return to stock")
+        shipment = currentShipment.returnToInventory()
         awaitingReturn = false
     }
 
     /**
-     * Payment service confirmed the refund actually went through. Finalizes to CANCELLED unless
-     * this cancellation still needs the goods to physically come back first ([awaitingReturn]) -
-     * in that case only the refund is recorded, and [returnToStock] finalizes the order once the
-     * goods arrive. The refunded amount must be the requested [refundAmount].
+     * Payment service confirmed the refund actually went through, which finalizes the cancellation to CANCELLED -
+     * even if the goods are still on their way back to the warehouse ([awaitingReturn]): that's no concern of the
+     * customer's. The refunded amount must be the requested [refundAmount].
      */
     fun confirmRefund(amount: Money) {
         requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
@@ -208,11 +204,8 @@ class Order private constructor(
         if (amount != refundAmount()) {
             throw RefundAmountMismatchException(id, amount, refundAmount())
         }
-        val confirmedRefund = currentRefund.confirm(amount)
-        if (!awaitingReturn) {
-            status = OrderStatus.CANCELLED
-        }
-        refund = confirmedRefund
+        refund = currentRefund.confirm(amount)
+        status = OrderStatus.CANCELLED
     }
 
     /** Payment service reported the refund failed; the order stays CANCEL_REQUESTED, flagged for follow-up. */

@@ -102,7 +102,6 @@ private fun OrderDetails(order: Order, cancelling: Boolean, onCancel: () -> Unit
                 order.paymentConfirmedAt?.let { Li { Text("Paid: ${formatTimestamp(it)}") } }
                 order.shipment?.pickedUpAt?.let { Li { Text("Picked up by the courier: ${formatTimestamp(it)}") } }
                 order.shipment?.deliveredAt?.let { Li { Text("Delivered: ${formatTimestamp(it)}") } }
-                order.shipment?.returnedAt?.let { Li { Text("Returned to the warehouse: ${formatTimestamp(it)}") } }
                 order.cancellationReason?.let { Li { Text("Cancellation: ${cancellationReasonLabel(it)}") } }
             }
         }

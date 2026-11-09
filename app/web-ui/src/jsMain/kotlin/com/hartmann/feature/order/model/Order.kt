@@ -26,7 +26,7 @@ data class OrderSummary(
 
 data class OrderItem(val productName: String, val quantity: Int, val price: Money)
 
-data class ShipmentProgress(val pickedUpAt: String?, val deliveredAt: String?, val returnedAt: String?)
+data class ShipmentProgress(val pickedUpAt: String?, val deliveredAt: String?)
 
 data class RefundProgress(val requestedAt: String, val amount: Money?, val confirmedAt: String?, val failedAt: String?)
 

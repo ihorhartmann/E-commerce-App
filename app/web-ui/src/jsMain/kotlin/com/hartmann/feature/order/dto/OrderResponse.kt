@@ -33,7 +33,7 @@ data class OrderItemResponseDto(val productName: String, val quantity: Int, val 
 data class AddressResponseDto(val city: String, val postalCode: String, val line1: String, val line2: String)
 
 @Serializable
-data class ShipmentResponseDto(val pickedUpAt: String?, val deliveredAt: String?, val returnedAt: String?)
+data class ShipmentResponseDto(val pickedUpAt: String?, val deliveredAt: String?)
 
 @Serializable
 data class RefundResponseDto(val requestedAt: String, val amount: MoneyDto?, val confirmedAt: String?, val failedAt: String?)
@@ -47,7 +47,7 @@ fun fromOrderResponse(response: OrderResponse): Order = Order(
     address = Address(response.address.city, response.address.postalCode, response.address.line1, response.address.line2),
     createdAt = response.createdAt,
     paymentConfirmedAt = response.paymentConfirmedAt,
-    shipment = response.shipment?.let { ShipmentProgress(it.pickedUpAt, it.deliveredAt, it.returnedAt) },
+    shipment = response.shipment?.let { ShipmentProgress(it.pickedUpAt, it.deliveredAt) },
     refund = response.refund?.let { fromRefundResponseDto(it) },
 )
 
