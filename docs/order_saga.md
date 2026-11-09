@@ -25,6 +25,11 @@ separate statuses but as nullable facts on `Order` (`paymentConfirmedAt`,
 `shipment.pickedUpAt`, `shipment.deliveredAt`, `refund.confirmedAt`,
 `refund.failedAt`, `shipment.returnedAt`) plus an `awaitingReturn` flag.
 
+The status follows the customer's side of the order. Logistics the customer
+has no part in - the courier bringing cancelled goods back to the warehouse -
+is recorded on the order (`awaitingReturn`, `shipment.returnedAt`) but never
+holds its status back, and isn't part of the customer's `OrderResponse`.
+
 ```mermaid
 stateDiagram-v2
     [*] --> PLACED: place order
@@ -40,10 +45,8 @@ stateDiagram-v2
 
     CANCEL_REQUESTED --> FULFILLED: delivered before<br/>the request reached shipping
     CANCEL_REQUESTED --> CANCEL_REQUESTED: shipment cancelled or lost,<br/>refund requested
-    CANCEL_REQUESTED --> CANCEL_REQUESTED: refund confirmed,<br/>awaiting return
-    CANCEL_REQUESTED --> CANCEL_REQUESTED: returned,<br/>awaiting refund
     CANCEL_REQUESTED --> CANCEL_REQUESTED: refund failed
-    CANCEL_REQUESTED --> CANCELLED: refund & return done
+    CANCEL_REQUESTED --> CANCELLED: refund confirmed
 
     CANCELLED --> [*]
     FULFILLED --> [*]
@@ -60,8 +63,9 @@ requested (`refund`):
    answered yet. Nothing is refunded or released, and the shipment's events
    are still accepted (see "Customer cancels the order" below);
 2. **cancellation confirmed** - the shipment is cancelled or lost, the refund
-   is requested, and the order waits for it and, after a pickup, for the
-   goods to come back.
+   is requested, and the order waits for its confirmation. After a pickup, the
+   goods' trip back to the warehouse runs alongside and doesn't hold the
+   order back.
 
 `RefundFailed` deliberately doesn't move the status - it's a flag for support
 (`refund.failedAt`), not a separate stage: without manual intervention
@@ -178,14 +182,14 @@ sequenceDiagram
 
         C->>Sh: HTTP: POST /shipments/{id}/return
         Sh--)O: Kafka: ShipmentReturnedToInventory
-        Note over O: Order.returnToStock() -- shipment.returnedAt<br/>-> CANCELLED only if refund already confirmed,<br/>otherwise stays CANCEL_REQUESTED
+        Note over O: Order.returnToStock() -- shipment.returnedAt<br/>-- awaitingReturn=false,<br/>status unchanged (CANCELLED once refunded)
         O--)I: Kafka: Restock
         Note over I: onHand += qty (per order item)
     end
 
     alt Refund confirmed by Stripe
         P--)O: Kafka: RefundCompleted
-        Note over O: Order.confirmRefund(amount) -- refund.confirmedAt/amount<br/>-> CANCELLED unless still awaitingReturn,<br/>otherwise stays CANCEL_REQUESTED
+        Note over O: Order.confirmRefund(amount) -- refund.confirmedAt/amount<br/>-> CANCELLED, even while the goods<br/>are still on their way back
     else Refund failed
         P--)O: Kafka: RefundFailed
         Note over O: Order.markRefundFailed() -- refund.failedAt,<br/>stays CANCEL_REQUESTED (needs manual intervention)
@@ -194,10 +198,11 @@ sequenceDiagram
 
 `RefundCompleted`/`RefundFailed` and `ShipmentReturnedToInventory` are two
 independent events that can arrive in either order (refund confirmation is
-typically much faster than the courier's physical trip back).
-`Order.confirmRefund`/`Order.returnToStock` each check whether the OTHER half
-has already completed before finalizing to `CANCELLED` - that's exactly what
-`awaitingReturn` is for.
+typically much faster than the courier's physical trip back). Only the refund
+finalizes the order: `Order.confirmRefund` makes it `CANCELLED` whether or not
+the goods are back. `Order.returnToStock` only records the return - it accepts
+it once, and only while `awaitingReturn` is set, so a return the order doesn't
+wait for (or a repeated one) is rejected instead of restocking twice.
 
 ## Protocol: customer cancels the order
 
@@ -292,9 +297,10 @@ compensation mirrors the previous case: `CancelReservation` +
 hand the goods over ("Cancelled by customer" if the recipient refused them,
 "Delivery failed" if nobody could take them). Stock has already been physically
 decremented (`FulfillReservation` already ran) - `CancelReservation` makes no
-sense here. Instead, the order waits for TWO independent events: refund
-confirmation and the courier physically returning the goods (`Restock` in
-Inventory). Only once both have happened does the order become `CANCELLED`.
+sense here. Instead, two independent things follow: the refund, whose
+confirmation makes the order `CANCELLED`, and the courier physically returning
+the goods (`Restock` in Inventory), which the order records but which doesn't
+change its status.
 
 **Shipment lost after pickup.** The goods are never coming back
 (`awaitingReturn` is always `false` on this path) - the only compensation is

@@ -46,9 +46,10 @@ ecommerce_orders:
         usage: GAUGE
         description: Orders in this status
 
-# Orders stuck in a status the saga should have moved them out of long ago: waiting for the payment, or for the
-# shipping-service's answer to a cancellation, for over 30 minutes. Every such status is listed, with 0 when none is
-# stuck in it, so the series exists for an alert to compare.
+# Orders stuck in a status the saga should have moved them out of long ago: waiting for the payment, or a cancellation
+# waiting for the shipping-service's answer or for its refund, for over 30 minutes. A courier bringing cancelled goods
+# back to the warehouse doesn't count: the refund alone finalizes the order to CANCELLED. Every such status is listed,
+# with 0 when none is stuck in it, so the series exists for an alert to compare.
 ecommerce_orders_stuck:
   query: |
     SELECT s.status, count(o.id) AS count

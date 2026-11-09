@@ -55,26 +55,24 @@ class CourierCancelsDeliveryE2eTest : E2eScenarioTest() {
         assertThat(cancelledShipment.cancellationReason).isEqualTo(reason)
         assertThat(cancelledShipment.holder).isEqualTo("Courier")
 
+        // the refund alone finalizes the customer's order, while the courier still has the goods
+        val cancelled = "CANCELLED"
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
-            assertThat(orderAfterCancel.status).isEqualTo("CANCEL_REQUESTED")
-            assertThat(orderAfterCancel.cancellationReason).isEqualTo("DELIVERY_FAILED")
-            assertThat(orderAfterCancel.refund?.requestedAt).isNotNull()
+            val orderAfterRefund = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
+            assertThat(orderAfterRefund.status).isEqualTo(cancelled)
+            assertThat(orderAfterRefund.cancellationReason).isEqualTo("DELIVERY_FAILED")
+            assertThat(orderAfterRefund.refund?.confirmedAt).isNotNull()
         }
 
         ShippingApi.confirmReturnedToInventory(shippingUrl, TestUser.COURIER1, shipmentId)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterReturn = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
-            assertThat(orderAfterReturn.status).isEqualTo("CANCELLED")
-            assertThat(orderAfterReturn.cancellationReason).isEqualTo("DELIVERY_FAILED")
-            assertThat(orderAfterReturn.refund?.confirmedAt).isNotNull()
-        }
-        await().atMost(AWAIT_TIMEOUT).untilAsserted {
             val productAfterReturn = InventoryApi.getProduct(inventoryUrl, product.id)
             assertThat(productAfterReturn.quantity).isEqualTo(product.quantity)
             assertThat(productAfterReturn.reserved).isEqualTo(product.reserved)
         }
+        // the return is logistics: the customer's order stays as the refund left it
+        assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo(cancelled)
 
         val refunds = PaymentApi.getRefundsByOrderId(paymentUrl, order.id)
         assertThat(refunds).hasSize(1)
@@ -94,15 +92,15 @@ class CourierCancelsDeliveryE2eTest : E2eScenarioTest() {
         assertThat(cancelledShipment.cancellationReason).isEqualTo(reason)
 
         await().atMost(AWAIT_TIMEOUT).untilAsserted {
-            val orderAfterCancel = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
-            assertThat(orderAfterCancel.status).isEqualTo("CANCEL_REQUESTED")
-            assertThat(orderAfterCancel.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
-            assertThat(orderAfterCancel.refund?.requestedAt).isNotNull()
+            val orderAfterRefund = OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id)
+            assertThat(orderAfterRefund.status).isEqualTo("CANCELLED")
+            assertThat(orderAfterRefund.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
+            assertThat(orderAfterRefund.refund?.confirmedAt).isNotNull()
         }
 
-        // the customer asking to cancel now changes nothing: the cancellation is already under way
-        val orderAfterRequest = OrderApi.cancelOrder(orderUrl, TestUser.CLIENT1, order.id)
-        assertThat(orderAfterRequest.status).isEqualTo("CANCEL_REQUESTED")
+        // the order is already cancelled - and refunded - so the customer has nothing left to cancel
+        val response = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id)
+        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.ORDER_NOT_CANCELLABLE")
     }
 
     @Test

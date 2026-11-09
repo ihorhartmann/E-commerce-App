@@ -46,14 +46,12 @@ data class ShipmentResponseDto(
     val id: Long,
     val pickedUpAt: Instant?,
     val deliveredAt: Instant?,
-    val returnedAt: Instant?,
 )
 
 private fun toShipmentResponseDto(shipment: ShipmentInfo): ShipmentResponseDto = ShipmentResponseDto(
     id = shipment.shipmentId,
     pickedUpAt = shipment.pickedUpAt,
     deliveredAt = shipment.deliveredAt,
-    returnedAt = shipment.returnedAt,
 )
 
 data class RefundResponseDto(

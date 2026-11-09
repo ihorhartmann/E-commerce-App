@@ -6,6 +6,7 @@ import com.hartmann.entities.model.exception.OrderNotCancellableException
 import com.hartmann.entities.model.exception.OrderTransitionNotAllowedException
 import com.hartmann.entities.model.exception.RefundAmountMismatchException
 import com.hartmann.entities.model.exception.RefundNotRequestedException
+import com.hartmann.entities.model.exception.ReturnNotAwaitedException
 import com.hartmann.entities.model.exception.ShipmentNotCreatedException
 import com.hartmann.entities.model.exception.UnrequestedShipmentCancellationException
 import com.hartmann.entities.value.Address
@@ -571,28 +572,23 @@ class OrderTest {
         assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { markRefundFailed() } }
     }
 
-    // --- confirmRefund / returnToStock, both orderings must finalize the same way ---
+    // --- confirmRefund ---
 
     @Test
-    fun `returnToStock - finalizes to cancelled when the refund was already confirmed`() {
+    fun `confirmRefund - finalizes to cancelled while the goods are still on their way back to the warehouse`() {
         val order = cancelRequestedAfterPickup()
+
         order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
-        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
-
-        order.returnToStock()
-
         assertEquals(OrderStatus.CANCELLED, order.status)
-        assertNotNull(order.shipment?.returnedAt)
+        assertTrue(order.refund!!.isConfirmed)
+        // the trip back is logistics: still awaited, just no longer holding the order back
+        assertTrue(order.awaitingReturn)
     }
 
     @Test
     fun `confirmRefund - finalizes to cancelled when the goods already returned`() {
-        val order = cancelRequestedAfterPickup()
-        order.returnToStock()
-
-        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
-        assertFalse(order.awaitingReturn)
+        val order = cancelRequestedAfterPickup().apply { returnToStock() }
 
         order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
@@ -600,8 +596,9 @@ class OrderTest {
     }
 
     @Test
-    fun `confirmRefund - finalizes to cancelled immediately when there is no return to wait for`() {
+    fun `confirmRefund - finalizes to cancelled when there is no return to wait for`() {
         val order = cancelRequestedBeforePickup()
+
         order.confirmRefund(Money(BigDecimal("10.00"), Currency.EUR))
 
         assertEquals(OrderStatus.CANCELLED, order.status)
@@ -638,21 +635,67 @@ class OrderTest {
         }
     }
 
+    // --- returnToStock ---
+
     @Test
-    fun `returnToStock - throws when order has no shipment`() {
-        val order = processingOrder().apply { cancelShipment(ShipmentCancellationReason.RECIPIENT_REFUSED) }
+    fun `returnToStock - records the goods back in stock, leaving a cancellation still awaiting its refund as it is`() {
+        val order = cancelRequestedAfterPickup()
+
+        order.returnToStock()
+
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertNotNull(order.shipment?.returnedAt)
+        assertFalse(order.awaitingReturn)
+    }
+
+    @Test
+    fun `returnToStock - records the goods back in stock, leaving an already cancelled order cancelled`() {
+        val order = cancelRequestedAfterPickup().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
+
+        order.returnToStock()
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertNotNull(order.shipment?.returnedAt)
+        assertFalse(order.awaitingReturn)
+    }
+
+    @Test
+    fun `returnToStock - throws when the courier never had the goods, leaving the order unchanged`() {
+        val order = cancelRequestedBeforePickup()
+
+        assertThrows<ReturnNotAwaitedException> { order.returnToStock() }
+
+        assertNull(order.shipment?.returnedAt)
+    }
+
+    @Test
+    fun `returnToStock - throws when the goods were already returned, leaving the order unchanged`() {
+        val order = cancelRequestedAfterPickup().apply { returnToStock() }
+        val returnedAt = order.shipment?.returnedAt
+
+        assertThrows<ReturnNotAwaitedException> { order.returnToStock() }
+
+        assertEquals(returnedAt, order.shipment?.returnedAt)
+    }
+
+    @Test
+    fun `returnToStock - throws when the order was never cancelled`() {
+        assertThrows<ReturnNotAwaitedException> { orderInDelivery().apply { returnToStock() } }
+    }
+
+    @Test
+    fun `returnToStock - throws when a stored order awaits the goods but has no shipment`() {
+        val order = Order.createExisting(
+            id = 1,
+            customerId = UUID.randomUUID(),
+            items = listOf(testItem()),
+            address = testAddress(),
+            status = OrderStatus.CANCEL_REQUESTED,
+            awaitingReturn = true,
+            createdAt = Instant.now(),
+        )
 
         assertThrows<ShipmentNotCreatedException> { order.returnToStock() }
-    }
-
-    @Test
-    fun `returnToStock - throws while the requested cancellation awaits shipping`() {
-        assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { returnToStock() } }
-    }
-
-    @Test
-    fun `returnToStock - throws when order is not cancel-requested`() {
-        assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { returnToStock() } }
     }
 
     // --- wasPickedUp ---
