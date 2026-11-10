@@ -28,7 +28,8 @@ suspend fun HttpResponse.ensureSuccess() {
     if (status == HttpStatusCode.Unauthorized) {
         throw UnauthorizedException()
     }
-    throw ApiException(status.value, errorMessage(this))
+    val problem = problemOf(this)
+    throw ApiException(status.value, errorMessage(status, problem), problem?.code)
 }
 
 /**
@@ -36,12 +37,10 @@ suspend fun HttpResponse.ensureSuccess() {
  * (4xx) or one to repeat later (503, e.g. a concurrent update or the payment gateway being down). Any other 5xx is
  * the services' own fault, whose title says only "Internal server error".
  */
-private suspend fun errorMessage(response: HttpResponse): String {
-    val status = response.status
+private fun errorMessage(status: HttpStatusCode, problem: ProblemResponse?): String {
     if (status.value >= HttpStatusCode.InternalServerError.value && status != HttpStatusCode.ServiceUnavailable) {
         return "Something went wrong on our side. Try again later."
     }
-    val problem = problemOf(response)
     return problem?.detail?.takeIf { it.isNotBlank() }
         ?: problem?.title?.takeIf { it.isNotBlank() }
         ?: when (status) {

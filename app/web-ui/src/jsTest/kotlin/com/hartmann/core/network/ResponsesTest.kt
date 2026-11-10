@@ -120,4 +120,14 @@ class ResponsesTest {
         assertEquals(HttpStatusCode.InternalServerError.value, actual.status)
         assertEquals("Something went wrong on our side. Try again later.", actual.message)
     }
+
+    @Test
+    fun `ensureSuccess - carries the problem's code, which tells one failure from another`() = runTest {
+        val code = "ORDER.PAYMENT_ALREADY_CONFIRMED"
+        val response = problemResponse(HttpStatusCode.Conflict, """{"title":"Already paid","code":"$code"}""")
+
+        val actual = assertFailsWith<ApiException> { response.ensureSuccess() }
+
+        assertEquals(code, actual.code)
+    }
 }

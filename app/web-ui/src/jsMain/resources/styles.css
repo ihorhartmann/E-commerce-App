@@ -490,6 +490,10 @@ textarea.input {
     border-left: 3px solid var(--success);
 }
 
+.toast-warning {
+    border-left: 3px solid var(--warning);
+}
+
 .toast-error {
     border-left: 3px solid var(--danger);
 }

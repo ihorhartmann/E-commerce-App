@@ -2,7 +2,9 @@ package com.hartmann.feature.order
 
 import com.hartmann.core.network.IDEMPOTENCY_KEY_HEADER
 import com.hartmann.core.network.bodyOrThrow
+import com.hartmann.core.network.exception.ApiException
 import com.hartmann.core.model.Page
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.dto.ListOrdersResponse
 import com.hartmann.feature.order.dto.OrderResponse
 import com.hartmann.feature.order.dto.fromListOrdersResponse
@@ -45,7 +47,11 @@ class KtorOrderApi private constructor(private val client: HttpClient) : OrderAp
         fromOrderResponse(client.get("$ORDERS_PATH/$id").bodyOrThrow<OrderResponse>())
 
     override suspend fun cancelOrder(id: Long): Order =
-        fromOrderResponse(client.post("$ORDERS_PATH/$id/cancel").bodyOrThrow<OrderResponse>())
+        try {
+            fromOrderResponse(client.post("$ORDERS_PATH/$id/cancel").bodyOrThrow<OrderResponse>())
+        } catch (e: ApiException) {
+            if (e.code == OrderAlreadyPaidException.CODE) throw OrderAlreadyPaidException(id) else throw e
+        }
 
     companion object {
         private const val ORDERS_PATH = "api/v1/orders"

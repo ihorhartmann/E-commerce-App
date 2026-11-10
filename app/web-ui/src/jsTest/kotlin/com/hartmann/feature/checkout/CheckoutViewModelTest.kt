@@ -8,9 +8,12 @@ import com.hartmann.core.error.ErrorHandler
 import com.hartmann.core.model.Money
 import com.hartmann.core.notification.Notifier
 import com.hartmann.feature.order.OrderApi
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.model.Address
 import com.hartmann.feature.order.model.AddressField
+import com.hartmann.feature.order.model.Order
 import com.hartmann.feature.order.model.OrderLine
+import com.hartmann.feature.order.model.OrderStatus
 import com.hartmann.feature.order.model.PlacedOrder
 import dev.mokkery.MockMode
 import dev.mokkery.answering.returns
@@ -302,25 +305,79 @@ class CheckoutViewModelTest {
         verifySuspend(not) { paymentGateway.confirm() }
     }
 
-    @Test
-    fun `skipPayment - finishes the checkout, leaving the order unpaid`() = runTest {
-        val orderId = 42L
-        val viewModel = payingViewModel(orderId, "pi_secret", Money(7900, CURRENCY))
+    /** The order as the order-service answers the cancellation of an unpaid one: still as it was. */
+    private fun unpaidOrder(orderId: Long, total: Money) = Order(
+        id = orderId,
+        status = OrderStatus.PLACED,
+        cancellationReason = null,
+        items = emptyList(),
+        total = total,
+        address = ADDRESS,
+        createdAt = "2026-11-10T10:00:00Z",
+        paymentConfirmedAt = null,
+        shipment = null,
+        refund = null,
+    )
 
-        viewModel.skipPayment()
+    @Test
+    fun `cancelOrder - cancels the unpaid order and finishes the checkout`() = runTest {
+        val orderId = 42L
+        val total = Money(7900, CURRENCY)
+        everySuspend { orderApi.cancelOrder(orderId) } returns unpaidOrder(orderId, total)
+        val viewModel = payingViewModel(orderId, "pi_secret", total)
+
+        viewModel.cancelOrder()
+        runCurrent()
 
         assertEquals(CheckoutStep.Finished(orderId, paid = false), viewModel.state.value.step)
-        verify(exactly(1)) { notifier.success("Order #$orderId wasn't paid - it will be cancelled automatically.") }
+        assertFalse(viewModel.state.value.cancelling)
+        verifySuspend(exactly(1)) { orderApi.cancelOrder(orderId) }
+        verify(exactly(1)) { notifier.success("Cancelling order #$orderId.") }
         verifySuspend(not) { paymentGateway.confirm() }
     }
 
     @Test
-    fun `skipPayment - does nothing before the order is placed`() = runTest {
+    fun `cancelOrder - goes on with an order that turns out to be paid, warning that it can still be cancelled`() =
+        runTest {
+            val orderId = 42L
+            val alreadyPaidEx = OrderAlreadyPaidException(orderId)
+            everySuspend { orderApi.cancelOrder(orderId) } throws alreadyPaidEx
+            val viewModel = payingViewModel(orderId, "pi_secret", Money(7900, CURRENCY))
+
+            viewModel.cancelOrder()
+            runCurrent()
+
+            assertEquals(CheckoutStep.Finished(orderId, paid = true), viewModel.state.value.step)
+            assertFalse(viewModel.state.value.cancelling)
+            verify(exactly(1)) { notifier.warning(alreadyPaidEx.message) }
+            verify(not) { errorHandler.handle(any()) }
+        }
+
+    @Test
+    fun `cancelOrder - stays on the payment and hands a failure to the error handler`() = runTest {
+        val orderId = 42L
+        val clientSecret = "pi_secret"
+        val total = Money(7900, CURRENCY)
+        val error = IllegalStateException("payment is being processed")
+        everySuspend { orderApi.cancelOrder(orderId) } throws error
+        val viewModel = payingViewModel(orderId, clientSecret, total)
+
+        viewModel.cancelOrder()
+        runCurrent()
+
+        assertEquals(CheckoutStep.Paying(orderId, clientSecret, total), viewModel.state.value.step)
+        assertFalse(viewModel.state.value.cancelling)
+        verify(exactly(1)) { errorHandler.handle(error) }
+    }
+
+    @Test
+    fun `cancelOrder - does nothing before the order is placed`() = runTest {
         val viewModel = viewModel(emptyList())
 
-        viewModel.skipPayment()
+        viewModel.cancelOrder()
+        runCurrent()
 
         assertEquals(CheckoutStep.Editing, viewModel.state.value.step)
-        verify(not) { notifier.success(any()) }
+        verifySuspend(not) { orderApi.cancelOrder(any()) }
     }
 }

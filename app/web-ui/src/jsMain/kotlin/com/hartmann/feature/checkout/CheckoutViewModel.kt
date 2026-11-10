@@ -9,6 +9,7 @@ import com.hartmann.core.error.launchSafely
 import com.hartmann.core.model.Money
 import com.hartmann.core.notification.Notifier
 import com.hartmann.feature.order.OrderApi
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.model.Address
 import com.hartmann.feature.order.model.AddressField
 import com.hartmann.feature.order.model.OrderLine
@@ -22,6 +23,8 @@ data class CheckoutState(
     val address: Address = Address("", "", "", ""),
     val step: CheckoutStep = CheckoutStep.Editing,
     val busy: Boolean = false,
+    /** The unpaid order is being cancelled instead of paid. */
+    val cancelling: Boolean = false,
     /** Required address fields left blank on the last attempt to place the order, highlighted until filled in. */
     val invalidFields: Set<AddressField> = emptySet(),
     /** A problem not tied to one field, e.g. an empty cart. */
@@ -146,10 +149,25 @@ class CheckoutViewModel(
         }
     }
 
-    /** Leaves an unpaid order as it is: the payment-service expires it, and its stock is released. */
-    fun skipPayment() {
+    /**
+     * Cancels the unpaid order instead of paying it: its payment is cancelled first, so it can no longer be paid, and the
+     * order follows moments later, releasing its stock. If it turns out to be paid already, it goes on as a paid order,
+     * watched for its payment's confirmation like one paid here.
+     */
+    fun cancelOrder() {
         val step = _state.value.step as? CheckoutStep.Paying ?: return
-        notifier.success("Order #${step.orderId} wasn't paid - it will be cancelled automatically.")
-        _state.update { it.copy(step = CheckoutStep.Finished(step.orderId, paid = false)) }
+        _state.update { it.copy(cancelling = true) }
+        scope.launchSafely(errorHandler) {
+            try {
+                orderApi.cancelOrder(step.orderId)
+                notifier.success("Cancelling order #${step.orderId}.")
+                _state.update { it.copy(step = CheckoutStep.Finished(step.orderId, paid = false)) }
+            } catch (alreadyPaid: OrderAlreadyPaidException) {
+                notifier.warning(alreadyPaid.message)
+                _state.update { it.copy(step = CheckoutStep.Finished(step.orderId, paid = true)) }
+            } finally {
+                _state.update { it.copy(cancelling = false) }
+            }
+        }
     }
 }

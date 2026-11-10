@@ -8,9 +8,18 @@ interface Notifier {
 
     fun success(message: String)
 
+    /** Something the user should know but needn't worry about - it went differently than asked, not wrong. */
+    fun warning(message: String)
+
     fun error(message: String)
 
     fun dismiss(id: Long)
 }
 
-data class Toast(val id: Long, val message: String, val isError: Boolean)
+data class Toast(val id: Long, val message: String, val kind: ToastKind)
+
+enum class ToastKind {
+    SUCCESS,
+    WARNING,
+    ERROR,
+}
