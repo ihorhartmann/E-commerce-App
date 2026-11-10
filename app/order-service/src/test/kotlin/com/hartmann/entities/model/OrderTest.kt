@@ -12,8 +12,10 @@ import com.hartmann.entities.model.exception.UnrequestedShipmentCancellationExce
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ReservedItem
 import com.hartmann.entities.value.ShipmentCancellationReason
+import com.hartmann.entities.value.ShipmentInfo
 import com.hartmann.entities.value.exception.ShipmentTransitionNotAllowedException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -46,9 +48,30 @@ private fun placedOrder(items: List<OrderItem> = listOf(testItem()), id: Long = 
         customerId = UUID.randomUUID(),
         items = items,
         address = testAddress(),
-        status = OrderStatus.PLACED,
         createdAt = Instant.now()
     )
+
+// an order as the repository loads it, with the given facts
+private fun storedOrder(
+    paymentConfirmedAt: Instant? = null,
+    shipment: ShipmentInfo? = null,
+    cancellationReason: CancellationReason? = null,
+    cancellationRequestedAt: Instant? = null,
+    cancelledAt: Instant? = null,
+    refund: RefundInfo? = null,
+): Order = Order.createExisting(
+    id = 1,
+    customerId = UUID.randomUUID(),
+    items = listOf(testItem()),
+    address = testAddress(),
+    paymentConfirmedAt = paymentConfirmedAt,
+    shipment = shipment,
+    cancellationReason = cancellationReason,
+    cancellationRequestedAt = cancellationRequestedAt,
+    cancelledAt = cancelledAt,
+    refund = refund,
+    createdAt = Instant.now(),
+)
 
 private fun testReservedItem() = ReservedItem(1, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR))
 
@@ -154,7 +177,7 @@ class OrderTest {
     // --- createExisting ---
 
     @Test
-    fun `createExisting - builds an order with the given state`() {
+    fun `createExisting - builds an order from its stored facts`() {
         val id = 42L
         val version = 7L
         val order = Order.createExisting(
@@ -162,7 +185,7 @@ class OrderTest {
             customerId = UUID.randomUUID(),
             items = listOf(testItem()),
             address = testAddress(),
-            status = OrderStatus.PROCESSING,
+            paymentConfirmedAt = Instant.now(),
             version = version,
             createdAt = Instant.now(),
         )
@@ -173,6 +196,56 @@ class OrderTest {
     }
 
     @Test
+    fun `createExisting - reports a cancellation reason without its request time as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> {
+            storedOrder(cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER)
+        }
+    }
+
+    @Test
+    fun `createExisting - reports a cancelled order never asked to cancel as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> { storedOrder(cancelledAt = Instant.now()) }
+    }
+
+    @Test
+    fun `createExisting - reports a shipment of an unpaid order as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> { storedOrder(shipment = ShipmentInfo(5L)) }
+    }
+
+    @Test
+    fun `createExisting - reports a refund of an order not being cancelled as an inconsistent order`() {
+        assertThrows<InconsistentOrderException> {
+            storedOrder(paymentConfirmedAt = Instant.now(), refund = RefundInfo(requestedAt = Instant.now()))
+        }
+    }
+
+    @Test
+    fun `createExisting - reports a paid order cancelled without a confirmed refund as an inconsistent order`() {
+        val cancelledAt = Instant.now()
+
+        assertThrows<InconsistentOrderException> {
+            storedOrder(
+                paymentConfirmedAt = Instant.now(),
+                cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+                cancellationRequestedAt = cancelledAt,
+                cancelledAt = cancelledAt,
+            )
+        }
+    }
+
+    @Test
+    fun `status - a delivery wins over a cancellation that came too late`() {
+        val order = storedOrder(
+            paymentConfirmedAt = Instant.now(),
+            shipment = ShipmentInfo(5L, pickedUpAt = Instant.now(), deliveredAt = Instant.now()),
+            cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+            cancellationRequestedAt = Instant.now(),
+        )
+
+        assertEquals(OrderStatus.FULFILLED, order.status)
+    }
+
+    @Test
     fun `createExisting - throws when id is not positive`() {
         assertThrows<InconsistentOrderException> {
             Order.createExisting(
@@ -180,7 +253,6 @@ class OrderTest {
                 customerId = UUID.randomUUID(),
                 items = listOf(testItem()),
                 address = testAddress(),
-                status = OrderStatus.PLACED,
                 createdAt = Instant.now(),
             )
         }
@@ -245,6 +317,107 @@ class OrderTest {
         assertThrows<OrderTransitionNotAllowedException> { processingOrder().apply { expirePayment() } }
     }
 
+    // --- cancelPayment (PLACED -> CANCELLED by the customer, no refund) ---
+
+    @Test
+    fun `cancelPayment - cancels a placed order for the customer, with nothing to refund`() {
+        val order = placedOrder().apply { cancelPayment() }
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+        assertNull(order.refund)
+    }
+
+    @Test
+    fun `failPayment - finishes an unpaid order the customer asked to cancel, keeping their reason`() {
+        val order = placedOrder().apply { requestCancellation() }
+        val requestedAt = order.cancellationRequestedAt
+
+        order.failPayment()
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+        assertEquals(requestedAt, order.cancellationRequestedAt)
+    }
+
+    @Test
+    fun `expirePayment - finishes an unpaid order the customer asked to cancel, keeping their reason`() {
+        val order = placedOrder().apply { requestCancellation() }
+
+        order.expirePayment()
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+    }
+
+    @Test
+    fun `expirePayment - throws once the payment closed unpaid, leaving the order as it was`() {
+        val order = placedOrder().apply { failPayment() }
+        val cancelledAt = order.cancelledAt
+
+        assertThrows<OrderTransitionNotAllowedException> { order.expirePayment() }
+
+        assertEquals(CancellationReason.PAYMENT_FAILED, order.cancellationReason)
+        assertEquals(cancelledAt, order.cancelledAt)
+    }
+
+    @Test
+    fun `cancelPayment - finishes the cancellation the customer asked for`() {
+        val order = placedOrder().apply { requestCancellation() }
+        val requestedAt = order.cancellationRequestedAt
+
+        order.cancelPayment()
+
+        assertEquals(OrderStatus.CANCELLED, order.status)
+        assertEquals(requestedAt, order.cancellationRequestedAt)
+        assertNotNull(order.cancelledAt)
+    }
+
+    @Test
+    fun `cancelPayment - throws when order is not placed, leaving it as it was`() {
+        val order = processingOrder()
+
+        assertThrows<OrderTransitionNotAllowedException> { order.cancelPayment() }
+
+        assertEquals(OrderStatus.PROCESSING, order.status)
+        assertNull(order.cancellationReason)
+    }
+
+    // --- isPaymentOpen ---
+
+    @Test
+    fun `isPaymentOpen - is true for a placed order`() {
+        assertTrue(placedOrder().isPaymentOpen())
+    }
+
+    @Test
+    fun `isPaymentOpen - stays true while an unpaid order is being cancelled`() {
+        assertTrue(placedOrder().apply { requestCancellation() }.isPaymentOpen())
+    }
+
+    @Test
+    fun `isPaymentOpen - is false once the payment is confirmed`() {
+        assertFalse(processingOrder().isPaymentOpen())
+    }
+
+    @Test
+    fun `isPaymentOpen - is false once the payment closed unpaid`() {
+        assertFalse(placedOrder().apply { expirePayment() }.isPaymentOpen())
+    }
+
+    // --- isPaid ---
+
+    @Test
+    fun `isPaid - is false before the payment is confirmed and true after`() {
+        val order = placedOrder()
+        val paidBefore = order.isPaid()
+
+        order.confirmPayment()
+
+        assertFalse(paidBefore)
+        assertTrue(order.isPaid())
+    }
+
     // --- confirmPayment ---
 
     @Test
@@ -258,6 +431,16 @@ class OrderTest {
     @Test
     fun `confirmPayment - throws when order is not placed`() {
         assertThrows<OrderTransitionNotAllowedException> { processingOrder().apply { confirmPayment() } }
+    }
+
+    @Test
+    fun `confirmPayment - throws for an unpaid order the customer asked to cancel, leaving it unpaid`() {
+        val order = placedOrder().apply { requestCancellation() }
+
+        assertThrows<OrderTransitionNotAllowedException> { order.confirmPayment() }
+
+        assertNull(order.paymentConfirmedAt)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
     }
 
     // --- requestCancellation ---
@@ -297,13 +480,16 @@ class OrderTest {
     }
 
     @Test
-    fun `requestCancellation - rejects an order that is not paid yet, leaving it unchanged`() {
+    fun `requestCancellation - marks an unpaid order being cancelled by the customer, with nothing to refund`() {
         val order = placedOrder()
 
-        assertThrows<OrderNotCancellableException> { order.requestCancellation() }
+        val changed = order.requestCancellation()
 
-        assertEquals(OrderStatus.PLACED, order.status)
-        assertNull(order.cancellationReason)
+        assertTrue(changed)
+        assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, order.cancellationReason)
+        assertNotNull(order.cancellationRequestedAt)
+        assertNull(order.refund)
     }
 
     @Test
@@ -316,11 +502,13 @@ class OrderTest {
     }
 
     @Test
-    fun `requestCancellation - rejects a cancelled order`() {
+    fun `requestCancellation - changes nothing when the order is already cancelled`() {
         val order = placedOrder().apply { failPayment() }
 
-        assertThrows<OrderNotCancellableException> { order.requestCancellation() }
+        val changed = order.requestCancellation()
 
+        assertFalse(changed)
+        assertEquals(OrderStatus.CANCELLED, order.status)
         assertEquals(CancellationReason.PAYMENT_FAILED, order.cancellationReason)
     }
 
@@ -349,6 +537,15 @@ class OrderTest {
     @Test
     fun `createShipment - throws when order is not processing`() {
         assertThrows<OrderTransitionNotAllowedException> { placedOrder().apply { createShipment(5L) } }
+    }
+
+    @Test
+    fun `createShipment - throws for an unpaid order the customer asked to cancel`() {
+        val order = placedOrder().apply { requestCancellation() }
+
+        assertThrows<OrderTransitionNotAllowedException> { order.createShipment(5L) }
+
+        assertNull(order.shipment)
     }
 
     @Test
@@ -557,19 +754,28 @@ class OrderTest {
         assertFalse(orderInDelivery().apply { loseShipment() }.requiresReservationRelease())
     }
 
-    // --- markRefundFailed ---
+    // --- failRefund ---
 
     @Test
-    fun `markRefundFailed - flags the refund without changing order status`() {
-        val order = cancelRequestedAfterPickup().apply { markRefundFailed() }
+    fun `failRefund - flags the refund without changing order status`() {
+        val order = cancelRequestedAfterPickup().apply { failRefund() }
 
         assertEquals(OrderStatus.CANCEL_REQUESTED, order.status)
         assertNotNull(order.refund?.failedAt)
     }
 
     @Test
-    fun `markRefundFailed - throws when there is no refund request`() {
-        assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { markRefundFailed() } }
+    fun `failRefund - throws when there is no refund request`() {
+        assertThrows<RefundNotRequestedException> { awaitingShipmentCancellation().apply { failRefund() } }
+    }
+
+    @Test
+    fun `failRefund - throws once the order is cancelled, leaving the refund confirmed`() {
+        val order = cancelRequestedBeforePickup().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
+
+        assertThrows<OrderTransitionNotAllowedException> { order.failRefund() }
+
+        assertNull(order.refund?.failedAt)
     }
 
     // --- confirmRefund ---
@@ -629,10 +835,14 @@ class OrderTest {
     }
 
     @Test
-    fun `confirmRefund - throws when order is not cancel-requested`() {
-        assertThrows<OrderTransitionNotAllowedException> {
-            placedOrder().apply { confirmRefund(Money(BigDecimal("10.00"), Currency.EUR)) }
-        }
+    fun `confirmRefund - throws once the order is cancelled, leaving it as it was`() {
+        val amount = Money(BigDecimal("10.00"), Currency.EUR)
+        val order = cancelRequestedBeforePickup().apply { confirmRefund(amount) }
+        val cancelledAt = order.cancelledAt
+
+        assertThrows<OrderTransitionNotAllowedException> { order.confirmRefund(amount) }
+
+        assertEquals(cancelledAt, order.cancelledAt)
     }
 
     // --- returnToStock ---
@@ -690,7 +900,6 @@ class OrderTest {
             customerId = UUID.randomUUID(),
             items = listOf(testItem()),
             address = testAddress(),
-            status = OrderStatus.CANCEL_REQUESTED,
             awaitingReturn = true,
             createdAt = Instant.now(),
         )

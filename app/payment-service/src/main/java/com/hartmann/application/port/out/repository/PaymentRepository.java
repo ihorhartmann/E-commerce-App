@@ -28,10 +28,9 @@ public interface PaymentRepository {
     Payment updateRefundedAmount(Payment payment);
 
     /**
-     * Moves every non-terminal payment (INITIATED/PENDING/ATTEMPT_DECLINED) whose expiresAt has
-     * passed to EXPIRED, and returns the rows that were changed. A null externalId on a returned
-     * row means it never left INITIATED - order-service already resolved that order synchronously
-     * when the gateway call failed, so callers must not publish a Kafka event for those.
+     * Every payment still open (INITIATED/PENDING/ATTEMPT_DECLINED) whose expiresAt has passed - the ones the
+     * expiration sweep gives up on - oldest first. Only read: each is expired on its own, after its PaymentIntent is
+     * cancelled at the gateway.
      */
-    List<Payment> expireOverdue();
+    List<Payment> findOverdue();
 }

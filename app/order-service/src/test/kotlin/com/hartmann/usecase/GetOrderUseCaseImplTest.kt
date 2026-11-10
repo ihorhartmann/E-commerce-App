@@ -10,14 +10,13 @@ import com.hartmann.usecase.port.out.repository.exception.OrderNotFoundException
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import com.hartmann.entities.model.OrderStatus
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.assertThrows
 import java.math.BigDecimal
 import java.time.Instant
-import java.util.UUID
+import java.util.*
 
 @TestInstance(TestInstance.Lifecycle.PER_METHOD)
 class GetOrderUseCaseImplTest {
@@ -30,7 +29,6 @@ class GetOrderUseCaseImplTest {
         customerId = customerId,
         items = listOf(OrderItem.createExisting(1, 1, 1, "Keyboard", 1, Money(BigDecimal("10.00"), Currency.EUR))),
         address = Address(city = "Kyiv", postalCode = "01001", line1 = "Khreshchatyk 1", line2 = ""),
-        status = OrderStatus.PLACED,
         createdAt = Instant.now(),
     )
 

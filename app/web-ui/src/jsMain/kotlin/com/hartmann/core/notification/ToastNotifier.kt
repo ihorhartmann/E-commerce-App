@@ -14,16 +14,18 @@ class ToastNotifier private constructor(private val scope: CoroutineScope) : Not
     override val toasts: StateFlow<List<Toast>> = _toasts
     private var nextId = 0L
 
-    override fun success(message: String) = show(message, isError = false)
+    override fun success(message: String) = show(message, ToastKind.SUCCESS)
 
-    override fun error(message: String) = show(message, isError = true)
+    override fun warning(message: String) = show(message, ToastKind.WARNING)
+
+    override fun error(message: String) = show(message, ToastKind.ERROR)
 
     override fun dismiss(id: Long) {
         _toasts.update { toasts -> toasts.filterNot { it.id == id } }
     }
 
-    private fun show(message: String, isError: Boolean) {
-        val toast = Toast(nextId++, message, isError)
+    private fun show(message: String, kind: ToastKind) {
+        val toast = Toast(nextId++, message, kind)
         _toasts.update { it + toast }
         scope.launch {
             delay(DISPLAY_MILLIS.milliseconds)

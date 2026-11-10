@@ -4,6 +4,7 @@ import com.hartmann.core.error.ErrorHandler
 import com.hartmann.core.model.Money
 import com.hartmann.core.model.Page
 import com.hartmann.core.notification.Notifier
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.model.Address
 import com.hartmann.feature.order.model.Order
 import com.hartmann.feature.order.model.OrderStatus
@@ -36,12 +37,17 @@ class OrdersViewModelTest {
     private val notifier = mock<Notifier>(MockMode.autoUnit)
     private val errorHandler = mock<ErrorHandler>(MockMode.autoUnit)
 
-    private fun TestScope.viewModel() = OrdersViewModel(backgroundScope, orderApi, notifier, errorHandler)
+    private fun TestScope.ordersViewModel() = OrdersViewModel(backgroundScope, orderApi, notifier, errorHandler)
 
-    private fun order(id: Long, status: OrderStatus, paymentConfirmedAt: String? = null) = Order(
+    private fun order(
+        id: Long,
+        status: OrderStatus,
+        paymentConfirmedAt: String? = null,
+        cancellationReason: String? = null,
+    ) = Order(
         id = id,
         status = status,
-        cancellationReason = null,
+        cancellationReason = cancellationReason,
         items = emptyList(),
         total = Money(7900, "EUR"),
         address = Address("Kyiv", "01001", "Khreshchatyk St, 1"),
@@ -58,7 +64,7 @@ class OrdersViewModelTest {
         val pageNumber = 1
         val expected = Page(listOf(summary(42, OrderStatus.PROCESSING)), pageNumber, 2)
         everySuspend { orderApi.listOrders(pageNumber, PAGE_SIZE) } returns expected
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.load(pageNumber)
         runCurrent()
@@ -72,7 +78,7 @@ class OrdersViewModelTest {
     fun `load - hands a failure to the error handler and stops loading`() = runTest {
         val error = IllegalStateException("down")
         everySuspend { orderApi.listOrders(any(), any()) } throws error
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.load(0)
         runCurrent()
@@ -86,7 +92,7 @@ class OrdersViewModelTest {
         val orderId = 42L
         val expected = order(orderId, OrderStatus.FULFILLED)
         everySuspend { orderApi.getOrder(orderId) } returns expected
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.toggle(orderId)
         runCurrent()
@@ -100,7 +106,7 @@ class OrdersViewModelTest {
     fun `toggle - collapses the expanded order and stops polling it`() = runTest {
         val orderId = 42L
         everySuspend { orderApi.getOrder(orderId) } returns order(orderId, OrderStatus.PROCESSING)
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
         viewModel.toggle(orderId)
         runCurrent()
 
@@ -122,7 +128,7 @@ class OrdersViewModelTest {
             returns(order(orderId, OrderStatus.PROCESSING))
             returns(order(orderId, OrderStatus.FULFILLED))
         }
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
         viewModel.load(firstPage)
         runCurrent()
 
@@ -145,7 +151,7 @@ class OrdersViewModelTest {
         val error = IllegalStateException("down")
         val orderId = 42L
         everySuspend { orderApi.getOrder(orderId) } throws error
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.expand(orderId)
         runCurrent()
@@ -159,12 +165,13 @@ class OrdersViewModelTest {
     @Test
     fun `cancel - cancels the order and keeps polling it until the cancellation completes`() = runTest {
         val orderId = 42L
+        val paidAt = "2026-10-14T10:01:00Z"
         everySuspend { orderApi.getOrder(orderId) } sequentially {
-            returns(order(orderId, OrderStatus.PROCESSING))
-            returns(order(orderId, OrderStatus.CANCELLED))
+            returns(order(orderId, OrderStatus.PROCESSING, paidAt))
+            returns(order(orderId, OrderStatus.CANCELLED, paidAt))
         }
-        everySuspend { orderApi.cancelOrder(orderId) } returns order(orderId, OrderStatus.CANCEL_REQUESTED)
-        val viewModel = viewModel()
+        everySuspend { orderApi.cancelOrder(orderId) } returns order(orderId, OrderStatus.CANCEL_REQUESTED, paidAt)
+        val viewModel = ordersViewModel()
         viewModel.expand(orderId)
         runCurrent()
 
@@ -179,14 +186,14 @@ class OrdersViewModelTest {
         assertFalse(viewModel.state.value.cancelling)
         verifySuspend(exactly(1)) { orderApi.cancelOrder(orderId) }
         verifySuspend(exactly(2)) { orderApi.getOrder(orderId) }
-        verify(exactly(1)) { notifier.success("Cancelling order #$orderId. A paid amount is refunded once it's done.") }
+        verify(exactly(1)) { notifier.success("Cancelling order #$orderId. The paid amount is refunded once it's done.") }
     }
 
     @Test
     fun `cancel - doesn't poll an order the cancellation already completed`() = runTest {
         val orderId = 42L
         everySuspend { orderApi.cancelOrder(orderId) } returns order(orderId, OrderStatus.CANCELLED)
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.cancel(orderId)
         runCurrent()
@@ -201,7 +208,7 @@ class OrdersViewModelTest {
     fun `cancel - hands a failure to the error handler`() = runTest {
         val error = IllegalStateException("not cancellable")
         everySuspend { orderApi.cancelOrder(any()) } throws error
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.cancel(42)
         runCurrent()
@@ -215,7 +222,7 @@ class OrdersViewModelTest {
     fun `expand - tells right away that the payment of an order just paid is confirmed, if it already is`() = runTest {
         val orderId = 42L
         everySuspend { orderApi.getOrder(orderId) } returns order(orderId, OrderStatus.PROCESSING, "2026-10-14T10:01:00Z")
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.expand(orderId, awaitingPayment = true)
         runCurrent()
@@ -232,7 +239,7 @@ class OrdersViewModelTest {
             returns(order(orderId, OrderStatus.PROCESSING, paidAt))
             returns(order(orderId, OrderStatus.FULFILLED, paidAt))
         }
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.expand(orderId)
         runCurrent()
@@ -250,9 +257,9 @@ class OrdersViewModelTest {
         val orderId = 42L
         everySuspend { orderApi.getOrder(orderId) } sequentially {
             returns(order(orderId, OrderStatus.PLACED))
-            returns(order(orderId, OrderStatus.CANCELLED))
+            returns(order(orderId, OrderStatus.CANCELLED, cancellationReason = "PAYMENT_FAILED"))
         }
-        val viewModel = viewModel()
+        val viewModel = ordersViewModel()
 
         viewModel.expand(orderId)
         runCurrent()
@@ -260,8 +267,74 @@ class OrdersViewModelTest {
         runCurrent()
 
         verify(exactly(1)) {
-            notifier.error("The payment for order #$orderId didn't go through, so the order is cancelled.")
+            notifier.error(
+                "Your payment for order #$orderId was declined, so the order was cancelled. You haven't been charged."
+            )
         }
         verify(not) { notifier.success(any()) }
+    }
+
+    @Test
+    fun `expand - tells once polling sees an unpaid order cancelled because it wasn't paid in time`() = runTest {
+        val orderId = 42L
+        everySuspend { orderApi.getOrder(orderId) } sequentially {
+            returns(order(orderId, OrderStatus.PLACED))
+            returns(order(orderId, OrderStatus.CANCELLED, cancellationReason = "PAYMENT_EXPIRED"))
+        }
+        val viewModel = ordersViewModel()
+
+        viewModel.expand(orderId)
+        runCurrent()
+        advanceTimeBy(POLL_INTERVAL_MILLIS.milliseconds)
+        runCurrent()
+
+        verify(exactly(1)) {
+            notifier.error("Order #$orderId was cancelled because it wasn't paid in time. You haven't been charged.")
+        }
+        verify(not) { notifier.success(any()) }
+    }
+
+    @Test
+    fun `cancel - cancels an unpaid order and keeps polling it until it's cancelled, telling once it is`() = runTest {
+        val orderId = 42L
+        val cancellationReason = "CANCELLED_BY_CUSTOMER"
+        everySuspend { orderApi.cancelOrder(orderId) } returns
+            order(orderId, OrderStatus.CANCEL_REQUESTED, cancellationReason = cancellationReason)
+        everySuspend { orderApi.getOrder(orderId) } sequentially {
+            returns(order(orderId, OrderStatus.PLACED))
+            returns(order(orderId, OrderStatus.CANCELLED, cancellationReason = cancellationReason))
+        }
+        val viewModel = ordersViewModel()
+        viewModel.expand(orderId)
+        runCurrent()
+
+        viewModel.cancel(orderId)
+        runCurrent()
+        advanceTimeBy(POLL_INTERVAL_MILLIS.milliseconds)
+        runCurrent()
+
+        assertEquals(OrderStatus.CANCELLED, viewModel.state.value.expandedOrder?.status)
+        verifySuspend(exactly(1)) { orderApi.cancelOrder(orderId) }
+        verifySuspend(exactly(2)) { orderApi.getOrder(orderId) }
+        verify(exactly(1)) { notifier.success("Cancelling order #$orderId.") }
+        verify(exactly(1)) { notifier.success("Order #$orderId is cancelled.") }
+        verify(not) { notifier.error(any()) }
+    }
+
+    @Test
+    fun `cancel - warns that an unpaid order turned out to be paid and shows it going on`() = runTest {
+        val orderId = 42L
+        val alreadyPaid = OrderAlreadyPaidException(orderId)
+        everySuspend { orderApi.cancelOrder(orderId) } throws alreadyPaid
+        everySuspend { orderApi.getOrder(orderId) } returns order(orderId, OrderStatus.FULFILLED, "2026-11-10T10:01:00Z")
+        val viewModel = ordersViewModel()
+
+        viewModel.cancel(orderId)
+        runCurrent()
+
+        assertFalse(viewModel.state.value.cancelling)
+        verify(exactly(1)) { notifier.warning(alreadyPaid.message) }
+        verifySuspend(exactly(1)) { orderApi.getOrder(orderId) }
+        verify(not) { errorHandler.handle(any()) }
     }
 }

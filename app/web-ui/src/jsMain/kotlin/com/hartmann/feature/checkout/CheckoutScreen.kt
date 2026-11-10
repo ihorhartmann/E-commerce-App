@@ -49,7 +49,7 @@ fun CheckoutScreen(
         }
         is CheckoutStep.Paying -> {
             Div({ classes("screen-header") }) { H1 { Text("Payment") } }
-            PaymentPanel(step, state.busy, viewModel)
+            PaymentPanel(step, state.busy, state.cancelling, viewModel)
         }
         is CheckoutStep.Finished -> LaunchedEffect(step) { onFinished(step.orderId, step.paid) }
     }
@@ -118,7 +118,8 @@ private fun AddressPanel(state: CheckoutState, isGuest: Boolean, onSignIn: () ->
 }
 
 @Composable
-private fun PaymentPanel(step: CheckoutStep.Paying, busy: Boolean, viewModel: CheckoutViewModel) {
+private fun PaymentPanel(step: CheckoutStep.Paying, busy: Boolean, cancelling: Boolean, viewModel: CheckoutViewModel) {
+    val idle = !busy && !cancelling
     Div({ classes("glass", "panel", "payment-panel") }) {
         H2 { Text("Order #${step.orderId}") }
         P({ classes("muted") }) { Text("Your order is placed and its items are reserved. Pay to send it on its way.") }
@@ -132,9 +133,10 @@ private fun PaymentPanel(step: CheckoutStep.Paying, busy: Boolean, viewModel: Ch
             }
         })
         Div({ classes("actions") }) {
-            AppButton(if (busy) "Paying…" else "Pay ${step.total.format()}", viewModel::pay, ButtonStyle.PRIMARY, !busy)
-            // the payment can't be resumed later: the order-service hands out the client secret only once
-            AppButton("Leave unpaid", viewModel::skipPayment, enabled = !busy)
+            AppButton(if (busy) "Paying…" else "Pay ${step.total.format()}", viewModel::pay, ButtonStyle.PRIMARY, idle)
+            // the payment can't be resumed later - the order-service hands out the client secret only once - so the
+            // alternative to paying is cancelling the order
+            AppButton(if (cancelling) "Cancelling…" else "Cancel order", viewModel::cancelOrder, ButtonStyle.DANGER, idle)
         }
     }
 }

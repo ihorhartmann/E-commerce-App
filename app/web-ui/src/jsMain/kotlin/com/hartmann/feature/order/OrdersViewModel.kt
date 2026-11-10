@@ -4,6 +4,7 @@ import com.hartmann.core.error.ErrorHandler
 import com.hartmann.core.error.launchSafely
 import com.hartmann.core.notification.Notifier
 import com.hartmann.core.model.Page
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.model.Order
 import com.hartmann.feature.order.model.OrderStatus
 import com.hartmann.feature.order.model.OrderSummary
@@ -76,12 +77,20 @@ class OrdersViewModel(
         scope.launchSafely(errorHandler) {
             try {
                 val order = orderApi.cancelOrder(orderId)
-                notifier.success("Cancelling order #$orderId. A paid amount is refunded once it's done.")
+                // an unpaid order has nothing to refund: its payment is cancelled, and the order finishes moments later
+                notifier.success(
+                    if (order.paymentConfirmedAt == null) "Cancelling order #$orderId."
+                    else "Cancelling order #$orderId. The paid amount is refunded once it's done."
+                )
                 show(order)
                 // the cancellation completes asynchronously: keep watching it
-                if (!order.status.isFinal()) {
+                if (!order.status.isTerminal()) {
                     startPolling(orderId, waitFirst = true)
                 }
+            } catch (alreadyPaid: OrderAlreadyPaidException) {
+                // not the user's mistake: the order goes on as a paid one, which polling shows - and they can cancel it
+                notifier.warning(alreadyPaid.message)
+                startPolling(orderId, waitFirst = false)
             } finally {
                 _state.update { it.copy(cancelling = false) }
             }
@@ -98,7 +107,7 @@ class OrdersViewModel(
                 val order = orderApi.getOrder(orderId)
                 notifyAboutPayment(order)
                 show(order)
-                if (order.status.isFinal()) {
+                if (order.status.isTerminal()) {
                     break
                 }
                 delay(POLL_INTERVAL_MILLIS.milliseconds)
@@ -112,14 +121,24 @@ class OrdersViewModel(
      */
     private fun notifyAboutPayment(order: Order) {
         when {
-            order.status == OrderStatus.PLACED -> ordersAwaitingPayment += order.id
+            // unpaid and still open - waiting for its payment, or for its cancellation to finish
+            order.paymentConfirmedAt == null && !order.status.isTerminal() -> ordersAwaitingPayment += order.id
             order.id !in ordersAwaitingPayment -> return
             order.paymentConfirmedAt != null -> {
                 notifier.success("Payment for order #${order.id} is confirmed.")
                 ordersAwaitingPayment -= order.id
             }
             order.status == OrderStatus.CANCELLED -> {
-                notifier.error("The payment for order #${order.id} didn't go through, so the order is cancelled.")
+                when {
+                    order.isCancelledByCustomer() -> notifier.success("Order #${order.id} is cancelled.")
+                    order.isCancelledAsUnpaid() -> notifier.error(
+                        "Order #${order.id} was cancelled because it wasn't paid in time. You haven't been charged."
+                    )
+                    else -> notifier.error(
+                        "Your payment for order #${order.id} was declined, so the order was cancelled. " +
+                            "You haven't been charged."
+                    )
+                }
                 ordersAwaitingPayment -= order.id
             }
         }

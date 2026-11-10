@@ -23,10 +23,11 @@ public class Payment {
     // Statuses a payment can be in without ever having gotten a PaymentIntent out of Stripe:
     // INITIATED (persisted before that gateway call, for a durable audit trail), FAILED (the
     // gateway call itself failed synchronously - see PaymentServiceImpl.submitToGateway), and
-    // EXPIRED reached directly from INITIATED (the sweep gave up before the gateway call ever
-    // completed). Every other status is only reachable once externalId is already assigned.
+    // EXPIRED or CANCELLED reached directly from INITIATED (the sweep gave up, or the customer
+    // cancelled, before the gateway call ever completed). Every other status is only reachable
+    // once externalId is already assigned.
     private static final Set<PaymentStatus> STATUSES_ALLOWING_NO_EXTERNAL_ID =
-            Set.of(PaymentStatus.INITIATED, PaymentStatus.FAILED, PaymentStatus.EXPIRED);
+            Set.of(PaymentStatus.INITIATED, PaymentStatus.FAILED, PaymentStatus.EXPIRED, PaymentStatus.CANCELLED);
 
     private final long id;
     private final long orderId;
@@ -154,6 +155,36 @@ public class Payment {
     public void fail() {
         requireStatus("fail", PaymentStatus.INITIATED);
         changeState(PaymentStatus.FAILED, externalId);
+    }
+
+    /**
+     * Whether the payment can still go any way - be paid, cancelled or expired: it reached none of its final
+     * statuses yet.
+     */
+    public boolean isOpen() {
+        return PaymentStatus.NON_TERMINAL_STATUSES.contains(status);
+    }
+
+    public boolean isConfirmed() {
+        return status == PaymentStatus.CONFIRMED;
+    }
+
+    /**
+     * The customer cancelled the order before paying it. Its PaymentIntent, if it got one, must already be cancelled
+     * at the gateway, so it can no longer be paid.
+     */
+    public void cancel() {
+        requireStatus("cancel", PaymentStatus.INITIATED, PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED);
+        changeState(PaymentStatus.CANCELLED, externalId);
+    }
+
+    /**
+     * Nobody paid it before expiresAt, so the expiration sweep gives up on it. Its PaymentIntent, if it got one, must
+     * already be cancelled at the gateway, so it can no longer be paid.
+     */
+    public void expire() {
+        requireStatus("expire", PaymentStatus.INITIATED, PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED);
+        changeState(PaymentStatus.EXPIRED, externalId);
     }
 
     /**

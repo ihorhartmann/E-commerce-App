@@ -20,33 +20,59 @@ import java.time.Instant
 import java.math.BigDecimal
 import java.util.UUID
 
+/**
+ * An order keeps facts - what has happened to it, each step of the saga leaving its own - and never a status of its
+ * own: [status] is what the facts add up to, and every rule asks the facts themselves (is it paid, is its shipment still
+ * open), never the status. Events of the saga may come late, twice or out of order, and a fact answers the question a
+ * rule actually has, where a status would have to be decoded back into the facts it stands for.
+ */
 class Order private constructor(
     val id: Long,
     val customerId: UUID,
     val items: List<OrderItem>,
     val address: Address,
-    status: OrderStatus,
     paymentConfirmedAt: Instant?,
     shipment: ShipmentInfo?,
     cancellationReason: CancellationReason?,
+    cancellationRequestedAt: Instant?,
+    cancelledAt: Instant?,
     awaitingReturn: Boolean,
     refund: RefundInfo?,
     val version: Long,
     val createdAt: Instant,
     val updatedAt: Instant?,
 ) {
-    var status: OrderStatus = status
-        private set
     var paymentConfirmedAt: Instant? = paymentConfirmedAt
         private set
     var shipment: ShipmentInfo? = shipment
         private set
     var cancellationReason: CancellationReason? = cancellationReason
         private set
+
+    /** When the order started being cancelled - asked by the customer, or forced by a failed payment or delivery. */
+    var cancellationRequestedAt: Instant? = cancellationRequestedAt
+        private set
+
+    /** When the cancellation was done: the payment closed unpaid, or the paid amount refunded. */
+    var cancelledAt: Instant? = cancelledAt
+        private set
     var awaitingReturn: Boolean = awaitingReturn
         private set
     var refund: RefundInfo? = refund
         private set
+
+    /**
+     * What the facts add up to, for the customer and for queries - the repository stores it alongside them. A delivery
+     * wins over a cancellation: a customer whose cancellation came too late got their goods.
+     */
+    val status: OrderStatus
+        get() = when {
+            shipment?.deliveredAt != null -> OrderStatus.FULFILLED
+            cancelledAt != null -> OrderStatus.CANCELLED
+            cancellationRequestedAt != null -> OrderStatus.CANCEL_REQUESTED
+            paymentConfirmedAt != null -> OrderStatus.PROCESSING
+            else -> OrderStatus.PLACED
+        }
 
     /** Whether the order was placed by this customer - the only one allowed to see it. */
     fun isOwnedBy(customerId: UUID): Boolean = this.customerId == customerId
@@ -60,39 +86,50 @@ class Order private constructor(
         return Money(amount, currency)
     }
 
-    /** No charge ever succeeded at this point, so there is nothing to refund. */
-    fun failPayment() {
-        requireStatus("fail payment", OrderStatus.PLACED)
-        cancel(CancellationReason.PAYMENT_FAILED)
-    }
+    fun isPaid(): Boolean = paymentConfirmedAt != null
 
-    /** Nobody ever completed checkout - payment-service gave up waiting and expired the attempt. */
-    fun expirePayment() {
-        requireStatus("expire payment", OrderStatus.PLACED)
-        cancel(CancellationReason.PAYMENT_EXPIRED)
-    }
+    /**
+     * Whether the order's payment is still open: neither paid nor closed unpaid. Such an order is cancelled through its
+     * payment - payment-service cancels it first, so it can no longer be paid - and only then [requestCancellation].
+     */
+    fun isPaymentOpen(): Boolean = !isPaid() && cancelledAt == null
 
     fun confirmPayment() {
-        requireStatus("confirm payment", OrderStatus.PLACED)
-        status = OrderStatus.PROCESSING
+        // a customer who asked to cancel it had its payment cancelled first: a confirmation can't follow that
+        if (!isPaymentOpen() || cancellationRequestedAt != null) {
+            throw OrderTransitionNotAllowedException(id, "confirm payment", status)
+        }
         paymentConfirmedAt = Instant.now()
     }
 
+    /** No charge ever succeeded at this point, so there is nothing to refund. */
+    fun failPayment() = cancelUnpaid("fail payment", CancellationReason.PAYMENT_FAILED)
+
+    /** Nobody ever completed checkout - payment-service gave up waiting and expired the attempt. */
+    fun expirePayment() = cancelUnpaid("expire payment", CancellationReason.PAYMENT_EXPIRED)
+
     /**
-     * The customer asks to cancel the order. Only a paid order whose shipment is still open can be cancelled: the
-     * request moves it to CANCEL_REQUESTED, and shipping-service then answers what actually happened to the
-     * shipment - it may have been delivered or lost in the meantime. Nothing is refunded or released until then.
-     * Returns whether anything changed: asking again while a cancellation is already under way changes nothing.
+     * The customer cancelled the order before paying it, and payment-service cancelled its payment: nothing was charged,
+     * so there is nothing to refund - only the reserved stock to release.
+     */
+    fun cancelPayment() = cancelUnpaid("cancel payment", CancellationReason.CANCELLED_BY_CUSTOMER)
+
+    /**
+     * The customer asks to cancel the order. An order still unpaid is asked only once payment-service has cancelled its
+     * payment, which then finishes the cancellation ([cancelPayment]). A paid one waits for shipping-service to
+     * answer what actually happened to the shipment - it may have been delivered or lost in the meantime; nothing is
+     * refunded or released until then. Returns whether anything changed: asking again while the order is already being
+     * cancelled, or is cancelled, changes nothing. A delivered order can no longer be cancelled.
      */
     fun requestCancellation(): Boolean {
-        if (status == OrderStatus.CANCEL_REQUESTED) {
+        if (cancellationRequestedAt != null) {
             return false
         }
-        if (status != OrderStatus.PROCESSING) {
+        if (shipment?.deliveredAt != null) {
             throw OrderNotCancellableException(id, status)
         }
-        status = OrderStatus.CANCEL_REQUESTED
         cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER
+        cancellationRequestedAt = Instant.now()
         return true
     }
 
@@ -115,8 +152,8 @@ class Order private constructor(
         requireOpenShipment("deliver")
         val currentShipment = requireShipment("deliver")
         val deliveredShipment = currentShipment.deliver()
-        status = OrderStatus.FULFILLED
         cancellationReason = null
+        cancellationRequestedAt = null
         shipment = deliveredShipment
     }
 
@@ -126,8 +163,8 @@ class Order private constructor(
      */
     fun loseShipment() {
         requireOpenShipment("lose shipment")
-        status = OrderStatus.CANCEL_REQUESTED
         cancellationReason = CancellationReason.SHIPMENT_LOST
+        cancellationRequestedAt = cancellationRequestedAt ?: Instant.now()
         awaitingReturn = false
         refund = RefundInfo.request()
     }
@@ -138,21 +175,21 @@ class Order private constructor(
      * cancelled it on their own just before. Otherwise the courier couldn't hand the goods over, and the reason
      * tells whether the customer refused them.
      *
-     * Either way the order moves to CANCEL_REQUESTED and, as it was already paid, a refund of [refundAmount] is
-     * requested right away; [confirmRefund] finalizes it to CANCELLED. If the courier already has the goods, the
-     * order also flags [awaitingReturn]: their trip back to the warehouse is logistics, recorded by [returnToStock],
-     * and doesn't hold the customer's order back.
+     * Either way the order is being cancelled and, as it was already paid, a refund of [refundAmount] is requested
+     * right away; [confirmRefund] finishes the cancellation. If the courier already has the goods, the order also flags
+     * [awaitingReturn]: their trip back to the warehouse is logistics, recorded by [returnToStock], and doesn't hold
+     * the customer's order back.
      */
     fun cancelShipment(shipmentCancellationReason: ShipmentCancellationReason) {
         requireOpenShipment("cancel shipment")
-        val reason = if (status == OrderStatus.CANCEL_REQUESTED) {
+        val reason = if (cancellationRequestedAt != null) {
             // the customer asked for it: shipping only confirms, whatever its own reason
             CancellationReason.CANCELLED_BY_CUSTOMER
         } else {
             reasonOfCourierCancellation(shipmentCancellationReason)
         }
-        status = OrderStatus.CANCEL_REQUESTED
         cancellationReason = reason
+        cancellationRequestedAt = cancellationRequestedAt ?: Instant.now()
         awaitingReturn = wasPickedUp()
         refund = RefundInfo.request()
     }
@@ -194,25 +231,25 @@ class Order private constructor(
     }
 
     /**
-     * Payment service confirmed the refund actually went through, which finalizes the cancellation to CANCELLED -
-     * even if the goods are still on their way back to the warehouse ([awaitingReturn]): that's no concern of the
-     * customer's. The refunded amount must be the requested [refundAmount].
+     * Payment service confirmed the refund actually went through, which finishes the cancellation - even if the goods
+     * are still on their way back to the warehouse ([awaitingReturn]): that's no concern of the customer's. The
+     * refunded amount must be the requested [refundAmount].
      */
     fun confirmRefund(amount: Money) {
-        requireStatus("confirm refund", OrderStatus.CANCEL_REQUESTED)
         val currentRefund = requireRefund("confirm refund")
+        requireNotCancelled("confirm refund")
         if (amount != refundAmount()) {
             throw RefundAmountMismatchException(id, amount, refundAmount())
         }
         refund = currentRefund.confirm(amount)
-        status = OrderStatus.CANCELLED
+        cancelledAt = Instant.now()
     }
 
-    /** Payment service reported the refund failed; the order stays CANCEL_REQUESTED, flagged for follow-up. */
-    fun markRefundFailed() {
-        requireStatus("mark refund failed", OrderStatus.CANCEL_REQUESTED)
-        val currentRefund = requireRefund("mark refund failed")
-        refund = currentRefund.markFailed()
+    /** Payment service reported the refund failed; the order stays being cancelled, flagged for follow-up. */
+    fun failRefund() {
+        val currentRefund = requireRefund("fail refund")
+        requireNotCancelled("fail refund")
+        refund = currentRefund.fail()
     }
 
     fun wasPickedUp(): Boolean {
@@ -220,13 +257,34 @@ class Order private constructor(
     }
 
     /**
-     * The shipment can still end either way: the order is being processed, or the customer asked to cancel it and
-     * shipping-service hasn't answered yet - events about what the courier did before the request reached it may
-     * still arrive. Once a refund is requested, the cancellation is confirmed and the shipment is closed.
+     * Cancels an order whose payment closed unpaid - failed, expired or cancelled. A customer who had asked to cancel it
+     * keeps their reason: whatever closed the payment, the order is cancelled the way they asked for.
+     */
+    private fun cancelUnpaid(action: String, reason: CancellationReason) {
+        if (!isPaymentOpen()) {
+            throw OrderTransitionNotAllowedException(id, action, status)
+        }
+        val now = Instant.now()
+        if (cancellationRequestedAt == null) {
+            cancellationReason = reason
+            cancellationRequestedAt = now
+        }
+        cancelledAt = now
+    }
+
+    /**
+     * The shipment can still end either way: the order is paid, not delivered, and no refund has been requested yet -
+     * if the customer asked to cancel it, shipping-service hasn't answered, and events about what the courier did
+     * before the request reached it may still arrive. Once a refund is requested, the shipment is closed.
      */
     private fun requireOpenShipment(action: String) {
-        val awaitingShipmentCancellation = status == OrderStatus.CANCEL_REQUESTED && refund == null
-        if (status != OrderStatus.PROCESSING && !awaitingShipmentCancellation) {
+        if (!isPaid() || shipment?.deliveredAt != null || refund != null) {
+            throw OrderTransitionNotAllowedException(id, action, status)
+        }
+    }
+
+    private fun requireNotCancelled(action: String) {
+        if (cancelledAt != null) {
             throw OrderTransitionNotAllowedException(id, action, status)
         }
     }
@@ -234,17 +292,6 @@ class Order private constructor(
     private fun requireShipment(action: String): ShipmentInfo = shipment ?: throw ShipmentNotCreatedException(id, action)
 
     private fun requireRefund(action: String): RefundInfo = refund ?: throw RefundNotRequestedException(id, action)
-
-    private fun cancel(reason: CancellationReason) {
-        status = OrderStatus.CANCELLED
-        cancellationReason = reason
-    }
-
-    private fun requireStatus(action: String, vararg expected: OrderStatus) {
-        if (status !in expected) {
-            throw OrderTransitionNotAllowedException(id, action, status)
-        }
-    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -255,8 +302,10 @@ class Order private constructor(
     override fun hashCode(): Int = id.hashCode()
 
     override fun toString(): String =
-        "Order(id=$id, customerId=$customerId, status=$status, cancellationReason=$cancellationReason, " +
-                "awaitingReturn=$awaitingReturn, shipment=$shipment, refund=$refund, version=$version)"
+        "Order(id=$id, customerId=$customerId, status=$status, paymentConfirmedAt=$paymentConfirmedAt, " +
+                "cancellationReason=$cancellationReason, cancellationRequestedAt=$cancellationRequestedAt, " +
+                "cancelledAt=$cancelledAt, awaitingReturn=$awaitingReturn, shipment=$shipment, refund=$refund, " +
+                "version=$version)"
 
     companion object {
         /**
@@ -271,10 +320,11 @@ class Order private constructor(
                 customerId = customerId,
                 items = items,
                 address = address,
-                status = OrderStatus.PLACED,
                 paymentConfirmedAt = null,
                 shipment = null,
                 cancellationReason = null,
+                cancellationRequestedAt = null,
+                cancelledAt = null,
                 awaitingReturn = false,
                 refund = null,
                 version = 0,
@@ -288,10 +338,11 @@ class Order private constructor(
             customerId: UUID,
             items: List<OrderItem>,
             address: Address,
-            status: OrderStatus,
             paymentConfirmedAt: Instant? = null,
             shipment: ShipmentInfo? = null,
             cancellationReason: CancellationReason? = null,
+            cancellationRequestedAt: Instant? = null,
+            cancelledAt: Instant? = null,
             awaitingReturn: Boolean = false,
             refund: RefundInfo? = null,
             version: Long = 0,
@@ -299,15 +350,18 @@ class Order private constructor(
             updatedAt: Instant? = null,
         ): Order {
             findBrokenRule(id, items)?.let { throw InconsistentOrderException(id, it) }
+            findBrokenFact(paymentConfirmedAt, shipment, cancellationReason, cancellationRequestedAt, cancelledAt, refund)
+                ?.let { throw InconsistentOrderException(id, it) }
             return Order(
                 id = id,
                 customerId = customerId,
                 items = items,
                 address = address,
-                status = status,
                 paymentConfirmedAt = paymentConfirmedAt,
                 shipment = shipment,
                 cancellationReason = cancellationReason,
+                cancellationRequestedAt = cancellationRequestedAt,
+                cancelledAt = cancelledAt,
                 awaitingReturn = awaitingReturn,
                 refund = refund,
                 version = version,
@@ -325,6 +379,29 @@ class Order private constructor(
             id <= 0 -> "id must be positive"
             items.isEmpty() -> "order must contain at least one item"
             items.map { it.price.currency }.distinct().size != 1 -> "all order item currencies must match"
+            else -> null
+        }
+
+        /**
+         * The first rule a stored order's facts break, or null: the facts only ever arise in an order the transitions
+         * allow, so any other combination is corrupted data. A new order has no facts yet.
+         */
+        private fun findBrokenFact(
+            paymentConfirmedAt: Instant?,
+            shipment: ShipmentInfo?,
+            cancellationReason: CancellationReason?,
+            cancellationRequestedAt: Instant?,
+            cancelledAt: Instant?,
+            refund: RefundInfo?,
+        ): String? = when {
+            (cancellationReason == null) != (cancellationRequestedAt == null) ->
+                "a cancellation must have both its reason and its request time"
+            cancelledAt != null && cancellationRequestedAt == null -> "a cancelled order must have been asked to cancel"
+            shipment != null && paymentConfirmedAt == null -> "a shipment needs a paid order"
+            refund != null && (paymentConfirmedAt == null || cancellationRequestedAt == null) ->
+                "a refund needs a paid order being cancelled"
+            paymentConfirmedAt != null && cancelledAt != null && refund?.isConfirmed != true ->
+                "a paid order is cancelled only by its confirmed refund"
             else -> null
         }
     }

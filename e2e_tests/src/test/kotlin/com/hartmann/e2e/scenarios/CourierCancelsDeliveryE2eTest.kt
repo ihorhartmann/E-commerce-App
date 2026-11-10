@@ -98,9 +98,12 @@ class CourierCancelsDeliveryE2eTest : E2eScenarioTest() {
             assertThat(orderAfterRefund.refund?.confirmedAt).isNotNull()
         }
 
-        // the order is already cancelled - and refunded - so the customer has nothing left to cancel
-        val response = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id)
-        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.ORDER_NOT_CANCELLABLE")
+        // the order is already cancelled - and refunded: the customer's own cancellation changes nothing, and refunds
+        // nothing a second time
+        val orderAfterRequest = OrderApi.cancelOrder(orderUrl, TestUser.CLIENT1, order.id)
+        assertThat(orderAfterRequest.status).isEqualTo("CANCELLED")
+        assertThat(orderAfterRequest.cancellationReason).isEqualTo("CANCELLED_BY_CUSTOMER")
+        assertThat(PaymentApi.getRefundsByOrderId(DockerComposeStack.paymentServiceUrl, order.id)).hasSize(1)
     }
 
     @Test

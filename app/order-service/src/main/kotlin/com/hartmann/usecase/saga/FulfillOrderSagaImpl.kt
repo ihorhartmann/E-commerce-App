@@ -49,6 +49,16 @@ class FulfillOrderSagaImpl(
         }
 
     @Transactional
+    override fun onPaymentCancelled(message: KafkaMessageMetadata, orderId: Long) =
+        withIdempotency(message) {
+            val order = orderRepository.getOrder(orderId)
+            order.cancelPayment()
+
+            orderRepository.save(order)
+            orderKafkaProducer.publishCancelReservation(message.correlationId, order.id)
+        }
+
+    @Transactional
     override fun onShipmentCreated(message: KafkaMessageMetadata, orderId: Long, shipmentId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
@@ -124,7 +134,7 @@ class FulfillOrderSagaImpl(
     override fun onRefundFailed(message: KafkaMessageMetadata, orderId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)
-            order.markRefundFailed()
+            order.failRefund()
             orderRepository.save(order)
         }
 

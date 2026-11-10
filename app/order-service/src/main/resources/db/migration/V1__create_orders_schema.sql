@@ -8,6 +8,8 @@ CREATE TABLE orders.orders (
     status                    VARCHAR(30) NOT NULL,
     payment_confirmed_at      TIMESTAMPTZ,
     cancellation_reason       VARCHAR(30),
+    cancellation_requested_at TIMESTAMPTZ,
+    cancelled_at              TIMESTAMPTZ,
     awaiting_return           BOOLEAN NOT NULL,
     shipment_id               BIGINT,
     shipment_picked_up_at     TIMESTAMPTZ,

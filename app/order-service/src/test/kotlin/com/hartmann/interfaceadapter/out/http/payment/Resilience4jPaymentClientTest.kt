@@ -166,4 +166,39 @@ class Resilience4jPaymentClientTest {
         assertEquals(CircuitBreaker.State.CLOSED, circuitBreaker.state)
         verify(exactly = rejectedCalls) { delegate.submitPayment(orderId, amount) }
     }
+
+    @Test
+    fun `cancelPayment - calls the delegate once when the call succeeds`() {
+        val orderId = 1L
+        val correlationId = "1"
+        every { delegate.cancelPayment(correlationId, orderId) } returns Unit
+
+        client.cancelPayment(correlationId, orderId)
+
+        verify(exactly = 1) { delegate.cancelPayment(correlationId, orderId) }
+    }
+
+    @Test
+    fun `cancelPayment - retries a connect failure`() {
+        val orderId = 1L
+        val correlationId = "1"
+        every { delegate.cancelPayment(correlationId, orderId) } throws
+            ResourceAccessException("I/O error", ConnectException("Connection refused")) andThen Unit
+
+        client.cancelPayment(correlationId, orderId)
+
+        verify(exactly = 2) { delegate.cancelPayment(correlationId, orderId) }
+    }
+
+    @Test
+    fun `cancelPayment - throws PaymentServiceUnavailableException once every attempt fails to connect`() {
+        val orderId = 1L
+        val correlationId = "1"
+        every { delegate.cancelPayment(correlationId, orderId) } throws
+            ResourceAccessException("I/O error", ConnectException("Connection refused"))
+
+        assertThrows<PaymentServiceUnavailableException> { client.cancelPayment(correlationId, orderId) }
+
+        verify(exactly = MAX_ATTEMPTS) { delegate.cancelPayment(correlationId, orderId) }
+    }
 }

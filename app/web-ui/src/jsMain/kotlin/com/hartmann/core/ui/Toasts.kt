@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.hartmann.core.notification.Notifier
+import com.hartmann.core.notification.ToastKind
 import org.jetbrains.compose.web.attributes.ButtonType
 import org.jetbrains.compose.web.attributes.type
 import org.jetbrains.compose.web.dom.Button
@@ -20,8 +21,9 @@ fun Toasts(notifier: Notifier) {
     }) {
         toasts.forEach { toast ->
             Div({
-                classes("glass", "toast", if (toast.isError) "toast-error" else "toast-success")
-                attr("role", if (toast.isError) "alert" else "status")
+                classes("glass", "toast", toast.kind.cssClass())
+                // an error interrupts the screen reader; the rest waits its turn
+                attr("role", if (toast.kind == ToastKind.ERROR) "alert" else "status")
             }) {
                 Span { Text(toast.message) }
                 Button({
@@ -33,4 +35,10 @@ fun Toasts(notifier: Notifier) {
             }
         }
     }
+}
+
+private fun ToastKind.cssClass(): String = when (this) {
+    ToastKind.SUCCESS -> "toast-success"
+    ToastKind.WARNING -> "toast-warning"
+    ToastKind.ERROR -> "toast-error"
 }

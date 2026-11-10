@@ -42,7 +42,7 @@ class StripePaymentGateway private constructor(private val publishableKey: Strin
         if (error == null || error == undefined) {
             return PaymentResult.Succeeded
         }
-        return PaymentResult.Failed(error.message as? String ?: "The payment didn't go through.")
+        return PaymentResult.Failed(error.message as? String ?: "Your payment couldn't be completed. Check your card details or try another card.")
     }
 
     // matches the app's light glass style; Stripe draws its fields itself, so they can't take the app's CSS

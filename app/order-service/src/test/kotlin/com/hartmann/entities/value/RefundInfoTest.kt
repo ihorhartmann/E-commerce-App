@@ -43,7 +43,7 @@ class RefundInfoTest {
 
     @Test
     fun `markFailed - records the failure time`() {
-        val refund = RefundInfo.request().markFailed()
+        val refund = RefundInfo.request().fail()
 
         assertNotNull(refund.failedAt)
         assertFalse(refund.isConfirmed)
@@ -53,6 +53,6 @@ class RefundInfoTest {
     fun `markFailed - throws when already confirmed`() {
         val refund = RefundInfo.request().confirm(testAmount())
 
-        assertThrows<RefundTransitionNotAllowedException> { refund.markFailed() }
+        assertThrows<RefundTransitionNotAllowedException> { refund.fail() }
     }
 }

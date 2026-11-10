@@ -1,6 +1,7 @@
 package com.hartmann.feature.order
 
 import com.hartmann.core.model.Page
+import com.hartmann.feature.order.exception.OrderAlreadyPaidException
 import com.hartmann.feature.order.model.Address
 import com.hartmann.feature.order.model.Order
 import com.hartmann.feature.order.model.OrderLine
@@ -19,5 +20,10 @@ interface OrderApi {
 
     suspend fun getOrder(id: Long): Order
 
+    /**
+     * Cancels the order. A paid one is cancelled with a refund; an unpaid one - whose payment is cancelled first, so it
+     * can no longer be paid - is answered as it is, and cancelled moments later. Throws [OrderAlreadyPaidException] for
+     * an unpaid order that turns out to be paid.
+     */
     suspend fun cancelOrder(id: Long): Order
 }

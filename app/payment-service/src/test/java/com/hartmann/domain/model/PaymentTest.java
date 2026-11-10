@@ -465,4 +465,89 @@ class PaymentTest {
 
         assertThat(payment).isNotEqualTo("not a payment");
     }
+
+    @Test
+    void createExisting_allowsANullExternalIdWhenCancelled() {
+        var now = Instant.now();
+        var payment = Payment.createExisting(1L, 100L, null, money("10.00", Currency.USD),
+                PaymentStatus.CANCELLED, money("0.00", Currency.USD), 0L, now, now, now.plusSeconds(EXPIRES_IN_SECONDS));
+
+        assertThat(payment.externalId()).isNull();
+    }
+
+    // --- isOpen, isConfirmed ---
+
+    @Test
+    void isOpen_isTrueForAPaymentThatCanStillGoAnyWay() {
+        for (var status : List.of(PaymentStatus.PENDING, PaymentStatus.ATTEMPT_DECLINED)) {
+            assertThat(testPayment(status, "100.00", "0.00").isOpen()).as(status.name()).isTrue();
+        }
+        assertThat(testInitiatedPayment().isOpen()).isTrue();
+    }
+
+    @Test
+    void isOpen_isFalseOnceThePaymentReachedAFinalStatus() {
+        for (var status : List.of(PaymentStatus.CONFIRMED, PaymentStatus.FAILED, PaymentStatus.EXPIRED,
+                PaymentStatus.CANCELLED)) {
+            assertThat(testPayment(status, "100.00", "0.00").isOpen()).as(status.name()).isFalse();
+        }
+    }
+
+    @Test
+    void isConfirmed_isTrueOnlyForAConfirmedPayment() {
+        var amount = "100.00";
+        var refundedAmount = "0.00";
+        assertThat(testPayment(PaymentStatus.CONFIRMED, amount, refundedAmount).isConfirmed()).isTrue();
+        assertThat(testPayment(PaymentStatus.PENDING, amount, refundedAmount).isConfirmed()).isFalse();
+    }
+
+    // --- cancel ---
+
+    @Test
+    void cancel_movesAnOpenPaymentToCancelledKeepingItsExternalId() {
+        var payment = testPayment(PaymentStatus.PENDING, "100.00", "0.00");
+        var externalId = payment.externalId();
+
+        payment.cancel();
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.CANCELLED);
+        assertThat(payment.externalId()).isEqualTo(externalId);
+        assertThat(payment.updatedAt()).isNotNull();
+    }
+
+    @Test
+    void cancel_movesAPaymentThatNeverGotAPaymentIntentToCancelled() {
+        var payment = testInitiatedPayment();
+
+        payment.cancel();
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.CANCELLED);
+    }
+
+    @Test
+    void cancel_throwsForAPaymentInAFinalStatusLeavingItAsItWas() {
+        var payment = testPayment(PaymentStatus.CONFIRMED, "100.00", "0.00");
+
+        assertThatThrownBy(payment::cancel).isInstanceOf(PaymentTransitionNotAllowedException.class);
+        assertThat(payment.status()).isEqualTo(PaymentStatus.CONFIRMED);
+    }
+
+    // --- expire ---
+
+    @Test
+    void expire_movesAnOpenPaymentToExpired() {
+        var payment = testPayment(PaymentStatus.ATTEMPT_DECLINED, "100.00", "0.00");
+
+        payment.expire();
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.EXPIRED);
+    }
+
+    @Test
+    void expire_throwsForAPaymentInAFinalStatusLeavingItAsItWas() {
+        var payment = testPayment(PaymentStatus.CANCELLED, "100.00", "0.00");
+
+        assertThatThrownBy(payment::expire).isInstanceOf(PaymentTransitionNotAllowedException.class);
+        assertThat(payment.status()).isEqualTo(PaymentStatus.CANCELLED);
+    }
 }

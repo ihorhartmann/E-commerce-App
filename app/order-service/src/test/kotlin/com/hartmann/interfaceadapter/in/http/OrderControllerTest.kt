@@ -9,6 +9,7 @@ import com.hartmann.entities.model.exception.OrderNotCancellableException
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.entities.value.RefundInfo
 import com.hartmann.entities.value.ShipmentInfo
 import com.hartmann.entities.value.exception.InvalidAddressException
 import com.hartmann.entities.value.exception.ValueErrorCode
@@ -20,6 +21,7 @@ import com.hartmann.interfaceadapter.`in`.http.idempotency.dto.RequestResult
 import com.hartmann.interfaceadapter.out.http.inventory.exception.InsufficientStockException
 import com.hartmann.interfaceadapter.out.http.inventory.exception.InventoryErrorCode
 import com.hartmann.interfaceadapter.out.http.inventory.exception.InventoryUnavailableException
+import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentAlreadyConfirmedException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentErrorCode
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentServiceUnavailableException
 import com.hartmann.usecase.port.`in`.usecase.CancelOrderUseCase
@@ -105,7 +107,6 @@ class OrderControllerTest {
         customerId = customerId,
         items = listOf(testItem()),
         address = testAddress(),
-        status = OrderStatus.PLACED,
         createdAt = Instant.now(),
     )
 
@@ -367,14 +368,19 @@ class OrderControllerTest {
         val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
         val shipmentId = 7L
         val pickedUpAt = Instant.parse("2026-11-09T10:00:00Z")
+        val cancellationRequestedAt = Instant.parse("2026-11-09T10:30:00Z")
+        val cancelledAt = Instant.parse("2026-11-09T11:00:00Z")
         val order = Order.createExisting(
             id = orderId,
             customerId = customerId,
             items = listOf(testItem()),
             address = testAddress(),
-            status = OrderStatus.CANCELLED,
+            paymentConfirmedAt = Instant.parse("2026-11-09T09:00:00Z"),
             shipment = ShipmentInfo(shipmentId, pickedUpAt = pickedUpAt, returnedAt = Instant.parse("2026-11-09T12:00:00Z")),
             cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+            cancellationRequestedAt = cancellationRequestedAt,
+            cancelledAt = cancelledAt,
+            refund = RefundInfo(requestedAt = cancellationRequestedAt, confirmedAt = cancelledAt),
             createdAt = Instant.now(),
         )
         whenever(getOrderUseCase.execute(orderId, customerId)).thenReturn(order)
@@ -637,8 +643,8 @@ class OrderControllerTest {
             customerId = customerId,
             items = listOf(testItem()),
             address = testAddress(),
-            status = OrderStatus.CANCEL_REQUESTED,
             cancellationReason = CancellationReason.CANCELLED_BY_CUSTOMER,
+            cancellationRequestedAt = Instant.now(),
             createdAt = Instant.now(),
         )
         whenever(cancelOrderUseCase.execute(orderId, customerId)).thenReturn(order)
@@ -671,6 +677,26 @@ class OrderControllerTest {
             jsonPath("$.status") { value(HttpStatus.CONFLICT.value()) }
             jsonPath("$.code") { value(OrderErrorCode.ORDER_NOT_CANCELLABLE.code) }
             jsonPath("$.title") { value(OrderErrorCode.ORDER_NOT_CANCELLABLE.title) }
+        }
+
+        verify(cancelOrderUseCase, times(1)).execute(orderId, customerId)
+    }
+
+    @Test
+    fun `cancelOrder - returns 409 with its own code when the unpaid order turns out to be paid`() {
+        val orderId = 1L
+        val customerId = UUID.fromString("0192f1d2-7c4b-7000-8000-000000000001")
+        whenever(cancelOrderUseCase.execute(orderId, customerId))
+            .thenThrow(PaymentAlreadyConfirmedException(orderId, RuntimeException("payment answered 409")))
+
+        mockMvc.post("/api/v1/orders/{orderId}/cancel", orderId) {
+            with(clientJwt(customerId))
+            header("Idempotency-Key", "key-cancel-paid")
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value(PaymentErrorCode.PAYMENT_ALREADY_CONFIRMED.code) }
+            jsonPath("$.title") { value(PaymentErrorCode.PAYMENT_ALREADY_CONFIRMED.title) }
+            jsonPath("$.retryable") { value(false) }
         }
 
         verify(cancelOrderUseCase, times(1)).execute(orderId, customerId)

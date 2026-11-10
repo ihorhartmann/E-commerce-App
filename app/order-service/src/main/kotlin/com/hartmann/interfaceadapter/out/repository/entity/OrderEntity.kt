@@ -46,6 +46,8 @@ class OrderEntity(
     var addressLine1: String = "",
     var addressLine2: String = "",
 
+    // derived from the facts below, stored for queries (a customer's orders, the orders-by-status metrics); never read
+    // back as a fact - fromOrderEntity checks it against them instead
     @Enumerated(EnumType.STRING)
     var status: OrderStatus = OrderStatus.PLACED,
 
@@ -53,6 +55,8 @@ class OrderEntity(
 
     @Enumerated(EnumType.STRING)
     var cancellationReason: CancellationReason? = null,
+    var cancellationRequestedAt: Instant? = null,
+    var cancelledAt: Instant? = null,
 
     var awaitingReturn: Boolean = false,
 
@@ -97,6 +101,8 @@ fun toOrderEntity(order: Order): OrderEntity {
         status = order.status,
         paymentConfirmedAt = order.paymentConfirmedAt,
         cancellationReason = order.cancellationReason,
+        cancellationRequestedAt = order.cancellationRequestedAt,
+        cancelledAt = order.cancelledAt,
         awaitingReturn = order.awaitingReturn,
         shipmentId = order.shipment?.shipmentId,
         shipmentPickedUpAt = order.shipment?.pickedUpAt,
@@ -148,19 +154,25 @@ private fun buildOrder(entity: OrderEntity): Order {
         )
     }
 
-    return Order.createExisting(
+    val order = Order.createExisting(
         id = entity.id,
         customerId = entity.customerId,
         items = entity.items.map(::fromOrderItemEntity),
         address = Address(entity.addressCity, entity.addressPostalCode, entity.addressLine1, entity.addressLine2),
-        status = entity.status,
         paymentConfirmedAt = entity.paymentConfirmedAt,
         shipment = shipment,
         cancellationReason = entity.cancellationReason,
+        cancellationRequestedAt = entity.cancellationRequestedAt,
+        cancelledAt = entity.cancelledAt,
         awaitingReturn = entity.awaitingReturn,
         refund = refund,
         version = entity.version,
         createdAt = entity.createdAt,
         updatedAt = entity.updatedAt,
     )
+    // the stored status is only a copy of what the facts add up to: one that differs means the data was changed by hand
+    if (order.status != entity.status) {
+        throw InconsistentOrderException(entity.id, "stored status doesn't match the order's facts")
+    }
+    return order
 }

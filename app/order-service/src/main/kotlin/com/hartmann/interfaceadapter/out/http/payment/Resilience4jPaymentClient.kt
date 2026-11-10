@@ -37,4 +37,15 @@ class Resilience4jPaymentClient(
         } catch (e: ResourceAccessException) {
             throw PaymentServiceUnavailableException(orderId, e)
         }
+
+    override fun cancelPayment(correlationId: String, orderId: Long) =
+        try {
+            Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker) {
+                delegate.cancelPayment(correlationId, orderId)
+            }).get()
+        } catch (e: CallNotPermittedException) {
+            throw PaymentServiceUnavailableException(orderId, e)
+        } catch (e: ResourceAccessException) {
+            throw PaymentServiceUnavailableException(orderId, e)
+        }
 }

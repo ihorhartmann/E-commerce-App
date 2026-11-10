@@ -1,5 +1,6 @@
 package com.hartmann.usecase.saga
 
+import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
 import com.hartmann.entities.model.OrderStatus
@@ -38,7 +39,7 @@ private fun testItem() = OrderItem.createExisting(
 )
 
 private fun placedOrder() =
-    Order.createExisting(id = 1, customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress(), status = OrderStatus.PLACED, createdAt = Instant.now())
+    Order.createExisting(id = 1, customerId = UUID.randomUUID(), items = listOf(testItem()), address = testAddress(), createdAt = Instant.now())
 
 private fun processingOrder() = placedOrder().apply { confirmPayment() }
 
@@ -136,6 +137,24 @@ class FulfillOrderSagaImplTest {
         saga.onPaymentExpired(message, orderId)
 
         assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
+        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
+    }
+
+    @Test
+    fun `onPaymentCancelled - cancels the order for the customer and cancels the reservation`() {
+        val orderId = 1L
+        val messageId = UUID.randomUUID()
+        val correlationId = "corr-1"
+        val messageType = "PaymentCancelled"
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        val order = placedOrder()
+        stubGetOrder(order)
+        stubSave()
+
+        saga.onPaymentCancelled(message, orderId)
+
+        assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
+        assertEquals(CancellationReason.CANCELLED_BY_CUSTOMER, savedOrder?.cancellationReason)
         verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
     }
 

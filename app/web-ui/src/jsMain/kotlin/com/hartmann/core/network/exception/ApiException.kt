@@ -2,8 +2,11 @@ package com.hartmann.core.network.exception
 
 import io.ktor.http.HttpStatusCode
 
-/** A response the API answered with an error status; [message] is fit to be shown to the user. */
-open class ApiException(val status: Int, override val message: String) : Exception(message)
+/**
+ * A response the API answered with an error status; [message] is fit to be shown to the user. [code] is the problem's
+ * error code (e.g. `ORDER.ORDER_NOT_FOUND`), when it sent one - what a caller tells one failure from another by.
+ */
+open class ApiException(val status: Int, override val message: String, val code: String? = null) : Exception(message)
 
 /** The session is missing or has expired: the user has to sign in (again). */
 class UnauthorizedException :

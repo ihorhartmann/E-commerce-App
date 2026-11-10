@@ -7,6 +7,8 @@ public interface PaymentKafkaProducer {
 
     void publishPaymentExpired(String correlationId, long orderId);
 
+    void publishPaymentCancelled(String correlationId, long orderId);
+
     void publishRefundCompleted(String correlationId, long orderId, Money amount);
 
     void publishRefundFailed(String correlationId, long orderId);

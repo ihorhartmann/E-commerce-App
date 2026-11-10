@@ -8,7 +8,9 @@ public enum PaymentStatus {
     CONFIRMED,
     ATTEMPT_DECLINED,
     FAILED,
-    EXPIRED;
+    EXPIRED,
+    // the customer cancelled the order before paying it
+    CANCELLED;
 
     public static final List<PaymentStatus> NON_TERMINAL_STATUSES = List.of(INITIATED, PENDING, ATTEMPT_DECLINED);
 }

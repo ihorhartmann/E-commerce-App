@@ -13,7 +13,10 @@ import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.net.HttpURLConnection
 
-/** A customer may cancel only their own, paid order, and only while its shipment hasn't ended. */
+/**
+ * A customer may cancel only their own order, and only while its shipment hasn't ended; an unpaid one is cancelled
+ * through its payment - see CustomerCancelBeforePaymentE2eTest.
+ */
 class CustomerCancelRejectedE2eTest : E2eScenarioTest() {
 
     @Test
@@ -37,18 +40,6 @@ class CustomerCancelRejectedE2eTest : E2eScenarioTest() {
         assertThat(orderAfterRequest.status).isEqualTo("FULFILLED")
         assertThat(orderAfterRequest.cancellationReason).isNull()
         assertThat(PaymentApi.getRefundsByOrderId(paymentUrl, order.id)).isEmpty()
-    }
-
-    @Test
-    fun `cancel order - rejected for an order that is not paid yet`() {
-        val orderUrl = DockerComposeStack.orderServiceUrl
-        val product = E2eSharedSteps.createScenarioProduct(DockerComposeStack.inventoryServiceUrl, BigDecimal("79.99"))
-        val order = E2eSharedSteps.placeOrder(orderUrl, product.id, 1)
-
-        val response = OrderApi.requestOrderCancellation(orderUrl, TestUser.CLIENT1, order.id)
-
-        assertProblem(response, HttpURLConnection.HTTP_CONFLICT, "ORDER.ORDER_NOT_CANCELLABLE")
-        assertThat(OrderApi.getOrder(orderUrl, TestUser.CLIENT1, order.id).status).isEqualTo("PLACED")
     }
 
     @Test

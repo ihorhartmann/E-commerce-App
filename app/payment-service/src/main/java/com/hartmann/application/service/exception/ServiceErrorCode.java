@@ -5,7 +5,9 @@ import com.hartmann.domain.exception.ErrorCode;
 /** Codes of the failures the services themselves detect, outside the domain's rules. */
 public enum ServiceErrorCode implements ErrorCode {
     REFUND_IDEMPOTENCY_KEY_REUSED("The idempotency key already belongs to a different refund"),
-    CONFLICTING_REFUND_NOT_FOUND("Internal server error");
+    CONFLICTING_REFUND_NOT_FOUND("Internal server error"),
+    PAYMENT_ALREADY_CONFIRMED("The payment is already confirmed, so it can no longer be cancelled"),
+    PAYMENT_PROCESSING("The payment is being processed, try again shortly");
 
     private final String title;
 

@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, STRIPE_WEBHOOK_PATH).permitAll()
                         // synchronous call from the order-service with its own token, never a user's; not exposed by the gateway
                         .requestMatchers(HttpMethod.POST, PAYMENTS_PATH).hasRole(PAYMENT_SUBMIT_ROLE)
+                        .requestMatchers(HttpMethod.POST, PAYMENTS_PATH + "/*/cancel").hasRole(PAYMENT_SUBMIT_ROLE)
                         .requestMatchers(HttpMethod.GET, PAYMENTS_PATH + "/**").hasRole(ADMIN_ROLE)
                         .requestMatchers(HttpMethod.GET, REFUNDS_PATH + "/**").hasRole(ADMIN_ROLE)
                         .anyRequest().denyAll())
