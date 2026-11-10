@@ -13,6 +13,9 @@ import com.hartmann.application.port.out.http.exception.PaymentGatewayUnavailabl
 import com.hartmann.application.port.out.idempotency.dto.HttpRequestRecord;
 import com.hartmann.application.port.out.repository.exception.PaymentNotFoundException;
 import com.hartmann.application.port.out.repository.exception.RepositoryErrorCode;
+import com.hartmann.application.service.exception.PaymentAlreadyConfirmedException;
+import com.hartmann.application.service.exception.PaymentProcessingException;
+import com.hartmann.application.service.exception.ServiceErrorCode;
 import com.hartmann.domain.model.Payment;
 import com.hartmann.domain.model.PaymentStatus;
 import com.hartmann.domain.value.Currency;
@@ -367,6 +370,85 @@ class PaymentControllerTest {
     @Test
     void getByOrderId_returns403WhenTheCallerIsNotAnAdmin() throws Exception {
         mockMvc.perform(get("/api/v1/payments/{orderId}", 100L).with(jwtWithRole("CLIENT")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(HttpErrorCode.ACCESS_DENIED.code()));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void cancelPayment_returns200WithTheCancelledPayment() throws Exception {
+        var orderId = 100L;
+        var correlationId = "correlation-1";
+        var payment = testPayment(1L, orderId, PaymentStatus.CANCELLED);
+        when(paymentService.cancelPayment(correlationId, orderId)).thenReturn(payment);
+
+        mockMvc.perform(post("/api/v1/payments/{orderId}/cancel", orderId)
+                        .with(orderServiceJwt())
+                        .header("Idempotency-Key", "key-cancel")
+                        .header("X-Correlation-Id", correlationId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(payment.id()))
+                .andExpect(jsonPath("$.orderId").value(orderId))
+                .andExpect(jsonPath("$.status").value(PaymentStatus.CANCELLED.name()));
+
+        verify(paymentService, times(1)).cancelPayment(correlationId, orderId);
+    }
+
+    @Test
+    void cancelPayment_returns409AndRecordsTheResponseWhenThePaymentIsAlreadyConfirmed() throws Exception {
+        var orderId = 100L;
+        var correlationId = "correlation-1";
+        var idempotencyKey = "key-confirmed";
+        when(paymentService.cancelPayment(correlationId, orderId)).thenThrow(new PaymentAlreadyConfirmedException(orderId));
+
+        mockMvc.perform(post("/api/v1/payments/{orderId}/cancel", orderId)
+                        .with(orderServiceJwt())
+                        .header("Idempotency-Key", idempotencyKey)
+                        .header("X-Correlation-Id", correlationId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ServiceErrorCode.PAYMENT_ALREADY_CONFIRMED.code()))
+                .andExpect(jsonPath("$.retryable").value(false));
+
+        verify(paymentService, times(1)).cancelPayment(correlationId, orderId);
+        verify(httpIdempotencyService, times(1)).complete(eq(idempotencyKey), eq(HttpStatus.CONFLICT.value()), any());
+    }
+
+    @Test
+    void cancelPayment_returnsARetryable503AndReleasesTheKeyWhileThePaymentIsBeingProcessed() throws Exception {
+        var orderId = 100L;
+        var correlationId = "correlation-1";
+        var idempotencyKey = "key-processing";
+        when(paymentService.cancelPayment(correlationId, orderId)).thenThrow(new PaymentProcessingException(orderId));
+
+        mockMvc.perform(post("/api/v1/payments/{orderId}/cancel", orderId)
+                        .with(orderServiceJwt())
+                        .header("Idempotency-Key", idempotencyKey)
+                        .header("X-Correlation-Id", correlationId))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value(ServiceErrorCode.PAYMENT_PROCESSING.code()))
+                .andExpect(jsonPath("$.retryable").value(true));
+
+        verify(paymentService, times(1)).cancelPayment(correlationId, orderId);
+        verify(httpIdempotencyService, times(1)).release(idempotencyKey);
+    }
+
+    @Test
+    void cancelPayment_returns400WithoutTheSagasCorrelationId() throws Exception {
+        mockMvc.perform(post("/api/v1/payments/{orderId}/cancel", 100L)
+                        .with(orderServiceJwt())
+                        .header("Idempotency-Key", "key-no-correlation"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(HttpErrorCode.MISSING_HEADER.code()));
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    void cancelPayment_returns403WhenACustomerCallsItDirectly() throws Exception {
+        mockMvc.perform(post("/api/v1/payments/{orderId}/cancel", 100L)
+                        .with(jwtWithRole("CLIENT"))
+                        .header("Idempotency-Key", "key-customer"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(HttpErrorCode.ACCESS_DENIED.code()));
 

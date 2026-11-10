@@ -36,6 +36,11 @@ public class OutboxPaymentKafkaProducer implements PaymentKafkaProducer {
     }
 
     @Override
+    public void publishPaymentCancelled(String correlationId, long orderId) {
+        insert(correlationId, KafkaConst.PAYMENT_CANCELLED_EVENT, orderId, new OrderIdEvent(orderId));
+    }
+
+    @Override
     public void publishRefundCompleted(String correlationId, long orderId, Money amount) {
         insert(correlationId, KafkaConst.REFUND_COMPLETED_EVENT, orderId, RefundCompletedEvent.from(orderId, amount));
     }

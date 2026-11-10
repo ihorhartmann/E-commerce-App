@@ -4,7 +4,8 @@ import com.hartmann.domain.exception.ErrorCode;
 
 /** Codes of the failures of calls to Stripe that are this service's own fault, not the request's. */
 public enum StripeGatewayErrorCode implements ErrorCode {
-    PAYMENT_GATEWAY_AUTHENTICATION_FAILED("Internal server error");
+    PAYMENT_GATEWAY_AUTHENTICATION_FAILED("Internal server error"),
+    UNEXPECTED_PAYMENT_INTENT_STATUS("Internal server error");
 
     private final String title;
 

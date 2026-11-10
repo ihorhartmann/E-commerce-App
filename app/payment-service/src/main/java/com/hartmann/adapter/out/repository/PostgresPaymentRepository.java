@@ -154,15 +154,13 @@ public class PostgresPaymentRepository implements PaymentRepository {
     }
 
     @Override
-    public List<Payment> expireOverdue() {
+    public List<Payment> findOverdue() {
         var now = toOffsetDateTime(Instant.now());
-        return translatingFailures(() -> dsl.update(PAYMENTS)
-                .set(STATUS, PaymentStatus.EXPIRED.name())
-                .set(VERSION, VERSION.plus(1))
-                .set(UPDATED_AT, now)
+        return translatingFailures(() -> dsl.select(PAYMENT_FIELDS)
+                .from(PAYMENTS)
                 .where(STATUS.in(NON_TERMINAL_STATUSES))
                 .and(EXPIRES_AT.lt(now))
-                .returning(PAYMENT_FIELDS)
+                .orderBy(EXPIRES_AT)
                 .fetch())
                 .map(this::toPayment);
     }

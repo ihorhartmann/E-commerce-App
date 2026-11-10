@@ -1,6 +1,9 @@
 package com.hartmann.adapter.out.http;
 
 import com.hartmann.adapter.out.http.exception.PaymentGatewayAuthenticationException;
+import com.hartmann.adapter.out.http.exception.UnexpectedPaymentIntentStatusException;
+import com.hartmann.application.port.out.http.dto.PaymentCancellationReason;
+import com.hartmann.application.port.out.http.dto.PaymentIntentState;
 import com.hartmann.application.port.out.http.dto.SubmitPaymentResult;
 import com.hartmann.application.port.out.http.dto.SubmitRefundResult;
 import com.hartmann.application.port.out.http.exception.PaymentGatewayRejectedException;
@@ -16,6 +19,7 @@ import com.stripe.exception.PermissionException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.net.RequestOptions;
+import com.stripe.param.PaymentIntentCancelParams;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
 import io.micrometer.observation.ObservationRegistry;
@@ -34,8 +38,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -122,7 +128,7 @@ class StripePaymentGatewayTest {
 
         var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
         verify(stripeClient.v1().paymentIntents(), times(1)).create(any(PaymentIntentCreateParams.class), optionsCaptor.capture());
-        assertThat(optionsCaptor.getValue().getIdempotencyKey()).isEqualTo("order-" + orderId);
+        assertThat(optionsCaptor.getValue().getIdempotencyKey()).isEqualTo("placeOrder-" + orderId);
     }
 
     @Test
@@ -262,5 +268,166 @@ class StripePaymentGatewayTest {
         assertThatThrownBy(() -> gateway.submitRefund("pi_test", testRefund(1L, UUID.randomUUID(), "40.00")))
                 .isInstanceOf(PaymentGatewayAuthenticationException.class)
                 .hasCause(cause);
+    }
+
+    // --- cancelPayment ---
+
+    private static PaymentIntent intentWithStatus(String status) {
+        var intent = mock(PaymentIntent.class);
+        when(intent.getStatus()).thenReturn(status);
+        return intent;
+    }
+
+    private static InvalidRequestException unexpectedStateError() {
+        return new InvalidRequestException("This PaymentIntent's status is canceled", null, null,
+                "payment_intent_unexpected_state", 400, null);
+    }
+
+    @Test
+    void cancelPayment_cancelsThePaymentIntentAndReportsItCancelled() throws Exception {
+        var paymentIntentId = "pi_test";
+        var intent = intentWithStatus("canceled");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenReturn(intent);
+
+        var state = gateway.cancelPayment(42L, paymentIntentId, PaymentCancellationReason.REQUESTED_BY_CUSTOMER);
+
+        assertThat(state).isEqualTo(PaymentIntentState.CANCELLED);
+        verify(stripeClient.v1().paymentIntents(), times(1))
+                .cancel(eq(paymentIntentId), any(PaymentIntentCancelParams.class),
+                        any(RequestOptions.class));
+        verify(stripeClient.v1().paymentIntents(), never()).retrieve(any(String.class));
+    }
+
+    @Test
+    void cancelPayment_sendsTheCustomersReasonUnderAKeyOfTheCustomersCancellation() throws Exception {
+        var orderId = 42L;
+        var intent = intentWithStatus("canceled");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenReturn(intent);
+
+        gateway.cancelPayment(orderId, "pi_test", PaymentCancellationReason.REQUESTED_BY_CUSTOMER);
+
+        var paramsCaptor = ArgumentCaptor.forClass(PaymentIntentCancelParams.class);
+        var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeClient.v1().paymentIntents(), times(1))
+                .cancel(any(String.class), paramsCaptor.capture(), optionsCaptor.capture());
+        assertThat(paramsCaptor.getValue().getCancellationReason())
+                .isEqualTo(PaymentIntentCancelParams.CancellationReason.REQUESTED_BY_CUSTOMER);
+        assertThat(optionsCaptor.getValue().getIdempotencyKey()).isEqualTo("cancelOrder-" + orderId);
+    }
+
+    @Test
+    void cancelPayment_sendsTheAbandonedReasonUnderAKeyOfTheExpiration() throws Exception {
+        var orderId = 42L;
+        var intent = intentWithStatus("canceled");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenReturn(intent);
+
+        gateway.cancelPayment(orderId, "pi_test", PaymentCancellationReason.EXPIRED);
+
+        var paramsCaptor = ArgumentCaptor.forClass(PaymentIntentCancelParams.class);
+        var optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+        verify(stripeClient.v1().paymentIntents(), times(1))
+                .cancel(any(String.class), paramsCaptor.capture(), optionsCaptor.capture());
+        assertThat(paramsCaptor.getValue().getCancellationReason())
+                .isEqualTo(PaymentIntentCancelParams.CancellationReason.ABANDONED);
+        assertThat(optionsCaptor.getValue().getIdempotencyKey()).isEqualTo("expirePayment-" + orderId);
+    }
+
+    @Test
+    void cancelPayment_reportsAPaymentIntentStripeRefusesToCancelAsItIsNow() throws Exception {
+        var paymentIntentId = "pi_test";
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(unexpectedStateError());
+        var paid = intentWithStatus("succeeded");
+        when(stripeClient.v1().paymentIntents().retrieve(paymentIntentId)).thenReturn(paid);
+
+        var state = gateway.cancelPayment(42L, paymentIntentId, PaymentCancellationReason.REQUESTED_BY_CUSTOMER);
+
+        assertThat(state).isEqualTo(PaymentIntentState.SUCCEEDED);
+        verify(stripeClient.v1().paymentIntents(), times(1)).retrieve(paymentIntentId);
+    }
+
+    @Test
+    void cancelPayment_reportsAnAlreadyCancelledPaymentIntentCancelled() throws Exception {
+        var paymentIntentId = "pi_test";
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(unexpectedStateError());
+        var cancelled = intentWithStatus("canceled");
+        when(stripeClient.v1().paymentIntents().retrieve(paymentIntentId)).thenReturn(cancelled);
+
+        var state = gateway.cancelPayment(42L, paymentIntentId, PaymentCancellationReason.EXPIRED);
+
+        assertThat(state).isEqualTo(PaymentIntentState.CANCELLED);
+    }
+
+    @Test
+    void cancelPayment_reportsAPaymentIntentStillProcessing() throws Exception {
+        var intent = intentWithStatus("processing");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenReturn(intent);
+
+        var state = gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.EXPIRED);
+
+        assertThat(state).isEqualTo(PaymentIntentState.PROCESSING);
+    }
+
+    @Test
+    void cancelPayment_throwsForAPaymentIntentInAStatusACancellationCantLeaveItIn() throws Exception {
+        var intent = intentWithStatus("requires_capture");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenReturn(intent);
+
+        assertThatThrownBy(() -> gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.EXPIRED))
+                .isInstanceOf(UnexpectedPaymentIntentStatusException.class);
+    }
+
+    @Test
+    void cancelPayment_throwsPaymentGatewayExceptionWhenStripeRejectsTheRequestForAnotherReason() throws Exception {
+        var cause = new InvalidRequestException("No such payment_intent", "intent", null, "resource_missing", 404, null);
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.REQUESTED_BY_CUSTOMER))
+                .isInstanceOf(PaymentGatewayRejectedException.class)
+                .hasCause(cause);
+        verify(stripeClient.v1().paymentIntents(), never()).retrieve(any(String.class));
+    }
+
+    @Test
+    void cancelPayment_throwsPaymentGatewayUnavailableExceptionWhenStripeIsTemporarilyUnavailable() throws Exception {
+        var cause = new ApiConnectionException("connection failed");
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.REQUESTED_BY_CUSTOMER))
+                .isInstanceOf(PaymentGatewayUnavailableException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void cancelPayment_throwsPaymentGatewayAuthenticationExceptionWhenStripeRefusesTheApiKey() throws Exception {
+        var cause = new AuthenticationException("Invalid API Key provided", null, null, 401);
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.EXPIRED))
+                .isInstanceOf(PaymentGatewayAuthenticationException.class)
+                .hasCause(cause);
+    }
+
+    @Test
+    void cancelPayment_throwsPaymentGatewayUnavailableExceptionWhenReadingTheRefusedPaymentIntentFails() throws Exception {
+        var refusal = unexpectedStateError();
+        when(stripeClient.v1().paymentIntents().cancel(any(String.class), any(PaymentIntentCancelParams.class),
+                any(RequestOptions.class))).thenThrow(refusal);
+        var cause = new ApiConnectionException("connection failed");
+        when(stripeClient.v1().paymentIntents().retrieve(any(String.class))).thenThrow(cause);
+
+        assertThatThrownBy(() -> gateway.cancelPayment(42L, "pi_test", PaymentCancellationReason.EXPIRED))
+                .isInstanceOf(PaymentGatewayUnavailableException.class)
+                .hasCause(cause);
+        assertThat(cause.getSuppressed()).containsExactly(refusal);
     }
 }
