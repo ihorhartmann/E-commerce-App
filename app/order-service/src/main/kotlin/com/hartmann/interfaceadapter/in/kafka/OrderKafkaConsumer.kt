@@ -55,6 +55,11 @@ class OrderKafkaConsumer(
                     true
                 }
 
+                KafkaConst.PAYMENT_CANCELLED_EVENT -> {
+                    saga.onPaymentCancelled(message, parse<OrderIdEvent>(message.messageType, payload).orderId)
+                    true
+                }
+
                 KafkaConst.REFUND_COMPLETED_EVENT -> {
                     val event = parse<RefundCompletedEvent>(message.messageType, payload)
                     saga.onRefundCompleted(message, event.orderId, Money(event.amount, Currency.fromCode(event.currency)))

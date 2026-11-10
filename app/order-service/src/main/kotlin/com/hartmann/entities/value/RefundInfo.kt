@@ -16,8 +16,8 @@ data class RefundInfo(
         return copy(amount = amount, confirmedAt = Instant.now())
     }
 
-    fun markFailed(): RefundInfo {
-        requireNotConfirmed("mark failed")
+    fun fail(): RefundInfo {
+        requireNotConfirmed("fail")
         return copy(failedAt = Instant.now())
     }
 

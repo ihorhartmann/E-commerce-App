@@ -5,7 +5,6 @@ import com.hartmann.entities.exception.ErrorCode
 import com.hartmann.entities.model.CancellationReason
 import com.hartmann.entities.model.Order
 import com.hartmann.entities.model.OrderItem
-import com.hartmann.entities.model.OrderStatus
 import com.hartmann.entities.value.Address
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
@@ -45,7 +44,6 @@ private fun storedOrder(id: Long, customerId: UUID, productId: Long): Order = Or
     customerId = customerId,
     items = listOf(OrderItem.createExisting(1, id, productId, "Keyboard", 2, Money(BigDecimal("10.00"), Currency.EUR))),
     address = testAddress(),
-    status = OrderStatus.PLACED,
     createdAt = Instant.now(),
 )
 

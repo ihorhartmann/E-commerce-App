@@ -2,6 +2,7 @@ package com.hartmann.interfaceadapter.out.http.payment
 
 import com.hartmann.entities.value.Currency
 import com.hartmann.entities.value.Money
+import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentAlreadyConfirmedException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentFailureException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentGatewayUnavailableException
 import com.hartmann.interfaceadapter.out.http.payment.exception.PaymentRejectedException
@@ -15,6 +16,7 @@ import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.match.MockRestRequestMatchers.method
 import org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
@@ -121,6 +123,59 @@ class HttpPaymentClientTest {
 
         assertEquals(HttpStatus.BAD_REQUEST.value(), exception.status)
         assertEquals(paymentCode, exception.paymentCode)
+        server.verify()
+    }
+
+    private fun respondToCancel(orderId: Long, status: HttpStatus, body: String) {
+        server.expect(requestTo("$PAYMENTS_URL/$orderId/cancel"))
+            .andExpect(method(HttpMethod.POST))
+            .andRespond(withStatus(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(body))
+    }
+
+    @Test
+    fun `cancelPayment - posts to the order's cancel endpoint under a key of the order, with the saga's correlation id`() {
+        val orderId = 1L
+        val correlationId = "1"
+        server.expect(requestTo("$PAYMENTS_URL/$orderId/cancel"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(header("Idempotency-Key", "payment-cancel-order-$orderId"))
+            .andExpect(header("X-Correlation-Id", correlationId))
+            .andRespond(
+                withStatus(HttpStatus.OK).contentType(MediaType.APPLICATION_JSON)
+                    .body("""{"id":5,"orderId":$orderId,"status":"CANCELLED"}"""),
+            )
+
+        client.cancelPayment(correlationId, orderId)
+
+        server.verify()
+    }
+
+    @Test
+    fun `cancelPayment - throws PaymentAlreadyConfirmedException when the payment is already paid`() {
+        val orderId = 1L
+        respondToCancel(
+            orderId,
+            HttpStatus.CONFLICT,
+            """{"status":409,"code":"PAYMENT.PAYMENT_ALREADY_CONFIRMED","retryable":false}""",
+        )
+
+        val exception = assertThrows<PaymentAlreadyConfirmedException> { client.cancelPayment("1", orderId) }
+
+        assertEquals(orderId, exception.orderId)
+        server.verify()
+    }
+
+    @Test
+    fun `cancelPayment - throws PaymentServiceUnavailableException when payment asks to retry`() {
+        val orderId = 1L
+        respondToCancel(
+            orderId,
+            HttpStatus.SERVICE_UNAVAILABLE,
+            """{"status":503,"code":"PAYMENT.PAYMENT_PROCESSING","retryable":true}""",
+        )
+
+        assertThrows<PaymentServiceUnavailableException> { client.cancelPayment("1", orderId) }
+
         server.verify()
     }
 }

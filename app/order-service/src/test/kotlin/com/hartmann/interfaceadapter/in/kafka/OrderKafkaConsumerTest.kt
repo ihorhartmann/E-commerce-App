@@ -115,6 +115,21 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
+    fun `onPaymentEvent - dispatches PaymentCancelled to the saga`() {
+        val orderId = 106L
+        val messageId = UUID.randomUUID()
+        val correlationId = "corr-7"
+        val messageType = KafkaConst.PAYMENT_CANCELLED_EVENT
+        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
+        every { saga.onPaymentCancelled(message, orderId) } returns Unit
+
+        consumer.onPaymentEvent(messageType, messageId.toString(), correlationId, "{\"orderId\":$orderId}")
+
+        verify(exactly = 1) { saga.onPaymentCancelled(message, orderId) }
+        confirmVerified(saga)
+    }
+
+    @Test
     fun `onPaymentEvent - dispatches RefundCompleted to the saga`() {
         val orderId = 102L
         val messageId = UUID.randomUUID()
