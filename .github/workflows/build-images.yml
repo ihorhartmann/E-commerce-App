@@ -1,0 +1,115 @@
+name: Build Images
+
+# Builds the images of the selected services from the chosen branch and pushes them to the GitHub Container
+# Registry as ghcr.io/<owner>/<repository>/<service>:<tag>. Started by hand only: Actions > Build Images > Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag, e.g. test-1 or v0.1.0 (empty: the short commit hash)"
+        type: string
+        required: false
+      inventory-service:
+        description: inventory-service
+        type: boolean
+        default: true
+      order-service:
+        description: order-service
+        type: boolean
+        default: true
+      payment-service:
+        description: payment-service
+        type: boolean
+        default: true
+      shipping-service:
+        description: shipping-service
+        type: boolean
+        default: true
+      gateway-service:
+        description: gateway-service
+        type: boolean
+        default: true
+      web-ui:
+        description: web-ui
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      services: ${{ steps.plan.outputs.services }}
+      image-prefix: ${{ steps.plan.outputs.image-prefix }}
+    steps:
+      - id: plan
+        env:
+          # through the environment, never interpolated into the script: an input is free text
+          TAG_INPUT: ${{ inputs.tag }}
+          INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          set -euo pipefail
+
+          tag="${TAG_INPUT:-${GITHUB_SHA::7}}"
+          if [[ ! "${tag}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::'${tag}' is not a valid image tag: letters, digits, '_', '.', '-', at most 128 characters"
+            exit 1
+          fi
+
+          # every input that is a ticked checkbox is the name of a service
+          services="$(jq --compact-output '[to_entries[] | select(.value == true) | .key]' <<< "${INPUTS}")"
+          if [[ "${services}" == "[]" ]]; then
+            echo "::error::no service selected"
+            exit 1
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "services=${services}"
+            # an image name is lower-case, the repository's name isn't
+            echo "image-prefix=ghcr.io/${GITHUB_REPOSITORY,,}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # one service failing to build doesn't cancel the images of the others
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.prepare.outputs.services) }}
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image-prefix }}/${{ matrix.service }}:${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: app/${{ matrix.service }}
+          push: true
+          tags: ${{ env.IMAGE }}
+          # the source label is what links the package to this repository on GitHub
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # the layers of the previous build of this service, the downloaded dependencies above all
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+          # a plain image: with the attestation the package page lists a second, "unknown/unknown" platform
+          provenance: false
+
+      - run: echo "Pushed \`${IMAGE}\`" >> "${GITHUB_STEP_SUMMARY}"
