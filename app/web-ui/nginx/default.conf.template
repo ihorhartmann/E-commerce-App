@@ -12,6 +12,14 @@ upstream gateway {
     keepalive 16;
 }
 
+# The scheme the browser uses. In production a TLS proxy (Caddy) stands in front of nginx and talks plain HTTP to it,
+# so $scheme is "http" while the browser is on https: keep the X-Forwarded-Proto the proxy sends, or the gateway
+# builds http:// redirect URIs that Keycloak rejects. Without a proxy in front (locally) there is none - use $scheme.
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
 server {
     listen ${WEB_UI_PORT};
     root /usr/share/nginx/html;
@@ -42,7 +50,7 @@ server {
         # X-Forwarded-Proto, Spring drops the port of Host, so X-Forwarded-Host has to carry it.
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Host $http_host;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
