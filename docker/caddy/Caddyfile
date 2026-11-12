@@ -1,0 +1,31 @@
+# Production only (docker-compose.prod.yaml): the one entry point from the internet. Caddy orders and renews the
+# certificates itself (ACME, HTTP-01 on port 80), redirects http:// to https://, and forwards the browser's scheme
+# and host to the containers behind it in X-Forwarded-Proto / X-Forwarded-Host.
+#
+# {$NAME} is an environment variable of the container. No HSTS header: while the certificates come from the staging
+# CA (ACME_CA), a browser must still let the untrusted certificate be clicked through.
+
+{
+	acme_ca {$ACME_CA}
+}
+
+# the shop: the web UI's nginx, which forwards /api, /oauth2, /login and /logout to the gateway
+{$DOMAIN} {
+	reverse_proxy web-ui:{$WEB_UI_PORT}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+# Keycloak: only what a browser and the token's issuer URL need - the realms' endpoints and sign-in pages, and their
+# static files. The admin console is no part of it: it is reached through the SSH tunnel (KC_HOSTNAME_ADMIN).
+auth.{$DOMAIN} {
+	@public path /realms/* /resources/* /robots.txt
+	handle @public {
+		reverse_proxy keycloak:8080
+	}
+	handle {
+		respond 404
+	}
+}

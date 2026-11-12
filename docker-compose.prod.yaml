@@ -1,0 +1,172 @@
+# Production: what differs from docker-compose.yaml on the server (infrastructure/contabo/README.md). The server's
+# .env names both files in COMPOSE_FILE, so a plain `docker compose ...` there always merges them.
+#
+# * Our own services run the images the Build Images workflow pushed to GHCR - nothing is built on the server.
+# * Only Caddy is reachable from the internet (80, 443): it terminates TLS for ${DOMAIN} (the web UI) and
+#   auth.${DOMAIN} (Keycloak's sign-in pages). The tools are bound to 127.0.0.1 and reached through an SSH tunnel; a
+#   port Docker publishes goes around ufw, so nothing else may be published on 0.0.0.0.
+# * Every container has a memory limit, so that one of them can't starve the rest of the 12 GB, and is started
+#   again after a crash or a reboot.
+#
+# A list in this file is appended to the one in docker-compose.yaml when the two are merged: `!override` replaces it,
+# `!reset` removes it.
+
+x-restart: &restart
+  restart: unless-stopped
+
+# the JVM sizes its heap from the container's limit, but takes only a quarter of it by default
+x-jvm: &jvm
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+
+services:
+  caddy:
+    image: caddy:2.11.9-alpine
+    <<: *restart
+    mem_limit: 128m
+    networks:
+      - app-network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is not set}
+      WEB_UI_PORT: ${WEB_UI_PORT}
+      # Let's Encrypt's staging CA unless the real one is chosen explicitly: its certificates aren't trusted by
+      # browsers, but it has no rate limits worth speaking of - a misconfiguration retried over and over can't lock
+      # the domain out of real certificates for a week
+      ACME_CA: ${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # the certificates and the ACME account: lost, every start would order new ones
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web-ui
+      - keycloak
+
+  postgres:
+    <<: *restart
+    mem_limit: 1g
+    ports: !override
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+
+  keycloak:
+    <<: *restart
+    mem_limit: 1g
+    # the production mode: no dev defaults, the hostname enforced
+    command: ["start", "--import-realm"]
+    ports: !override
+      # the admin console, through the tunnel only (see KC_HOSTNAME_ADMIN)
+      - "127.0.0.1:${KEYCLOAK_PORT}:8080"
+    environment:
+      # TLS ends at Caddy, which talks plain HTTP to Keycloak and tells it the browser's scheme and host
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      # Caddy publishes only the sign-in pages (/realms, /resources); the admin console lives on the tunnel's address
+      KC_HOSTNAME_ADMIN: http://localhost:${KEYCLOAK_PORT}
+
+  kafka:
+    <<: *restart
+    mem_limit: 1g
+    ports: !reset []
+    environment:
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+      # the internal listener only: no client outside Docker's network
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+
+  kafka-ui:
+    <<: *restart
+    mem_limit: 512m
+    ports: !override
+      # no login of its own: through the tunnel only
+      - "127.0.0.1:${KAFKA_UI_PORT}:8080"
+    environment:
+      <<: *jvm
+
+  tempo:
+    <<: *restart
+    mem_limit: 512m
+
+  loki:
+    <<: *restart
+    mem_limit: 512m
+
+  prometheus:
+    <<: *restart
+    mem_limit: 1g
+
+  alertmanager:
+    <<: *restart
+    mem_limit: 64m
+
+  alloy:
+    <<: *restart
+    ports: !override
+      - "127.0.0.1:${ALLOY_UI_PORT}:12345"
+
+  grafana:
+    <<: *restart
+    mem_limit: 512m
+    ports: !override
+      - "127.0.0.1:${GRAFANA_PORT}:3000"
+    environment:
+      # a login instead of docker-compose.yaml's anonymous admin; the admin's password is set on the first start
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is not set}
+
+  inventory-service:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/inventory-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 256m
+    ports: !reset []
+
+  order-service:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/order-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 768m
+    ports: !reset []
+    environment:
+      <<: *jvm
+
+  payment-service:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/payment-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 768m
+    ports: !reset []
+    environment:
+      <<: *jvm
+
+  shipping-service:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/shipping-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 256m
+    ports: !reset []
+
+  gateway-service:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/gateway-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 768m
+    ports: !reset []
+    environment:
+      <<: *jvm
+
+  web-ui:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/web-ui:${IMAGE_TAG:?IMAGE_TAG is not set}
+    build: !reset null
+    <<: *restart
+    mem_limit: 64m
+    # reached by Caddy only, inside Docker's network
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:

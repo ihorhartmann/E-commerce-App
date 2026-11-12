@@ -68,13 +68,13 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:${GATEWAY_PORT}/login/oauth2/code/keycloak",
-        "http://localhost:${WEB_UI_PORT}/login/oauth2/code/keycloak"
+        "${GATEWAY_PUBLIC_URL}/login/oauth2/code/keycloak",
+        "${WEB_UI_PUBLIC_URL}/login/oauth2/code/keycloak"
       ],
       "webOrigins": [],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:${GATEWAY_PORT}/##http://localhost:${WEB_UI_PORT}/"
+        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_URL}/##${WEB_UI_PUBLIC_URL}/"
       }
     },
     {

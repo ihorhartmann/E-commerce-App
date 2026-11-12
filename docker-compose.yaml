@@ -42,8 +42,9 @@ services:
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      # public URL, always used as the token issuer (iss) - whoever requested the token
-      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT}
+      # public URL, always used as the token issuer (iss) - whoever requested the token. KEYCLOAK_URL is set in
+      # production only (infrastructure/contabo); every OIDC_ISSUER below falls back to the same local URL
+      KC_HOSTNAME: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}
       # lets other containers use http://keycloak:8080 for back-channel calls (token, jwks)
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
@@ -52,8 +53,10 @@ services:
       KC_EVENT_METRICS_USER_ENABLED: "true"
       GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
       ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
-      GATEWAY_PORT: ${GATEWAY_PORT}
-      WEB_UI_PORT: ${WEB_UI_PORT}
+      # the addresses the browser comes back to after signing in and out (the gateway's redirect URIs in the realm):
+      # the gateway itself and the web UI in front of it, both on the one public domain in production
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:${GATEWAY_PORT}}
+      WEB_UI_PUBLIC_URL: ${WEB_UI_PUBLIC_URL:-http://localhost:${WEB_UI_PORT}}
     volumes:
       - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
       # the login theme, file by file: its glass.css is the web UI's own, so the sign-in pages match the app
@@ -254,6 +257,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # light or dark as the operating system is, for every user who hasn't picked a theme of their own
+      GF_USERS_DEFAULT_THEME: system
       # the read-only Postgres user of its datasource - see docker/postgres/init-grafana-reader.sh
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is not set}
       POSTGRES_DB: ${POSTGRES_DB}
@@ -292,7 +297,7 @@ services:
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       # Keycloak realm whose access tokens are accepted: public URL (= iss), keys from inside the network
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
@@ -337,7 +342,7 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
       OIDC_TOKEN_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
@@ -391,7 +396,7 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
@@ -434,7 +439,7 @@ services:
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
@@ -471,7 +476,7 @@ services:
       OTEL_SERVICE_NAME: gateway-service
       LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
       # public realm URL - equal to `iss` in tokens, used for browser redirects
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       # the same realm from inside the network - token, jwks, userinfo
       OIDC_INTERNAL_URI: http://keycloak:8080/realms/ecommerce
       OIDC_CLIENT_ID: gateway
