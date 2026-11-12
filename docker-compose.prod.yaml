@@ -65,6 +65,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
       # Caddy publishes only the sign-in pages (/realms, /resources); the admin console lives on the tunnel's address
       KC_HOSTNAME_ADMIN: http://localhost:${KEYCLOAK_PORT}
+      # no password grant (e2e-tests) and no Postman client on the internet
+      KC_TEST_CLIENTS_ENABLED: "false"
 
   kafka:
     <<: *restart
@@ -116,7 +118,9 @@ services:
       # a login instead of docker-compose.yaml's anonymous admin; the admin's password is set on the first start
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_AUTH_DISABLE_LOGIN_FORM: "false"
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is not set}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    secrets:
+      - grafana_admin_password
 
   inventory-service:
     image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/inventory-service:${IMAGE_TAG:?IMAGE_TAG is not set}
@@ -170,3 +174,29 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+
+# The secrets come from the files in secrets/ (infrastructure/contabo/scripts/generate-env-and-secrets.sh) instead of .env,
+# which holds no secret here. Compose mounts each file as it is on the host, ignoring a secret's mode: secrets/ is
+# readable by root only (700), the files in it by anyone (644) - the containers that read them run as other users.
+secrets:
+  postgres_password: !override
+    file: ./secrets/postgres_password
+  grafana_db_password: !override
+    file: ./secrets/grafana_db_password
+  keycloak_admin_password: !override
+    file: ./secrets/keycloak_admin_password
+  app_admin_password: !override
+    file: ./secrets/app_admin_password
+  gateway_client_secret: !override
+    file: ./secrets/gateway_client_secret
+  order_service_client_secret: !override
+    file: ./secrets/order_service_client_secret
+  stripe_secret_key: !override
+    file: ./secrets/stripe_secret_key
+  stripe_webhook_secret: !override
+    file: ./secrets/stripe_webhook_secret
+  alert_smtp_password: !override
+    file: ./secrets/alert_smtp_password
+  # Grafana's admin: a login of its own in production, an anonymous admin locally (docker-compose.yaml)
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password

@@ -72,4 +72,4 @@ datasources:
       sslmode: disable
       postgresVersion: 1500
     secureJsonData:
-      password: $GRAFANA_DB_PASSWORD
+      password: $GF_DATASOURCE_POSTGRES_PASSWORD

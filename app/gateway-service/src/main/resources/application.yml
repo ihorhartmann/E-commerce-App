@@ -13,9 +13,15 @@ server:
 # The `oidc.*` properties (OidcProperties) are deliberately not declared here: Spring binds them straight from the
 # env vars OIDC_ISSUER, OIDC_INTERNAL_URI, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ROLES_CLAIM. A `${...}` placeholder
 # here would be bound as a literal string when its env var is missing, and the gateway would start misconfigured;
-# without it, a missing env var fails the startup.
+# without it, a missing env var fails the startup. The client secret alone comes as a Docker secret, the file
+# /run/secrets/oidc.client-secret (spring.config.import below) - OIDC_CLIENT_SECRET outside Docker.
 
 spring:
+  config:
+    # the secrets, from Docker: each file in /run/secrets is a property named after it - the name of the ${...}
+    # placeholder it fills here, or a property bound as it is. Optional: the tests and a service started outside Docker
+    # take them from env vars instead
+    import: optional:configtree:/run/secrets/
   reactor:
     # WebFlux runs a request on whichever thread is free at each step, so the MDC - a thread-local - would not have
     # the request's traceId and spanId; restores them, from the request's Reactor context, on every step

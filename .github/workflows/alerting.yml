@@ -23,8 +23,10 @@ jobs:
       # rendered with made-up values: the syntax, the email templates, and which receiver each severity reaches
       - name: Check Alertmanager's configuration and routing
         run: >-
+          printf ci-password > "$RUNNER_TEMP/smtp_password" &&
           docker run --rm -v "$PWD/docker/alertmanager:/etc/alertmanager:ro"
+          -v "$RUNNER_TEMP/smtp_password:/run/secrets/alert_smtp_password:ro"
           -e ALERT_SMTP_SMARTHOST=smtp.example.com:587 -e ALERT_SMTP_USERNAME=ci@example.com
-          -e ALERT_SMTP_PASSWORD=ci-password -e ALERT_EMAIL_FROM=ci@example.com -e ALERT_EMAIL_TO=ci@example.com
-          -e GRAFANA_URL=http://localhost:8089
+          -e ALERT_SMTP_PASSWORD_FILE=/run/secrets/alert_smtp_password -e ALERT_EMAIL_FROM=ci@example.com
+          -e ALERT_EMAIL_TO=ci@example.com -e GRAFANA_URL=http://localhost:8089
           --entrypoint /bin/sh prom/alertmanager:v0.34.2 /etc/alertmanager/entrypoint.sh check

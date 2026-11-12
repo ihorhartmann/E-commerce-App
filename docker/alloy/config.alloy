@@ -62,8 +62,14 @@ otelcol.exporter.otlphttp "prometheus" {
 
 // Postgres itself - connections against max_connections, deadlocks, database size - and the custom queries over the
 // services' tables: outbox backlog, orders by status, stuck orders, saga durations, payments, refunds, shipments.
+// The password is a Docker secret; secret-typed here, so Alloy's UI doesn't show it.
+local.file "postgres_password" {
+  filename  = "/run/secrets/postgres_password"
+  is_secret = true
+}
+
 prometheus.exporter.postgres "postgres" {
-  data_source_names          = [string.format("postgresql://%s:%s@postgres:5432/%s?sslmode=disable", sys.env("POSTGRES_USER"), sys.env("POSTGRES_PASSWORD"), sys.env("POSTGRES_DB"))]
+  data_source_names          = [string.format("postgresql://%s:%s@postgres:5432/%s?sslmode=disable", sys.env("POSTGRES_USER"), string.trim_space(convert.nonsensitive(local.file.postgres_password.content)), sys.env("POSTGRES_DB"))]
   custom_queries_config_path = "/etc/alloy/postgres-queries.yaml"
 }
 

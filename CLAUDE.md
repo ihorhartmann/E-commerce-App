@@ -164,6 +164,16 @@ instead of silently overriding it after a Spring Boot upgrade.
 All services receive the environment variables required to connect to Kafka, database, etc. via env vars. If a variable
 is missing, the service must not start and must log an error.
 
+Secrets (passwords, client secrets, API keys) are the exception: they reach a container as a Docker secret, a file in
+`/run/secrets`, never as an environment variable (which `docker inspect` shows). `docker-compose.yaml` takes their
+values from `.env`, `docker-compose.prod.yaml` from the files in `secrets/` - the containers read the same files either
+way. Our own services read a secret from the file named after the variable it replaces - mounted with
+`target: DB_PASSWORD`, it is `/run/secrets/DB_PASSWORD`: Go services through `env.GetSecretEnv`, falling back to the
+variable itself outside Docker; Spring services import `/run/secrets` as a `configtree` (each file is a property named
+after it, filling the `${...}` placeholder of that name). An image that reads only
+environment variables gets them from a wrapper that reads the files first (`docker/keycloak/entrypoint.sh`). A new
+secret is declared in both compose files and in `infrastructure/contabo/scripts/generate-env-and-secrets.sh`.
+
 All services must have graceful shutdown, so that on receiving a termination signal the service can close all Kafka,
 database connections and other resources if there are such.
 
