@@ -2,8 +2,8 @@
 
 The whole docker compose stack on one server (Ubuntu 24.04), `docker-compose.yaml` merged with
 `docker-compose.prod.yaml`. The shop is on `https://<DOMAIN>`, Keycloak's sign-in pages on `https://auth.<DOMAIN>`,
-Grafana on `https://grafana.<DOMAIN>` - signed in through Keycloak: you as `admin`, visitors as the published
-`observer` (a viewer). Everything else - Kafka UI, Alloy, Keycloak's admin console and master realm, Postgres - only
+Grafana on `https://grafana.<DOMAIN>` - signed in through Keycloak's `internal` realm: you as `admin`, visitors as the
+published `observer` (a viewer). Everything else - Kafka UI, Alloy, Keycloak's admin console and master realm, Postgres - only
 through an SSH tunnel.
 
 ```text
@@ -46,6 +46,7 @@ every secret issued again.
 The shop's admin (`admin` in the `ecommerce` realm) signs in with `secrets/app_admin_password`; the demo clients and
 couriers with the password `demo` (the repository's README). The realm's clients for the e2e tests and Postman are
 off.
+Grafana's admin (`admin` in the `internal` realm) signs in with `secrets/internal_admin_password`.
 
 `secrets/stripe_webhook_secret` holds the signing secret of the webhook endpoint in the Stripe dashboard (test mode):
 Developers → Webhooks → Add destination, events from your account, API version `2026-05-27.dahlia` (the one

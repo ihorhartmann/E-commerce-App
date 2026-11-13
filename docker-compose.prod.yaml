@@ -121,9 +121,10 @@ services:
       - "127.0.0.1:${GRAFANA_PORT}:3000"
     environment:
       # public at grafana.${DOMAIN} (Caddy), every visitor signed in through Keycloak: no anonymous user, no login form
-      # of Grafana's own, no password in an API call - only the realm's grafana client. Its role comes from the realm
-      # roles in the token's `roles` claim: ADMIN is Grafana's admin, OBSERVER (the published demo account
-      # `observer`) a viewer; anyone else is turned away
+      # of Grafana's own, no password in an API call - only the grafana client of the internal realm
+      # (docker/keycloak/realm-internal.json), the staff's, apart from the shop's customers and their sessions. Its role
+      # comes from the realm roles in the token's `roles` claim: ADMIN is Grafana's admin, OBSERVER (the published demo
+      # account `observer`) a viewer; anyone else is turned away
       GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_URL:?GRAFANA_PUBLIC_URL is not set}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
@@ -136,18 +137,16 @@ services:
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
       # the browser goes to the public URL; Grafana itself calls Keycloak inside Docker's network
-      # prompt=login: Keycloak asks for the account every time, even with a session of its own - one Grafana turned
-      # away (a shop account, say) would otherwise be signed in again at once, with no way to pick another one
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL is not set}/realms/ecommerce/protocol/openid-connect/auth?prompt=login
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
-      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL is not set}/realms/internal/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/internal/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/internal/protocol/openid-connect/userinfo
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: >-
         contains(roles[*], 'ADMIN') && 'GrafanaAdmin' || contains(roles[*], 'OBSERVER') && 'Viewer'
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "true"
       GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
       GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
       # signing out of Grafana signs out of Keycloak too, back to Grafana's sign-in
-      GF_AUTH_SIGNOUT_REDIRECT_URL: ${KEYCLOAK_URL}/realms/ecommerce/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${GRAFANA_PUBLIC_URL}/login
+      GF_AUTH_SIGNOUT_REDIRECT_URL: ${KEYCLOAK_URL}/realms/internal/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${GRAFANA_PUBLIC_URL}/login
       # a viewer may query in Explore - the logs, traces and metrics hold no personal data (docker/alloy/config.alloy,
       # docker/postgres/grafana-views.sql) - but saves nothing, and keeps no copy of a dashboard
       GF_USERS_VIEWERS_CAN_EDIT: "true"
@@ -229,6 +228,8 @@ secrets:
     file: ./secrets/order_service_client_secret
   grafana_client_secret: !override
     file: ./secrets/grafana_client_secret
+  internal_admin_password: !override
+    file: ./secrets/internal_admin_password
   stripe_secret_key: !override
     file: ./secrets/stripe_secret_key
   stripe_webhook_secret: !override

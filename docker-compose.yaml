@@ -46,6 +46,7 @@ services:
       - gateway_client_secret
       - order_service_client_secret
       - grafana_client_secret
+      - internal_admin_password
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -72,6 +73,8 @@ services:
     volumes:
       - ./docker/keycloak/entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
       - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
+      # the internal tools' own realm (Grafana): their staff, kept apart from the shop's customers - sessions too
+      - ./docker/keycloak/realm-internal.json:/opt/keycloak/data/import/realm-internal.json:ro
       # the login theme, file by file: its glass.css is the web UI's own, so the sign-in pages match the app
       - ./docker/keycloak/themes/ecommerce/login/theme.properties:/opt/keycloak/themes/ecommerce/login/theme.properties:ro
       - ./docker/keycloak/themes/ecommerce/login/resources/css/login.css:/opt/keycloak/themes/ecommerce/login/resources/css/login.css:ro
@@ -623,9 +626,12 @@ secrets:
     environment: GATEWAY_CLIENT_SECRET
   order_service_client_secret:
     environment: ORDER_SERVICE_CLIENT_SECRET
-  # Grafana's client in the realm (its sign-in through Keycloak, production only)
+  # Grafana's client in the internal realm (its sign-in through Keycloak, production only)
   grafana_client_secret:
     environment: GRAFANA_CLIENT_SECRET
+  # the admin of the internal realm (docker/keycloak/realm-internal.json): Grafana's admin
+  internal_admin_password:
+    environment: INTERNAL_ADMIN_PASSWORD
   stripe_secret_key:
     environment: STRIPE_SECRET_KEY
   stripe_webhook_secret:

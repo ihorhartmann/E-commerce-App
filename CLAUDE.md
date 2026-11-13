@@ -12,8 +12,8 @@ a browser client of the Gateway.
 
 Services communicate with each other through Kafka and HTTP and expose REST APIs for frontend communication.
 
-All services are located in the `app` directory; the Keycloak realm (roles, clients, test users) is
-`docker/keycloak/realm-ecommerce.json`.
+All services are located in the `app` directory; the Keycloak realms (roles, clients, users) are
+`docker/keycloak/realm-ecommerce.json` (the shop) and `docker/keycloak/realm-internal.json` (the staff's tools).
 
 The **Order Service** acts as the orchestrator for the other services.
 
@@ -23,6 +23,9 @@ The **Order Service** acts as the orchestrator for the other services.
   `INVENTORY_RESERVE`) are in the claim named by `OIDC_ROLES_CLAIM`, the user id is `sub` (a UUID).
 * The Gateway logs browser users in (Authorization Code + PKCE, tokens kept in the server-side session) and relays
   their token; Bearer clients (Postman, e2e tests) send their own. It only checks that a request is authenticated.
+* Two realms, one per kind of user: `ecommerce` (`docker/keycloak/realm-ecommerce.json`) for the shop - its customers,
+  couriers and admin - and `internal` (`docker/keycloak/realm-internal.json`) for the staff's tools - Grafana. Each has
+  its own users, policies and sessions; a tool for the staff goes into `internal`, never into the shop's realm.
 * The Web UI's nginx forwards the Gateway's paths (`/api`, `/oauth2`, `/login`, `/logout`), so the browser sees one
   origin and the session cookie works without CORS. The Gateway knows nothing about the UI: it only builds its
   redirect URIs from the `X-Forwarded-*` headers nginx sets.

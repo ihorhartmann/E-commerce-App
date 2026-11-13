@@ -51,11 +51,22 @@ to everyone else, so the realm file holds the demo password as a hash.
 |---|---|---|---|
 | `client1`, `client2` | `demo` | `CLIENT` | place, read and cancel own orders (with their shipment) |
 | `courier1`, `courier2` | `demo` | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
-| `observer` | `demo` | `OBSERVER` | Grafana only, in production at `https://grafana.<domain>`: every dashboard, Explore over the logs, traces and metrics - changes nothing, and sees no personal data (IP addresses, logins and emails are masked before Loki stores them, addresses are no column of the views Grafana reads); no role in the shop itself |
 | `admin` | `APP_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | create and update products, read payments and refunds |
 
 Self-registration is open, and a new user gets the `CLIENT` role. The `order-service` client has its own service
 account (roles `INVENTORY_RESERVE`, `PAYMENT_SUBMIT`) for its calls to the inventory- and payment-service.
+
+### Grafana's users
+
+Grafana (in production at `https://grafana.<domain>`) signs in through a realm of its own, `internal`
+(`docker/keycloak/realm-internal.json`): the staff, apart from the shop's customers - no self-registration, a stricter
+password policy (12 characters at least), and sessions of its own, so one can be signed in to the shop and to Grafana
+with different accounts at once. Its client, `grafana`, is used in production only; locally Grafana is an anonymous admin.
+
+| User | Password | Role | Can |
+|---|---|---|---|
+| `observer` | `demo` | `OBSERVER` | every dashboard, and Explore over the logs, traces and metrics - changes nothing, and sees no personal data (IP addresses, logins and emails are masked before Loki stores them, addresses are no column of the views Grafana reads) |
+| `admin` | `INTERNAL_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | Grafana's admin |
 
 ## Getting a token
 
