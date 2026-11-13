@@ -1,9 +1,6 @@
 package value
 
-import (
-	"log/slog"
-	"strings"
-)
+import "strings"
 
 type Address struct {
 	city       string
@@ -14,7 +11,7 @@ type Address struct {
 
 func NewAddress(city, postalCode, line1, line2 string) (Address, error) {
 	if strings.TrimSpace(city) == "" || strings.TrimSpace(postalCode) == "" || strings.TrimSpace(line1) == "" {
-		return Address{}, ErrInvalidAddress.WithAttrs(slog.String("city", city), slog.String("postalCode", postalCode))
+		return Address{}, ErrInvalidAddress
 	}
 
 	return Address{

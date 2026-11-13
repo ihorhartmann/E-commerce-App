@@ -1,6 +1,6 @@
 package com.hartmann.e2e.support.docker
 
-import com.hartmann.e2e.support.auth.TestUser
+import com.hartmann.e2e.support.auth.ADMIN_PASSWORD_ENV
 import org.testcontainers.containers.ComposeContainer
 import org.testcontainers.containers.wait.strategy.Wait
 import java.io.File
@@ -48,11 +48,13 @@ object DockerComposeStack {
         requiredEnv("KEYCLOAK_ADMIN_PASSWORD")
         requiredEnv("GATEWAY_CLIENT_SECRET")
         requiredEnv("ORDER_SERVICE_CLIENT_SECRET")
+        requiredEnv("GRAFANA_CLIENT_SECRET")
+        requiredEnv("INTERNAL_ADMIN_PASSWORD")
         requiredEnv("WEB_UI_PORT")
         requiredEnv("GRAFANA_PORT")
         requiredEnv("GRAFANA_DB_PASSWORD")
         requiredEnv("ALLOY_UI_PORT")
-        TestUser.entries.forEach { requiredEnv(it.passwordEnv) }
+        requiredEnv(ADMIN_PASSWORD_ENV)
     }
 
     // No .withEnv(...): Testcontainers doesn't reliably pass these through to docker-compose's

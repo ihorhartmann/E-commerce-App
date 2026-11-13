@@ -8,6 +8,7 @@
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "bruteForceProtected": true,
+  "passwordPolicy": "length(8) and notUsername and notEmail",
   "roles": {
     "realm": [
       {
@@ -68,13 +69,13 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:${GATEWAY_PORT}/login/oauth2/code/keycloak",
-        "http://localhost:${WEB_UI_PORT}/login/oauth2/code/keycloak"
+        "${GATEWAY_PUBLIC_URL}/login/oauth2/code/keycloak",
+        "${WEB_UI_PUBLIC_URL}/login/oauth2/code/keycloak"
       ],
       "webOrigins": [],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:${GATEWAY_PORT}/##http://localhost:${WEB_UI_PORT}/"
+        "post.logout.redirect.uris": "${GATEWAY_PUBLIC_URL}/##${WEB_UI_PUBLIC_URL}/"
       }
     },
     {
@@ -91,9 +92,20 @@
       "serviceAccountsEnabled": true
     },
     {
+      "clientId": "admin-cli",
+      "name": "${client_admin-cli}",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
       "clientId": "e2e-tests",
       "name": "E2E tests (password grant, dev/test only)",
-      "enabled": true,
+      "enabled": "${KC_TEST_CLIENTS_ENABLED}",
       "protocol": "openid-connect",
       "publicClient": true,
       "standardFlowEnabled": false,
@@ -104,7 +116,7 @@
     {
       "clientId": "postman",
       "name": "Postman (manual testing)",
-      "enabled": true,
+      "enabled": "${KC_TEST_CLIENTS_ENABLED}",
       "protocol": "openid-connect",
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -121,6 +133,7 @@
   ],
   "users": [
     {
+      "id": "86c981dc-38de-4f3d-b51c-cbf034b67f6f",
       "username": "client1",
       "email": "client1@example.com",
       "firstName": "Client",
@@ -130,15 +143,16 @@
       "credentials": [
         {
           "type": "password",
-          "value": "client1",
-          "temporary": false
+          "secretData": "{\"value\":\"NLnClUYCLdO7gc1X45s1FH4GKqfOvmkctRTpKVTgCdosnFZ1cWzTin3w7wDVgevcwMVo4C+othKbAeuKd/4JDw==\",\"salt\":\"SMuflAahwV+7Azho2XsOfg==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
         }
       ],
       "realmRoles": [
-        "default-roles-ecommerce"
+        "CLIENT"
       ]
     },
     {
+      "id": "a07fdda0-da56-4754-93c2-350a638742a7",
       "username": "client2",
       "email": "client2@example.com",
       "firstName": "Client",
@@ -148,15 +162,16 @@
       "credentials": [
         {
           "type": "password",
-          "value": "client2",
-          "temporary": false
+          "secretData": "{\"value\":\"sZDPzqFcW2FxC3RXtpHiH1JMQstMcgQn31D2vLQ3c/D4MBIX0fw5cmwonih2Kua6SGL1B9RvJLzemXCTOj8HLA==\",\"salt\":\"7c4673ySi+uYYQoyU8idJg==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
         }
       ],
       "realmRoles": [
-        "default-roles-ecommerce"
+        "CLIENT"
       ]
     },
     {
+      "id": "1ee461de-35a8-4c2b-82eb-8a9714914404",
       "username": "courier1",
       "email": "courier1@example.com",
       "firstName": "Courier",
@@ -166,8 +181,8 @@
       "credentials": [
         {
           "type": "password",
-          "value": "courier1",
-          "temporary": false
+          "secretData": "{\"value\":\"29nGcM59eTUeWj6NdroCguHMZkE/DLfLEbQmbRJk9lps6d4GLjc6JA0qe7K9wF/crDalvnapGFLGPiaSqL0V1w==\",\"salt\":\"hs2kmKp7SGSY6BO0o2dxbg==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
         }
       ],
       "realmRoles": [
@@ -175,6 +190,7 @@
       ]
     },
     {
+      "id": "e3ea6112-e59b-435a-9493-d6240301f0b5",
       "username": "courier2",
       "email": "courier2@example.com",
       "firstName": "Courier",
@@ -184,8 +200,8 @@
       "credentials": [
         {
           "type": "password",
-          "value": "courier2",
-          "temporary": false
+          "secretData": "{\"value\":\"wKJR3NAa5J4oDt7ulGz9LqrZzy73eDvvgJ2d2KLNOB6PCY8bA6uYy4hxUK/srOowSWqMyhx4Xul9pw+vCjl9Lw==\",\"salt\":\"LUDRiY56Nv29trFCN8JgEQ==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
         }
       ],
       "realmRoles": [
@@ -193,6 +209,7 @@
       ]
     },
     {
+      "id": "9324653e-5a53-4ff0-a2fe-d165223a8c68",
       "username": "admin",
       "email": "admin@example.com",
       "firstName": "Admin",
@@ -202,7 +219,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "admin",
+          "value": "${APP_ADMIN_PASSWORD}",
           "temporary": false
         }
       ],

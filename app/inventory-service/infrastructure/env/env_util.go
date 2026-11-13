@@ -2,14 +2,22 @@ package env
 
 import (
 	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const (
-	envVarNotSetErrMsg       = " environment variable not set"
-	invalidEnvVarValueErrMsg = " environment variable has invalid value"
+	envVarNotSetErrMsg         = " environment variable not set"
+	invalidEnvVarValueErrMsg   = " environment variable has invalid value"
+	unreadableSecretFileErrMsg = " can't be read"
+	emptySecretFileErrMsg      = " is empty"
+
+	// secretsDir is where Docker mounts the secrets of a container
+	secretsDir = "/run/secrets"
 )
 
 func GetStrEnv(envVar string) (string, error) {
@@ -48,4 +56,30 @@ func GetLogLevelEnv(envVar string, fallback slog.Level) (slog.Level, error) {
 	}
 
 	return level, nil
+}
+
+// GetSecretEnv reads a secret from its Docker secret, the file /run/secrets/<envVar> - so that the value is in no
+// environment variable - or, when there is no such file, from envVar itself (a service started outside Docker).
+func GetSecretEnv(envVar string) (string, error) {
+	return getSecret(secretsDir, envVar)
+}
+
+// getSecret reads the secret envVar from the file of that name in dir, falling back to the variable. The file's
+// trailing line break, which an editor adds, is no part of the secret; an empty file is an error.
+func getSecret(dir string, envVar string) (string, error) {
+	path := filepath.Join(dir, envVar)
+	content, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return GetStrEnv(envVar)
+	}
+	if err != nil {
+		return "", errors.Join(errors.New(path+unreadableSecretFileErrMsg), err)
+	}
+
+	secret := strings.TrimRight(string(content), "\r\n")
+	if secret == "" {
+		return "", errors.New(path + emptySecretFileErrMsg)
+	}
+
+	return secret, nil
 }

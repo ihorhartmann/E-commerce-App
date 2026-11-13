@@ -31,21 +31,42 @@ for the architecture.
 | Services directly (debugging, e2e tests) | http://localhost:3001 (inventory) ... 3004 (shipping) |
 
 Keycloak imports the realm (`docker/keycloak/realm-ecommerce.json`) only when it doesn't exist yet. After changing
-the realm file, recreate the database volume: `docker compose down -v`.
+the realm file, recreate the database volume: `docker compose down -v`. Its clients `e2e-tests` and `postman` are off
+when `KC_TEST_CLIENTS_ENABLED` is `false`, as in production.
+
+The passwords and secrets of `.env` reach the containers as Docker secrets - files in `/run/secrets`, never
+environment variables: Compose takes them from `.env` here, from the files in `secrets/` in production.
 
 The web UI pays through Stripe test mode: use the card `4242 4242 4242 4242` with any future expiry date and any CVC.
 An order moves on only once Stripe's webhook reaches the gateway, so keep `stripe listen` (step 2) running.
 
-## Test users
+## Demo and test users
+
+The same accounts locally and in production, where anyone may use them: the clients and couriers share the password
+`demo`, published here. They can't change their account (password, email, two-factor login): they have the roles
+below and nothing else. The realm's password policy (8 characters at least, neither the username nor the email) applies
+to everyone else, so the realm file holds the demo password as a hash.
 
 | User | Password | Role | Can |
 |---|---|---|---|
-| `client1`, `client2` | same as the username | `CLIENT` | place, read and cancel own orders (with their shipment) |
-| `courier1`, `courier2` | same as the username | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
-| `admin` | `admin` | `ADMIN` | create and update products, read payments and refunds |
+| `client1`, `client2` | `demo` | `CLIENT` | place, read and cancel own orders (with their shipment) |
+| `courier1`, `courier2` | `demo` | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
+| `admin` | `APP_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | create and update products, read payments and refunds |
 
 Self-registration is open, and a new user gets the `CLIENT` role. The `order-service` client has its own service
 account (roles `INVENTORY_RESERVE`, `PAYMENT_SUBMIT`) for its calls to the inventory- and payment-service.
+
+### Grafana's users
+
+Grafana (in production at `https://grafana.<domain>`) signs in through a realm of its own, `internal`
+(`docker/keycloak/realm-internal.json`): the staff, apart from the shop's customers - no self-registration, a stricter
+password policy (12 characters at least), and sessions of its own, so one can be signed in to the shop and to Grafana
+with different accounts at once. Its client, `grafana`, is used in production only; locally Grafana is an anonymous admin.
+
+| User | Password | Role | Can |
+|---|---|---|---|
+| `observer` | `demo` | `OBSERVER` | every dashboard, and Explore over the logs, traces and metrics - changes nothing, and sees no personal data (IP addresses, logins and emails are masked before Loki stores them, addresses are no column of the views Grafana reads) |
+| `admin` | `INTERNAL_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | Grafana's admin |
 
 ## Getting a token
 
@@ -56,7 +77,7 @@ browser only holds an `HttpOnly` session cookie.
 **curl** - password grant through the `e2e-tests` client (dev/test only):
 
 ```bash
-curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/token -d grant_type=password -d client_id=e2e-tests -d username=client1 -d password=client1
+curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/token -d grant_type=password -d client_id=e2e-tests -d username=client1 -d password=demo
 ```
 
 Send the `access_token` from the response as `Authorization: Bearer <token>`, e.g. to

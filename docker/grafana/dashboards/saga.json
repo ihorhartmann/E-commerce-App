@@ -345,7 +345,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT id AS \"Order\", status AS \"Status\", COALESCE(updated_at, created_at) AS \"Unchanged since\"\nFROM orders.orders\nWHERE status IN ('PLACED', 'CANCEL_REQUESTED') AND COALESCE(updated_at, created_at) \u003c now() - INTERVAL '30 minutes'\nORDER BY 3",
+          "rawSql": "SELECT id AS \"Order\", status AS \"Status\", COALESCE(updated_at, created_at) AS \"Unchanged since\"\nFROM grafana.orders\nWHERE status IN ('PLACED', 'CANCEL_REQUESTED') AND COALESCE(updated_at, created_at) \u003c now() - INTERVAL '30 minutes'\nORDER BY 3",
           "refId": "A"
         }
       ],
