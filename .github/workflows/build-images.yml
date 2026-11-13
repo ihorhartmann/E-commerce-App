@@ -6,9 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag, e.g. test-1 or v0.1.0 (empty: the short commit hash)"
+        description: "Image tag, e.g. latest or v0.1.0 (empty: the short commit hash)"
         type: string
         required: false
+        default: latest
       inventory-service:
         description: inventory-service
         type: boolean

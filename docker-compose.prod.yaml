@@ -136,7 +136,9 @@ services:
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
       # the browser goes to the public URL; Grafana itself calls Keycloak inside Docker's network
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL is not set}/realms/ecommerce/protocol/openid-connect/auth
+      # prompt=login: Keycloak asks for the account every time, even with a session of its own - one Grafana turned
+      # away (a shop account, say) would otherwise be signed in again at once, with no way to pick another one
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${KEYCLOAK_URL:?KEYCLOAK_URL is not set}/realms/ecommerce/protocol/openid-connect/auth?prompt=login
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
       GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/userinfo
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: >-
