@@ -51,6 +51,7 @@ to everyone else, so the realm file holds the demo password as a hash.
 |---|---|---|---|
 | `client1`, `client2` | `demo` | `CLIENT` | place, read and cancel own orders (with their shipment) |
 | `courier1`, `courier2` | `demo` | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
+| `observer` | `demo` | `OBSERVER` | Grafana only, in production at `https://grafana.<domain>`: every dashboard, Explore over the logs, traces and metrics - changes nothing, and sees no personal data (IP addresses, logins and emails are masked before Loki stores them, addresses are no column of the views Grafana reads); no role in the shop itself |
 | `admin` | `APP_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | create and update products, read payments and refunds |
 
 Self-registration is open, and a new user gets the `CLIENT` role. The `order-service` client has its own service

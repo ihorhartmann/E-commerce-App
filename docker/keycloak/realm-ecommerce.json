@@ -24,6 +24,10 @@
         "description": "Administrator: manages products and couriers"
       },
       {
+        "name": "OBSERVER",
+        "description": "Views Grafana - dashboards, logs, traces - and changes nothing (no role in the shop itself)"
+      },
+      {
         "name": "INVENTORY_RESERVE",
         "description": "Service: reserves stock in the inventory-service (held by order-service)"
       },
@@ -90,6 +94,54 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": true
+    },
+    {
+      "clientId": "grafana",
+      "name": "Grafana (sign-in of the admin and the observer)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${GRAFANA_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "${GRAFANA_PUBLIC_URL}/login/generic_oauth"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${GRAFANA_PUBLIC_URL}/login"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "admin-cli",
+      "name": "${client_admin-cli}",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
     },
     {
       "clientId": "e2e-tests",
@@ -195,6 +247,25 @@
       ],
       "realmRoles": [
         "COURIER"
+      ]
+    },
+    {
+      "id": "5afacaa6-a73a-493e-924d-b88b23a8e8ec",
+      "username": "observer",
+      "email": "observer@example.com",
+      "firstName": "Grafana",
+      "lastName": "Observer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "secretData": "{\"value\":\"jRe03M9UnNwsxHy8/rkMNPRHXYk/03PRqNToqPOTKs3LDdaFS7zqrThL+JH9Q9UIVPlleTTb9Yhf0kO1LGrgbw==\",\"salt\":\"yQZe+08vVwdh2DoHAMVMag==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "OBSERVER"
       ]
     },
     {

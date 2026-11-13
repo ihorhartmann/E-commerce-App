@@ -18,14 +18,20 @@ www.{$DOMAIN} {
 	redir https://{$DOMAIN}{uri} permanent
 }
 
-# Keycloak: only what a browser and the token's issuer URL need - the realms' endpoints and sign-in pages, and their
-# static files. The admin console is no part of it: it is reached through the SSH tunnel (KC_HOSTNAME_ADMIN).
+# Keycloak: only what a browser and the token's issuer URL need - the shop's realm (its endpoints and sign-in pages)
+# and the static files. The master realm, whose users administer Keycloak, and the admin console are no part of it:
+# they are reached through the SSH tunnel (KC_HOSTNAME_ADMIN).
 auth.{$DOMAIN} {
-	@public path /realms/* /resources/* /robots.txt
+	@public path /realms/ecommerce/* /resources/* /robots.txt
 	handle @public {
 		reverse_proxy keycloak:8080
 	}
 	handle {
 		respond 404
 	}
+}
+
+# Grafana: everyone signs in through Keycloak (docker-compose.prod.yaml), the observer account is published
+grafana.{$DOMAIN} {
+	reverse_proxy grafana:3000
 }

@@ -45,6 +45,7 @@ services:
       - app_admin_password
       - gateway_client_secret
       - order_service_client_secret
+      - grafana_client_secret
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -66,6 +67,8 @@ services:
       # the gateway itself and the web UI in front of it, both on the one public domain in production
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:${GATEWAY_PORT}}
       WEB_UI_PUBLIC_URL: ${WEB_UI_PUBLIC_URL:-http://localhost:${WEB_UI_PORT}}
+      # Grafana, which signs its admin and its observer in through the realm (the grafana client)
+      GRAFANA_PUBLIC_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:${GRAFANA_PORT}}
     volumes:
       - ./docker/keycloak/entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
       - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
@@ -141,6 +144,30 @@ services:
       shipping-service:
         condition: service_healthy
 
+  # One-off: the views grafana_reader may read, and nothing else (docker/postgres/grafana-views.sql) - once the
+  # order-service's migrations have created its tables - then exits. Runs on every start, so a database initialized
+  # before the file existed ends up the same.
+  grafana-views:
+    image: postgres:18-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        PGPASSWORD="$$(cat /run/secrets/postgres_password)" exec psql -v ON_ERROR_STOP=1 -h postgres
+        -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v owner="$$POSTGRES_USER" -f /grafana-views.sql
+    restart: "no"
+    networks:
+      - app-network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    secrets:
+      - postgres_password
+    volumes:
+      - ./docker/postgres/grafana-views.sql:/grafana-views.sql:ro
+    depends_on:
+      order-service:
+        condition: service_healthy
+
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
     networks:
@@ -186,6 +213,9 @@ services:
       - --web.enable-otlp-receiver
       # the exporters' metrics, from alloy's prometheus.remote_write
       - --web.enable-remote-write-receiver
+      # Grafana's viewers can send any query: one can't keep Prometheus busy for long, nor load too much into memory
+      - --query.timeout=30s
+      - --query.max-samples=10000000
     networks:
       - app-network
     volumes:
@@ -593,6 +623,9 @@ secrets:
     environment: GATEWAY_CLIENT_SECRET
   order_service_client_secret:
     environment: ORDER_SERVICE_CLIENT_SECRET
+  # Grafana's client in the realm (its sign-in through Keycloak, production only)
+  grafana_client_secret:
+    environment: GRAFANA_CLIENT_SECRET
   stripe_secret_key:
     environment: STRIPE_SECRET_KEY
   stripe_webhook_secret:

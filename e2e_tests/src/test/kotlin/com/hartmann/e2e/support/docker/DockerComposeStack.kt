@@ -48,6 +48,7 @@ object DockerComposeStack {
         requiredEnv("KEYCLOAK_ADMIN_PASSWORD")
         requiredEnv("GATEWAY_CLIENT_SECRET")
         requiredEnv("ORDER_SERVICE_CLIENT_SECRET")
+        requiredEnv("GRAFANA_CLIENT_SECRET")
         requiredEnv("WEB_UI_PORT")
         requiredEnv("GRAFANA_PORT")
         requiredEnv("GRAFANA_DB_PASSWORD")

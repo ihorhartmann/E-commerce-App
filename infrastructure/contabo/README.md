@@ -1,16 +1,19 @@
 # Production on a Contabo VPS
 
 The whole docker compose stack on one server (Ubuntu 24.04), `docker-compose.yaml` merged with
-`docker-compose.prod.yaml`. The shop is on `https://<DOMAIN>`, Keycloak's sign-in pages on `https://auth.<DOMAIN>`;
-everything else - Grafana, Kafka UI, Alloy, Keycloak's admin console, Postgres - only through an SSH tunnel.
+`docker-compose.prod.yaml`. The shop is on `https://<DOMAIN>`, Keycloak's sign-in pages on `https://auth.<DOMAIN>`,
+Grafana on `https://grafana.<DOMAIN>` - signed in through Keycloak: you as `admin`, visitors as the published
+`observer` (a viewer). Everything else - Kafka UI, Alloy, Keycloak's admin console and master realm, Postgres - only
+through an SSH tunnel.
 
 ```text
 internet ──80/443──> Caddy ──> web-ui (nginx) ──> gateway ──> services
-                          └──> keycloak (/realms, /resources only)
+                          ├──> keycloak (/realms/ecommerce, /resources only)
+                          └──> grafana
 ```
 
 The server is ordered by hand in Contabo's panel (no Terraform: its provider is unreliable, and creating a server
-through it buys a contract). DNS: A records for `@`, `www` and `auth` pointing at the server's IP.
+through it buys a contract). DNS: A records for `@`, `www`, `auth` and `grafana` pointing at the server's IP.
 
 ## 1. Preparing the server (once)
 
@@ -82,7 +85,6 @@ ssh -N -L 8089:127.0.0.1:8089 -L 9098:127.0.0.1:9098 -L 12345:127.0.0.1:12345 -L
 
 | What | URL |
 |---|---|
-| Grafana (`admin` / `secrets/grafana_admin_password`) | http://localhost:8089 |
 | Kafka UI | http://localhost:9098 |
 | Alloy | http://localhost:12345 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `secrets/keycloak_admin_password`) | http://localhost:8090/admin |

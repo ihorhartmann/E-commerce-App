@@ -233,7 +233,9 @@ database connections and other resources if there are such.
   (`docker/alloy/postgres-queries.yaml`), never kept as a gauge in each replica. Consumer lag comes from Alloy's Kafka
   exporter.
 * A metric counts, it never lists: which orders are stuck is no label of a series, but a table Grafana reads straight
-  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`).
+  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`). That user reads the views of
+  the `grafana` schema only (`docker/postgres/grafana-views.sql`), never a service's tables: Grafana's viewers can send
+  any query, so a view holds just the columns a dashboard needs - no customer, no address.
 * Alerts are Prometheus rules (`docker/prometheus/rules`), on symptoms only, each with a `severity` (`critical` - act
   now, `warning` - look at it today), a `service`, and `summary`/`description`/`dashboard` annotations; Alertmanager
   (`docker/alertmanager`) mails them, one template per severity, and a critical alert mutes the warnings of its
