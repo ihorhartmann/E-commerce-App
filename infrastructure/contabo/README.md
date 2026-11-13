@@ -21,7 +21,8 @@ through it buys a contract). DNS: A records for `@`, `www`, `auth` and `grafana`
 ssh root@<server> 'bash -s' < infrastructure/contabo/scripts/install.sh
 ```
 
-Swap, SSH with keys only, ufw (22, 80, 443), Docker with log rotation. It can be run again after a change.
+Swap, SSH with keys only, ufw (22, 80, 443), Docker with log rotation, the nightly database backup (section 6). It can
+be run again after a change.
 
 ## 2. The repository, `.env` and `secrets/`
 
@@ -90,3 +91,29 @@ ssh -N -L 8089:127.0.0.1:8089 -L 9098:127.0.0.1:9098 -L 12345:127.0.0.1:12345 -L
 | Alloy | http://localhost:12345 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `secrets/keycloak_admin_password`) | http://localhost:8090/admin |
 | Postgres (`POSTGRES_USER` / `secrets/postgres_password`) | localhost:5432 |
+
+## 6. Database backups
+
+Every night at 03:15 UTC cron (`/etc/cron.d/ecommerce-backup`, put in place by `install.sh`) runs
+`scripts/backup-postgres.sh`: a dump of the whole database - every service's schema and Keycloak's - into
+`/var/backups/ecommerce/postgres/ecommerce-<date>_<time>.dump` (readable by root only), in `pg_dump`'s custom format.
+A dump is kept only once `pg_restore` can read it, and the dumps older than 14 days are deleted only after a new one
+has succeeded. The backups are on the server itself: they cover a mistake or a bad migration, not the loss of the
+server.
+
+```bash
+journalctl -t ecommerce-backup                                  # what each run did, or why it failed
+infrastructure/contabo/scripts/backup-postgres.sh               # a backup right now, e.g. before a risky change
+```
+
+A restore replaces what is in the database with the dump's content. Stop the services that write to it first, then:
+
+```bash
+docker compose stop gateway-service order-service payment-service inventory-service shipping-service keycloak
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < /var/backups/ecommerce/postgres/<file>.dump
+docker compose up -d
+```
+
+One schema only - a service's own data - with `--schema <name>` (e.g. `--schema orders`) added to `pg_restore`, and
+only that service stopped. To look into a dump without touching anything, restore it into a scratch database
+(`createdb restore_check`, `pg_restore -d restore_check`, `dropdb restore_check`).
