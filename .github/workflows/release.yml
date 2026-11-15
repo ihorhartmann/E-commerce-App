@@ -1,0 +1,68 @@
+name: Release
+
+# A version tag pushed (git tag v1.2.0 && git push origin v1.2.0, or a release drafted on GitHub) releases that
+# commit of main: its images, tagged with the version (Build Images), a GitHub release with the changes since the
+# previous one, and its deployment to the server (Deploy). The version is then in the release list, on every image in
+# GHCR, and in the server's IMAGE_TAG - what runs is always a release, and an earlier one can be deployed again.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the whole history, to see whether the tagged commit is on main
+          fetch-depth: 0
+
+      - name: A version of main
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${GITHUB_REF_NAME}' is no version tag (vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} tags a commit that isn't on main: only main is released"
+            exit 1
+          fi
+
+  build:
+    needs: check
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      tag: ${{ github.ref_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # the notes list the pull requests merged since the previous version; a release published on GitHub's page,
+        # which made the tag, is there already
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "the release ${GITHUB_REF_NAME} exists already"
+          else
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag \
+              --title "${GITHUB_REF_NAME}" --generate-notes
+          fi
+
+  deploy:
+    needs: release
+    uses: ./.github/workflows/deploy.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

@@ -1,8 +1,33 @@
 name: Build Images
 
-# Builds the images of the selected services from the chosen branch and pushes them to the GitHub Container
-# Registry as ghcr.io/<owner>/<repository>/<service>:<tag>. Started by hand only: Actions > Build Images > Run workflow.
+# Builds the images of the selected services and pushes them to the GitHub Container Registry as
+# ghcr.io/<owner>/<repository>/<service>:<tag>. Started by hand (Actions > Build Images > Run workflow, from the chosen
+# branch), or by the Release workflow for a version tag - every service, tagged with the version. A version's images
+# (v1.2.0) are never built again: what a release deployed stays what it is, so a rollback gets exactly that.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      inventory-service:
+        type: boolean
+        default: true
+      order-service:
+        type: boolean
+        default: true
+      payment-service:
+        type: boolean
+        default: true
+      shipping-service:
+        type: boolean
+        default: true
+      gateway-service:
+        type: boolean
+        default: true
+      web-ui:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       tag:
@@ -97,6 +122,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # only a version (vMAJOR.MINOR.PATCH): any other tag - latest, test-1 - is built again whenever asked
+      - name: A version's image is never replaced
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && docker buildx imagetools inspect "${IMAGE}" > /dev/null 2>&1; then
+            echo "::error::${IMAGE} exists already: a version is built once - release a new one instead"
+            exit 1
+          fi
 
       - uses: docker/build-push-action@v7
         with:

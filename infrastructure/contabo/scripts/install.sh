@@ -70,7 +70,8 @@ ufw allow 443/udp comment 'HTTP/3'
 ufw --force enable
 
 echo '--- docker'
-apt_get install --yes ca-certificates curl
+# git: the server runs a clone of the repository, switched to the deployed tag (scripts/ecommerce-deploy)
+apt_get install --yes ca-certificates curl git
 
 install -m 0755 -d /etc/apt/keyrings
 curl --fail --silent --show-error --location https://download.docker.com/linux/ubuntu/gpg --output /etc/apt/keyrings/docker.asc

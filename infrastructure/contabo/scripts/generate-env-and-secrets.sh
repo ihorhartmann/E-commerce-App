@@ -42,7 +42,6 @@ readonly secrets_by_hand=(
 )
 readonly env_by_hand=(
   DOMAIN
-  IMAGE_TAG
   STRIPE_PUBLISHABLE_KEY
   ALERT_SMTP_USERNAME
   ALERT_EMAIL_FROM

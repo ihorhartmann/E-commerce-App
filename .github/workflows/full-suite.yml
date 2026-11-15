@@ -1,15 +1,27 @@
 name: Full Test Suite
 
+# Every test, unit to e2e. A pull request into main runs it once it is ready for review - not while it is a draft, so
+# pushing work in progress costs nothing - and again on every push after that; its single "Full suite" check, the
+# last job, is what the branch rules of main require before a merge (GitHub's merge queue isn't available to a
+# repository of a personal account). It runs on main after the merge too, and by hand.
 on:
-  merge_group:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
   push:
     branches: [main]
+
+# a newer push to the same pull request cancels the run of the one before
+concurrency:
+  group: full-suite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # --- stage 1: unit tests, all 5 services, the web UI and the alerting in parallel ---
 
   unit-inventory:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,6 +35,7 @@ jobs:
       - run: go test ./...
 
   unit-shipping:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,6 +49,7 @@ jobs:
       - run: go test ./...
 
   unit-order:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +64,7 @@ jobs:
       - run: ./gradlew test
 
   unit-payment:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,6 +79,7 @@ jobs:
       - run: mvn -B test -DexcludedGroups=integration
 
   unit-gateway:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,6 +94,7 @@ jobs:
       - run: ./gradlew test
 
   unit-web-ui:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -93,6 +110,7 @@ jobs:
 
   # the alert rules and Alertmanager's routing, offline - the same steps as alerting.yml
   unit-alerting:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -222,3 +240,37 @@ jobs:
         run: npm install -g @stripe/cli
 
       - run: ./gradlew test
+
+  # --- the one check the branch rules of main require: every job above passed ---
+
+  full-suite:
+    name: Full suite
+    needs:
+      - unit-inventory
+      - unit-shipping
+      - unit-order
+      - unit-payment
+      - unit-gateway
+      - unit-web-ui
+      - unit-alerting
+      - integration-inventory
+      - integration-shipping
+      - integration-order
+      - integration-payment
+      - e2e
+    # always: a failed or cancelled job above would otherwise skip this one, and a skipped check counts as passed.
+    # A draft is the exception: nothing ran, so the check is skipped too - grey, not a green it hasn't earned; a draft
+    # can't be merged anyway, and "Ready for review" runs the suite
+    if: always() && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in ${RESULTS}; do
+            if [[ "${result}" != "success" ]]; then
+              echo "::error::not every job passed: ${RESULTS}"
+              exit 1
+            fi
+          done
+          echo "every job passed"

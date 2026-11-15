@@ -116,3 +116,8 @@ See [app/web-ui/CLAUDE.md](app/web-ui/CLAUDE.md) for its architecture.
     * the variables from `.env` must be in the environment, and the Stripe CLI must be installed;
     * on Windows with Docker Desktop also set `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock`;
     * `./gradlew test` in `e2e_tests`.
+
+In CI, every push of a branch runs the unit tests of the services it touches. A pull request into `main` runs the whole
+suite (`full-suite.yml`: unit, integration, e2e) once it is ready for review - a draft runs nothing - and again on every
+push after that; its "Full suite" check must pass before the merge, so a failing test of any kind keeps it out of `main`.
+Releases and deployment: `infrastructure/contabo/README.md`.

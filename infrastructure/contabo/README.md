@@ -37,8 +37,8 @@ It writes `.env` from `example.env` and `prod.example.env` - the configuration, 
 `secrets/`, one file per password, client secret and key, which the containers get as Docker secrets in
 `/run/secrets` (`docker-compose.prod.yaml`); `docker inspect` shows none of them. `.env` and `secrets/` are readable
 by root only. It generates the passwords and client secrets and lists what is left to fill in by hand (`nano <file>`):
-in `.env` `DOMAIN`, `IMAGE_TAG` (a tag the Build Images workflow pushed), Stripe's publishable key and the alert
-emails' Gmail account; in `secrets/` Stripe's **test-mode** secret key (`stripe_secret_key`), the webhook's signing
+in `.env` `DOMAIN`, Stripe's publishable key and the alert emails' Gmail account (`IMAGE_TAG` is set by every
+deployment, section 3); in `secrets/` Stripe's **test-mode** secret key (`stripe_secret_key`), the webhook's signing
 secret (`stripe_webhook_secret`) and the Gmail App Password (`alert_smtp_password`). It never changes a secret that is
 already set - Postgres keeps the password it was initialized with - and moves the secrets of a `.env` from before
 `secrets/` existed into their files. Keep a copy of `secrets/` in a password manager: without it a new server needs
@@ -57,16 +57,69 @@ Developers → Webhooks → Add destination, events from your account, API versi
 certificates are issued (section 4). "Send test event" answers 200 when the secret is right - the test event's
 PaymentIntent is unknown, which the service acknowledges - and 400 when it isn't.
 
-## 3. Starting and updating
+## 3. Releases, deployment, rollback
 
-`.env` sets `COMPOSE_FILE`, so every `docker compose` command in the folder uses both files:
+What runs on the server is always a release: a version tag of `main` (`v1.2.0`), its images in GHCR tagged the
+same, and the repository switched to that tag. Three workflows, sharing the deployment itself:
+
+| Workflow | Started by | Does |
+|---|---|---|
+| Release (`release.yml`) | pushing a tag `vX.Y.Z` of a commit on `main` | Build Images with that tag, a GitHub release with the changes since the previous one, then Deploy |
+| Deploy (`deploy.yml`) | Release and Provision; by hand with an earlier tag to **roll back** | `ecommerce-deploy <tag>` on the server, over SSH |
+| Provision (`provision.yml`) | by hand only | a server from scratch: `install.sh`, the clone, `.env` and `secrets/` with the values only a person knows, the deploy key; then Deploy |
+
+A release:
 
 ```bash
-docker compose pull
-docker compose up -d --no-build
+git checkout main && git pull
+git tag -a v1.2.0 -m "v1.2.0"
+git push origin v1.2.0
 ```
 
-A new release: set `IMAGE_TAG` in `.env`, then the same two commands.
+(or Releases → Draft a new release on GitHub, with a new tag on `main`). Versions follow semantic versioning: `MAJOR`
+for a change that breaks what was there, `MINOR` for a feature, `PATCH` for a fix. A version is built once - its images
+are never replaced - so a rollback gets exactly what ran before: Actions → Deploy → Run workflow, the earlier tag.
+
+`ecommerce-deploy <tag>` (`scripts/ecommerce-deploy`, installed in `/usr/local/sbin`) switches the clone to the tag and
+runs that version's `scripts/deploy.sh`: the variables and secrets the release adds (`generate-env-and-secrets.sh`),
+`IMAGE_TAG`, `docker compose pull` and `up --wait`, a restart of the containers whose mounted configuration changed
+(Alloy, Loki, Caddy, ...: Docker doesn't notice that), and the shop, Keycloak and Grafana checked from the internet. It
+can be run by hand on the server too. A changed realm file is the one thing it doesn't apply - Keycloak imports a realm
+once - so the run warns about it; apply the change in the admin console or by importing the realm again.
+
+### What GitHub needs (once)
+
+Two SSH keys, made for this and nothing else - not your own:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C 'ecommerce deploy' -f deploy_key
+ssh-keygen -t ed25519 -N '' -C 'ecommerce provision' -f provision_key
+ssh-keyscan -t ed25519 <server-ip>          # the server's host key, for SSH_KNOWN_HOSTS
+```
+
+Settings → Environments: `production` and `provision` (for `provision`, "Required reviewers" makes every run wait for
+your approval). Then:
+
+| Where | Name | Kind | Value |
+|---|---|---|---|
+| repository | `SERVER_HOST` | variable | the server's IP address |
+| repository | `DOMAIN` | variable | the shop's domain, e.g. `ihorhartmann.com` |
+| repository | `SSH_KNOWN_HOSTS` | secret | the `ssh-keyscan` line |
+| `production` | `DEPLOY_SSH_KEY` | secret | `deploy_key` (the private key) |
+| `provision` | `PROVISION_SSH_KEY` | secret | `provision_key` (the private key) |
+| `provision` | `DEPLOY_SSH_PUBLIC_KEY` | variable | `deploy_key.pub` |
+| repository | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | secrets | Stripe's test-mode keys - there already, for the e2e tests |
+| `provision` | `STRIPE_WEBHOOK_SECRET` | secret | the signing secret of production's webhook endpoint (section 2) - not the repository's one, which the e2e tests' Stripe CLI uses: the environment's secret takes its place here |
+| `provision` | `ALERT_SMTP_PASSWORD` | secret | the Gmail App Password |
+| `provision` | `ALERT_SMTP_USERNAME`, `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | variables | as in `.env` |
+| `provision` | `ACME_CA` | variable | optional: `https://acme-v02.api.letsencrypt.org/directory` for real certificates at once |
+
+`provision_key.pub` goes into root's `authorized_keys` - on a new server through Contabo's panel when ordering it, on
+this one by hand. The deploy key gets there through Provision (`provision.sh`), restricted to `ecommerce-deploy`: it
+can't open a shell. The passwords and client secrets are generated on the server and never leave it; GitHub keeps only
+what a person has to type. A reinstalled server has a new host key: update `SSH_KNOWN_HOSTS` first.
+
+`.env` sets `COMPOSE_FILE`, so every `docker compose` command in the folder uses both files.
 
 ## 4. Certificates
 

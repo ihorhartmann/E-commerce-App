@@ -1,0 +1,67 @@
+name: Deploy
+
+# Deploys a version to the server: the Release workflow calls it with the tag it just built, the Provision workflow
+# after setting a server up; started by hand (Actions > Deploy > Run workflow) with an earlier tag, it rolls back to
+# that version - its images are still in GHCR. The work is the server's own ecommerce-deploy
+# (infrastructure/contabo/scripts): the CD's SSH key may run nothing else.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to deploy, e.g. v1.2.0 (an earlier one rolls back)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # its secrets and its history of deployments; one deployment at a time, and none cancelled halfway
+    environment:
+      name: production
+      url: https://${{ vars.DOMAIN }}
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    steps:
+      - name: Check the tag
+        env:
+          # through the environment, never interpolated into the script: an input is free text
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${TAG}' is no version tag (vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+
+      - name: SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 0700 -d ~/.ssh
+          printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          # the server's own host key only: a connection to anything else fails
+          printf '%s\n' "${SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          TAG: ${{ inputs.tag }}
+          SERVER_HOST: ${{ vars.SERVER_HOST }}
+        # the server's forced command takes the tag from the command asked for
+        run: ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o BatchMode=yes "root@${SERVER_HOST}" "deploy ${TAG}"
+
+      - name: Summary
+        if: success()
+        env:
+          TAG: ${{ inputs.tag }}
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: echo "Deployed \`${TAG}\` to https://${DOMAIN}" >> "${GITHUB_STEP_SUMMARY}"
