@@ -1,0 +1,207 @@
+name: Create Service Release (No Deployment)
+
+# A service's version tag pushed (git tag order-service/v1.3.0 && git push origin order-service/v1.3.0) releases that
+# commit of main for that one service: its image, tagged with the version (Build Images, no other service built), a
+# GitHub release of the service with the changes since its previous version, and the new version written into
+# versions.env - in the one pull request release/versions, which several services' releases share. Nothing is deployed:
+# once that pull request is merged, a platform tag (Create Platform Release and Deploy) deploys the versions of
+# versions.env.
+on:
+  push:
+    tags:
+      - "*/v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.tag.outputs.service }}
+      version: ${{ steps.tag.outputs.version }}
+      previous: ${{ steps.tag.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the whole history, to see whether the tagged commit is on main and which tag came before
+          fetch-depth: 0
+
+      - id: tag
+        name: A service's version of main
+        run: |
+          service="${GITHUB_REF_NAME%%/*}"
+          version="${GITHUB_REF_NAME#*/}"
+          case "${service}" in
+            inventory-service | order-service | payment-service | shipping-service | gateway-service | web-ui) ;;
+            *)
+              echo "::error::'${service}' is no service of ours"
+              exit 1 ;;
+          esac
+          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${version}' is no version (vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} tags a commit that isn't on main: only main is released"
+            exit 1
+          fi
+          # this service's version before, for the release notes; none for its first release
+          previous="$(git describe --tags --abbrev=0 --match "${service}/v*" "${GITHUB_SHA}^" 2> /dev/null || true)"
+          {
+            echo "service=${service}"
+            echo "version=${version}"
+            echo "previous=${previous}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: check
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-images.yml
+    with:
+      tag: ${{ needs.check.outputs.version }}
+      inventory-service: ${{ needs.check.outputs.service == 'inventory-service' }}
+      order-service: ${{ needs.check.outputs.service == 'order-service' }}
+      payment-service: ${{ needs.check.outputs.service == 'payment-service' }}
+      shipping-service: ${{ needs.check.outputs.service == 'shipping-service' }}
+      gateway-service: ${{ needs.check.outputs.service == 'gateway-service' }}
+      web-ui: ${{ needs.check.outputs.service == 'web-ui' }}
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the whole history, for the commits since the service's previous version
+          fetch-depth: 0
+
+      - name: GitHub release of the service
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVICE: ${{ needs.check.outputs.service }}
+          VERSION: ${{ needs.check.outputs.version }}
+          PREVIOUS: ${{ needs.check.outputs.previous }}
+        # never "Latest": that is the platform's release, what runs
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "the release ${GITHUB_REF_NAME} exists already"
+            exit 0
+          fi
+          # The changes of this service only - the commits that changed its folder, the image's whole build context -
+          # not GitHub's generated notes, which list every pull request of the repository since the previous tag.
+          if [[ -z "${PREVIOUS}" ]]; then
+            echo "The first release of ${SERVICE}." > "${RUNNER_TEMP}/notes.md"
+          else
+            {
+              echo "## Changes since ${PREVIOUS}"
+              echo
+              commits="$(git log --no-merges --format='- %s (%h)' "${PREVIOUS}..${GITHUB_SHA}" -- "app/${SERVICE}/")"
+              if [[ -n "${commits}" ]]; then
+                echo "${commits}"
+              else
+                echo "No change in app/${SERVICE}/: the image is built from the same code."
+              fi
+              echo
+              echo "The whole repository's diff: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREVIOUS}...${GITHUB_REF_NAME}"
+            } > "${RUNNER_TEMP}/notes.md"
+          fi
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag --latest=false \
+            --title "${SERVICE} ${VERSION}" --notes-file "${RUNNER_TEMP}/notes.md"
+
+  versions:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    # No concurrency group: GitHub keeps only one run waiting in a group and cancels the one waiting before it, so a
+    # third service tagged at once would lose its version. The step below retries its push instead.
+    steps:
+      # a pull request made with GITHUB_TOKEN starts no workflow, so its full suite would never run: a token of yours
+      - name: The token for the pull request
+        env:
+          VERSIONS_PR_TOKEN: ${{ secrets.VERSIONS_PR_TOKEN }}
+        run: |
+          if [[ -z "${VERSIONS_PR_TOKEN}" ]]; then
+            echo "::error::the secret VERSIONS_PR_TOKEN is missing (infrastructure/contabo/README.md, section 3)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.VERSIONS_PR_TOKEN }}
+
+      - name: The new version in versions.env, on release/versions
+        env:
+          GH_TOKEN: ${{ secrets.VERSIONS_PR_TOKEN }}
+          SERVICE: ${{ needs.check.outputs.service }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          readonly branch=release/versions
+          variable="$(tr 'a-z-' 'A-Z_' <<< "${SERVICE}")_IMAGE_TAG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Several services' releases at once write to the same branch: each attempt starts from what is on GitHub
+          # now, and its push goes through only if nobody pushed in between - otherwise it starts over. They never
+          # conflict, each changes a line of its own.
+          pushed=false
+          for attempt in {1..10}; do
+            git fetch --quiet --prune origin
+            # The branch carries versions still to merge when its last commit is in an open pull request, or in none
+            # yet (another release has just pushed it and is about to open one): those versions are kept. When that
+            # commit's pull request is merged or closed, the branch is what is left of it (GitHub keeps a merged
+            # branch unless the repository deletes it) and starts again from main, as when there is no branch.
+            remote="$(git rev-parse --quiet --verify "refs/remotes/origin/${branch}" || true)"
+            states=""
+            if [[ -n "${remote}" ]]; then
+              states="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${remote}/pulls" \
+                --jq "[.[] | select(.head.ref == \"${branch}\") | .state] | unique | join(\" \")")"
+            fi
+            if [[ -n "${remote}" && ( -z "${states}" || " ${states} " == *" open "* ) ]]; then
+              git checkout --quiet --force -B "${branch}" "${remote}"
+            else
+              git checkout --quiet --force -B "${branch}" origin/main
+            fi
+
+            if grep -qx "${variable}=${VERSION}" versions.env; then
+              echo "versions.env has ${variable}=${VERSION} already"
+              exit 0
+            fi
+            if ! grep -q "^${variable}=" versions.env; then
+              echo "::error::versions.env has no ${variable}"
+              exit 1
+            fi
+            sed -i "s/^${variable}=.*/${variable}=${VERSION}/" versions.env
+            git commit --quiet --all --message "versions: ${SERVICE} ${VERSION}"
+
+            # replaces the branch only as it was fetched above (an empty lease: only if there was none)
+            if git push --quiet --force-with-lease="refs/heads/${branch}:${remote}" origin "${branch}"; then
+              pushed=true
+              break
+            fi
+            echo "::warning::${branch} changed while writing ${variable} (attempt ${attempt}) - starting over"
+            sleep $(( RANDOM % 10 + 5 ))
+          done
+          if [[ "${pushed}" != true ]]; then
+            echo "::error::${variable}=${VERSION} couldn't be pushed to ${branch}"
+            exit 1
+          fi
+
+          # Two releases that recreated the branch may both get here before either pull request exists: the second
+          # one's create fails, and the pull request is there all the same.
+          open_pull_request() {
+            gh pr list --head "${branch}" --base main --state open --json number --jq '.[].number'
+          }
+          if [[ -z "$(open_pull_request)" ]]; then
+            gh pr create --head "${branch}" --base main --title "Service versions for the next release" \
+              --body "The versions the Create Service Release workflow built, for the next platform release: merge once the full suite passes, then tag main with a platform version (vX.Y.Z) to deploy them. Each service's release lists its changes." \
+              || [[ -n "$(open_pull_request)" ]]
+          fi
+          echo "${variable}=${VERSION} is on ${branch}" >> "${GITHUB_STEP_SUMMARY}"

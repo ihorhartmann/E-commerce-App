@@ -1,6 +1,7 @@
 name: Deploy
 
-# Deploys a version to the server: the Release workflow calls it with the tag it just built, the Provision workflow
+# Deploys a platform version to the server: Create Platform Release and Deploy calls it with the tag it just released,
+# the Provision workflow
 # after setting a server up; started by hand (Actions > Deploy > Run workflow) with an earlier tag, it rolls back to
 # that version - its images are still in GHCR. The work is the server's own ecommerce-deploy
 # (infrastructure/contabo/scripts): the CD's SSH key may run nothing else.

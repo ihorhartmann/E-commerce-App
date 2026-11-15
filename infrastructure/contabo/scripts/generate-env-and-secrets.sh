@@ -47,8 +47,10 @@ readonly env_by_hand=(
   ALERT_EMAIL_FROM
   ALERT_EMAIL_TO
 )
-# what used to be in .env and is gone: the test users' passwords, before the realm kept them out of production
+# what used to be in .env and is gone: the test users' passwords, before the realm kept them out of production, and
+# the one image tag of every service, before each got its own (versions.env)
 readonly obsolete=(
+  IMAGE_TAG
   E2E_CLIENT1_PASSWORD
   E2E_CLIENT2_PASSWORD
   E2E_COURIER1_PASSWORD

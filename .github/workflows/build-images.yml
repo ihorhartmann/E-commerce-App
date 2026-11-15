@@ -2,8 +2,9 @@ name: Build Images
 
 # Builds the images of the selected services and pushes them to the GitHub Container Registry as
 # ghcr.io/<owner>/<repository>/<service>:<tag>. Started by hand (Actions > Build Images > Run workflow, from the chosen
-# branch), or by the Release workflow for a version tag - every service, tagged with the version. A version's images
-# (v1.2.0) are never built again: what a release deployed stays what it is, so a rollback gets exactly that.
+# branch), or by Create Service Release (No Deployment) for a service's version tag - that service only, tagged with
+# the version. A version's images (v1.2.0) are never built again: what a release deployed stays what it is, so a
+# rollback gets exactly that.
 on:
   workflow_call:
     inputs:

@@ -37,12 +37,12 @@ It writes `.env` from `example.env` and `prod.example.env` - the configuration, 
 `secrets/`, one file per password, client secret and key, which the containers get as Docker secrets in
 `/run/secrets` (`docker-compose.prod.yaml`); `docker inspect` shows none of them. `.env` and `secrets/` are readable
 by root only. It generates the passwords and client secrets and lists what is left to fill in by hand (`nano <file>`):
-in `.env` `DOMAIN`, Stripe's publishable key and the alert emails' Gmail account (`IMAGE_TAG` is set by every
-deployment, section 3); in `secrets/` Stripe's **test-mode** secret key (`stripe_secret_key`), the webhook's signing
-secret (`stripe_webhook_secret`) and the Gmail App Password (`alert_smtp_password`). It never changes a secret that is
-already set - Postgres keeps the password it was initialized with - and moves the secrets of a `.env` from before
-`secrets/` existed into their files. Keep a copy of `secrets/` in a password manager: without it a new server needs
-every secret issued again.
+in `.env` `DOMAIN`, Stripe's publishable key and the alert emails' Gmail account (the services' versions are set
+by every deployment, from `versions.env`: section 3); in `secrets/` Stripe's **test-mode** secret key
+(`stripe_secret_key`), the webhook's signing secret (`stripe_webhook_secret`) and the Gmail App Password
+(`alert_smtp_password`). It never changes a secret that is already set - Postgres keeps the password it was
+initialized with - and moves the secrets of a `.env` from before `secrets/` existed into their files. Keep a copy
+of `secrets/` in a password manager: without it a new server needs every secret issued again.
 
 The shop's admin (`admin` in the `ecommerce` realm) signs in with `secrets/app_admin_password`; the demo clients and
 couriers with the password `demo` (the repository's README). The realm's clients for the e2e tests and Postman are
@@ -59,33 +59,51 @@ PaymentIntent is unknown, which the service acknowledges - and 400 when it isn't
 
 ## 3. Releases, deployment, rollback
 
-What runs on the server is always a release: a version tag of `main` (`v1.2.0`), its images in GHCR tagged the
-same, and the repository switched to that tag. Three workflows, sharing the deployment itself:
+Two kinds of version, both git tags of commits on `main`:
+
+* **a service's version**, `order-service/v1.3.0`: that service's code, built into `order-service:v1.3.0` in GHCR;
+* **a platform version**, `v1.4.0`: what runs on the server - the compose files and configuration of that commit, and
+  the version of each service its `versions.env` names.
 
 | Workflow | Started by | Does |
 |---|---|---|
-| Release (`release.yml`) | pushing a tag `vX.Y.Z` of a commit on `main` | Build Images with that tag, a GitHub release with the changes since the previous one, then Deploy |
-| Deploy (`deploy.yml`) | Release and Provision; by hand with an earlier tag to **roll back** | `ecommerce-deploy <tag>` on the server, over SSH |
+| Create Service Release (No Deployment) (`service-release.yml`) | pushing a tag `<service>/vX.Y.Z` | Build Images for that service only, a GitHub release of the service listing the commits that changed `app/<service>/` since its previous tag, and its new version in `versions.env` on the pull request `release/versions` - nothing deployed |
+| Create Platform Release and Deploy (`platform-release.yml`) | pushing a tag `vX.Y.Z` | checks that every image of `versions.env` is in GHCR, a GitHub release listing the versions and the changes since the previous platform release, then Deploy |
+| Deploy (`deploy.yml`) | Create Platform Release and Deploy, and Provision; by hand with an earlier platform tag to **roll back** | `ecommerce-deploy <tag>` on the server, over SSH |
 | Provision (`provision.yml`) | by hand only | a server from scratch: `install.sh`, the clone, `.env` and `secrets/` with the values only a person knows, the deploy key; then Deploy |
 
-A release:
+A release, in this order:
 
 ```bash
 git checkout main && git pull
-git tag -a v1.2.0 -m "v1.2.0"
-git push origin v1.2.0
+git tag order-service/v1.3.0 && git push origin order-service/v1.3.0      # one or more services
+# wait for the pull request "Service versions for the next release" (release/versions): full suite, merge
+git checkout main && git pull
+git tag -a v1.4.0 -m "v1.4.0" && git push origin v1.4.0                    # deploys the merged versions
 ```
 
-(or Releases → Draft a new release on GitHub, with a new tag on `main`). Versions follow semantic versioning: `MAJOR`
-for a change that breaks what was there, `MINOR` for a feature, `PATCH` for a fix. A version is built once - its images
-are never replaced - so a rollback gets exactly what ran before: Actions → Deploy → Run workflow, the earlier tag.
+(a platform release can also be published on GitHub's page, Releases → Draft a new release, with a new tag on `main`).
+Several services' tags pushed together add their lines to the same pull request, however many there are; merge it
+once all of them have. Once it is merged or closed, the next service's tag starts a new one from `main` - closing it
+unmerged drops its versions. A platform tag put on a commit
+before that pull request is merged deploys the versions of that commit - the old ones - so tag `main` after the merge.
+A change of the configuration only (Grafana, Caddy, a third-party image's version) needs no service tag: merge it and
+push a platform tag. Versions follow semantic versioning: `MAJOR` for a change that breaks what was there, `MINOR` for
+a feature, `PATCH` for a fix. A version is built once - its images are never replaced - so a rollback gets exactly what
+ran before: Actions → Deploy → Run workflow, the earlier platform tag, which brings back its configuration and its
+service versions together.
+
+The first release: `versions.env` names `v0.1.0` for every service, so push the six tags `inventory-service/v0.1.0`,
+`order-service/v0.1.0`, `payment-service/v0.1.0`, `shipping-service/v0.1.0`, `gateway-service/v0.1.0`,
+`web-ui/v0.1.0` (no pull request follows: the versions are there already), then `v0.1.0`.
 
 `ecommerce-deploy <tag>` (`scripts/ecommerce-deploy`, installed in `/usr/local/sbin`) switches the clone to the tag and
 runs that version's `scripts/deploy.sh`: the variables and secrets the release adds (`generate-env-and-secrets.sh`),
-`IMAGE_TAG`, `docker compose pull` and `up --wait`, a restart of the containers whose mounted configuration changed
-(Alloy, Loki, Caddy, ...: Docker doesn't notice that), and the shop, Keycloak and Grafana checked from the internet. It
-can be run by hand on the server too. A changed realm file is the one thing it doesn't apply - Keycloak imports a realm
-once - so the run warns about it; apply the change in the admin console or by importing the realm again.
+the versions of `versions.env` copied into `.env`, `docker compose pull` and `up --wait` - which recreates only the
+services whose version changed - a restart of the containers whose mounted configuration changed (Alloy, Loki, Caddy,
+...: Docker doesn't notice that), and the shop, Keycloak and Grafana checked from the internet. It can be run by hand
+on the server too. A changed realm file is the one thing it doesn't apply - Keycloak imports a realm once - so the run
+warns about it; apply the change in the admin console or by importing the realm again.
 
 ### What GitHub needs (once)
 
@@ -106,6 +124,7 @@ your approval). Then:
 | repository | `DOMAIN` | variable | the shop's domain, e.g. `ihorhartmann.com` |
 | repository | `SSH_KNOWN_HOSTS` | secret | the `ssh-keyscan` line |
 | `production` | `DEPLOY_SSH_KEY` | secret | `deploy_key` (the private key) |
+| repository | `VERSIONS_PR_TOKEN` | secret | a fine-grained personal access token for this repository only - Contents and Pull requests: Read and write - for the pull request `release/versions` (one made with the workflow's own token would start no full suite) |
 | `provision` | `PROVISION_SSH_KEY` | secret | `provision_key` (the private key) |
 | `provision` | `DEPLOY_SSH_PUBLIC_KEY` | variable | `deploy_key.pub` |
 | repository | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | secrets | Stripe's test-mode keys - there already, for the e2e tests |

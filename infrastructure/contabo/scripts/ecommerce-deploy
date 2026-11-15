@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Deploys a release - a version tag of the repository, and the images the Release workflow built for it - to this
-# server, or rolls back to an earlier one the same way:
+# Deploys a platform release - a version tag of the repository, and the service versions its versions.env names - to
+# this server, or rolls back to an earlier one the same way:
 #
 #   ecommerce-deploy v1.2.0
 #

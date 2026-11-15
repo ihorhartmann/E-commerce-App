@@ -158,14 +158,14 @@ services:
       - grafana_client_secret
 
   inventory-service:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/inventory-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/inventory-service:${INVENTORY_SERVICE_IMAGE_TAG:?INVENTORY_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 256m
     ports: !reset []
 
   order-service:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/order-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/order-service:${ORDER_SERVICE_IMAGE_TAG:?ORDER_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 768m
@@ -174,7 +174,7 @@ services:
       <<: *jvm
 
   payment-service:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/payment-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/payment-service:${PAYMENT_SERVICE_IMAGE_TAG:?PAYMENT_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 768m
@@ -183,14 +183,14 @@ services:
       <<: *jvm
 
   shipping-service:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/shipping-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/shipping-service:${SHIPPING_SERVICE_IMAGE_TAG:?SHIPPING_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 256m
     ports: !reset []
 
   gateway-service:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/gateway-service:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/gateway-service:${GATEWAY_SERVICE_IMAGE_TAG:?GATEWAY_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 768m
@@ -199,7 +199,7 @@ services:
       <<: *jvm
 
   web-ui:
-    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/web-ui:${IMAGE_TAG:?IMAGE_TAG is not set}
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/web-ui:${WEB_UI_IMAGE_TAG:?WEB_UI_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
     mem_limit: 64m
