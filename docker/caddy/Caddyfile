@@ -1,0 +1,37 @@
+# Production only (docker-compose.prod.yaml): the one entry point from the internet. Caddy orders and renews the
+# certificates itself (ACME, HTTP-01 on port 80), redirects http:// to https://, and forwards the browser's scheme
+# and host to the containers behind it in X-Forwarded-Proto / X-Forwarded-Host.
+#
+# {$NAME} is an environment variable of the container. No HSTS header: while the certificates come from the staging
+# CA (ACME_CA), a browser must still let the untrusted certificate be clicked through.
+
+{
+	acme_ca {$ACME_CA}
+}
+
+# the shop: the web UI's nginx, which forwards /api, /oauth2, /login and /logout to the gateway
+{$DOMAIN} {
+	reverse_proxy web-ui:{$WEB_UI_PORT}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+# Keycloak: only what a browser and the token's issuer URL need - the shop's realm and the internal tools' one (their
+# endpoints and sign-in pages) and the static files. The master realm, whose users administer Keycloak, and the admin
+# console are no part of it: they are reached through the SSH tunnel (KC_HOSTNAME_ADMIN).
+auth.{$DOMAIN} {
+	@public path /realms/ecommerce/* /realms/internal/* /resources/* /robots.txt
+	handle @public {
+		reverse_proxy keycloak:8080
+	}
+	handle {
+		respond 404
+	}
+}
+
+# Grafana: everyone signs in through Keycloak (docker-compose.prod.yaml), the observer account is published
+grafana.{$DOMAIN} {
+	reverse_proxy grafana:3000
+}

@@ -56,7 +56,8 @@ Routes live in `application.yml`, not in code.
 
 * `OIDC_*` env vars are bound straight into `OidcProperties` (no `${...}` placeholders for them in `application.yml`):
   a placeholder whose env var is missing would be bound as a literal string, and the gateway would start
-  misconfigured instead of failing.
+  misconfigured instead of failing. The client secret comes as a Docker secret instead, the file
+  `/run/secrets/oidc.client-secret` (imported as a `configtree`), or `OIDC_CLIENT_SECRET` outside Docker.
 * The Keycloak provider is declared explicitly (`SecurityConfig.clientRegistrationRepository`), not via `issuer-uri`
   discovery: the issuer is the public URL, unreachable from inside the container, so front-channel endpoints use
   `OIDC_ISSUER` and back-channel ones `OIDC_INTERNAL_URI`.

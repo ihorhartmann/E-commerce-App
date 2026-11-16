@@ -12,8 +12,8 @@ a browser client of the Gateway.
 
 Services communicate with each other through Kafka and HTTP and expose REST APIs for frontend communication.
 
-All services are located in the `app` directory; the Keycloak realm (roles, clients, test users) is
-`docker/keycloak/realm-ecommerce.json`.
+All services are located in the `app` directory; the Keycloak realms (roles, clients, users) are
+`docker/keycloak/realm-ecommerce.json` (the shop) and `docker/keycloak/realm-internal.json` (the staff's tools).
 
 The **Order Service** acts as the orchestrator for the other services.
 
@@ -23,6 +23,9 @@ The **Order Service** acts as the orchestrator for the other services.
   `INVENTORY_RESERVE`) are in the claim named by `OIDC_ROLES_CLAIM`, the user id is `sub` (a UUID).
 * The Gateway logs browser users in (Authorization Code + PKCE, tokens kept in the server-side session) and relays
   their token; Bearer clients (Postman, e2e tests) send their own. It only checks that a request is authenticated.
+* Two realms, one per kind of user: `ecommerce` (`docker/keycloak/realm-ecommerce.json`) for the shop - its customers,
+  couriers and admin - and `internal` (`docker/keycloak/realm-internal.json`) for the staff's tools - Grafana. Each has
+  its own users, policies and sessions; a tool for the staff goes into `internal`, never into the shop's realm.
 * The Web UI's nginx forwards the Gateway's paths (`/api`, `/oauth2`, `/login`, `/logout`), so the browser sees one
   origin and the session cookie works without CORS. The Gateway knows nothing about the UI: it only builds its
   redirect URIs from the `X-Forwarded-*` headers nginx sets.
@@ -164,6 +167,16 @@ instead of silently overriding it after a Spring Boot upgrade.
 All services receive the environment variables required to connect to Kafka, database, etc. via env vars. If a variable
 is missing, the service must not start and must log an error.
 
+Secrets (passwords, client secrets, API keys) are the exception: they reach a container as a Docker secret, a file in
+`/run/secrets`, never as an environment variable (which `docker inspect` shows). `docker-compose.yaml` takes their
+values from `.env`, `docker-compose.prod.yaml` from the files in `secrets/` - the containers read the same files either
+way. Our own services read a secret from the file named after the variable it replaces - mounted with
+`target: DB_PASSWORD`, it is `/run/secrets/DB_PASSWORD`: Go services through `env.GetSecretEnv`, falling back to the
+variable itself outside Docker; Spring services import `/run/secrets` as a `configtree` (each file is a property named
+after it, filling the `${...}` placeholder of that name). An image that reads only
+environment variables gets them from a wrapper that reads the files first (`docker/keycloak/entrypoint.sh`). A new
+secret is declared in both compose files and in `infrastructure/contabo/scripts/generate-env-and-secrets.sh`.
+
 All services must have graceful shutdown, so that on receiving a termination signal the service can close all Kafka,
 database connections and other resources if there are such.
 
@@ -223,7 +236,9 @@ database connections and other resources if there are such.
   (`docker/alloy/postgres-queries.yaml`), never kept as a gauge in each replica. Consumer lag comes from Alloy's Kafka
   exporter.
 * A metric counts, it never lists: which orders are stuck is no label of a series, but a table Grafana reads straight
-  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`).
+  from Postgres, as `grafana_reader` (read-only, `docker/postgres/init-grafana-reader.sh`). That user reads the views of
+  the `grafana` schema only (`docker/postgres/grafana-views.sql`), never a service's tables: Grafana's viewers can send
+  any query, so a view holds just the columns a dashboard needs - no customer, no address.
 * Alerts are Prometheus rules (`docker/prometheus/rules`), on symptoms only, each with a `severity` (`critical` - act
   now, `warning` - look at it today), a `service`, and `summary`/`description`/`dashboard` annotations; Alertmanager
   (`docker/alertmanager`) mails them, one template per severity, and a critical alert mutes the warnings of its

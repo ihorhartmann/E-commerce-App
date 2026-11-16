@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Deploys a platform release - a version tag of the repository, and the service versions its versions.env names - to
+# this server, or rolls back to an earlier one the same way:
+#
+#   ecommerce-deploy v1.2.0
+#
+# Installed as /usr/local/sbin/ecommerce-deploy (by deploy.sh and provision.sh), outside the repository it switches
+# to the tag: so no running script is rewritten under its own feet, and each release deploys with its own deploy.sh.
+# The CD's key may run nothing but this: its line in root's authorized_keys forces this command, which then takes the
+# tag from the command the client asked for ("deploy v1.2.0" - .github/workflows/deploy.yml).
+
+set -euo pipefail
+
+readonly REPOSITORY_DIR=/opt/ecommerce
+
+request="${1:-${SSH_ORIGINAL_COMMAND:-}}"
+tag="${request#deploy }"
+if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "usage: ecommerce-deploy vMAJOR.MINOR.PATCH" >&2
+  exit 2
+fi
+
+# one deployment at a time; the lock is held until deploy.sh, which inherits it, ends
+exec 9> /var/lock/ecommerce-deploy.lock
+if ! flock --nonblock 9; then
+  echo "another deployment is running" >&2
+  exit 1
+fi
+
+cd "${REPOSITORY_DIR}"
+previous="$(git rev-parse HEAD)"
+git fetch --quiet --force --tags origin
+if ! git rev-parse --verify --quiet "refs/tags/${tag}^{commit}" > /dev/null; then
+  echo "the repository has no tag ${tag}" >&2
+  exit 1
+fi
+# whatever was changed by hand in the tracked files is dropped: the tag is what runs; .env and secrets/ are untracked
+git checkout --quiet --force --detach "refs/tags/${tag}"
+
+exec bash infrastructure/contabo/scripts/deploy.sh "${tag}" "${previous}"

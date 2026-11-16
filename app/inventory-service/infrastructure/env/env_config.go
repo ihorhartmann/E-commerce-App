@@ -38,7 +38,7 @@ func LoadFromEnv() (*Config, error) {
 		return nil, err
 	}
 
-	dbPassword, err := GetStrEnv(DBPasswordEnvVar)
+	dbPassword, err := GetSecretEnv(DBPasswordEnvVar)
 	if err != nil {
 		return nil, err
 	}

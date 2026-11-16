@@ -19,6 +19,8 @@ readonly COMPOSE_PLUGIN_VERSION='5.7.1-1~ubuntu.24.04~noble'
 readonly SWAP_FILE=/swapfile
 readonly SWAP_SIZE=4G
 readonly MARKER_FILE=/var/lib/ecommerce/install.ok
+# where the repository is cloned (infrastructure/contabo/README.md): the nightly backup runs its script
+readonly REPOSITORY_DIR=/opt/ecommerce
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -68,7 +70,8 @@ ufw allow 443/udp comment 'HTTP/3'
 ufw --force enable
 
 echo '--- docker'
-apt_get install --yes ca-certificates curl
+# git: the server runs a clone of the repository, switched to the deployed tag (scripts/ecommerce-deploy)
+apt_get install --yes ca-certificates curl git
 
 install -m 0755 -d /etc/apt/keyrings
 curl --fail --silent --show-error --location https://download.docker.com/linux/ubuntu/gpg --output /etc/apt/keyrings/docker.asc
@@ -102,6 +105,16 @@ apt_get install --yes \
 apt-mark hold docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 systemctl enable --now docker
+
+echo '--- database backup'
+# every night at 03:15 UTC, a dump of the database into /var/backups/ecommerce/postgres, two weeks of them kept
+# (scripts/backup-postgres.sh); until the repository is cloned there is no script, which the journal says
+cat > /etc/cron.d/ecommerce-backup <<EOF
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * root /bin/bash ${REPOSITORY_DIR}/infrastructure/contabo/scripts/backup-postgres.sh > /dev/null 2>&1 || logger -t ecommerce-backup "postgres backup failed, or its script is missing"
+EOF
+chmod 644 /etc/cron.d/ecommerce-backup
 
 echo '--- verify'
 docker version

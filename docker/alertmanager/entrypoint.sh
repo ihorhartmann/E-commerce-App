@@ -1,12 +1,14 @@
 #!/bin/sh
 # Alertmanager reads no environment variables in its configuration, so this renders it: alertmanager.yml and the
-# templates get the values of .env in place of their ${...}, the SMTP password goes to a file of its own
-# (smtp_auth_password_file), and only then Alertmanager starts. A missing variable stops the container.
+# templates get the values of .env in place of their ${...}, the SMTP password - a Docker secret, at
+# ALERT_SMTP_PASSWORD_FILE - goes to a file of its own without the trailing line break an editor leaves
+# (smtp_auth_password_file), and only then Alertmanager starts. A missing variable or an empty secret stops the
+# container.
 set -eu
 
 : "${ALERT_SMTP_SMARTHOST:?ALERT_SMTP_SMARTHOST is not set}"
 : "${ALERT_SMTP_USERNAME:?ALERT_SMTP_USERNAME is not set}"
-: "${ALERT_SMTP_PASSWORD:?ALERT_SMTP_PASSWORD is not set}"
+: "${ALERT_SMTP_PASSWORD_FILE:?ALERT_SMTP_PASSWORD_FILE is not set}"
 : "${ALERT_EMAIL_FROM:?ALERT_EMAIL_FROM is not set}"
 : "${ALERT_EMAIL_TO:?ALERT_EMAIL_TO is not set}"
 : "${GRAFANA_URL:?GRAFANA_URL is not set}"
@@ -14,7 +16,9 @@ set -eu
 rendered=/tmp/alertmanager
 mkdir -p "$rendered/templates"
 umask 077
-printf '%s' "$ALERT_SMTP_PASSWORD" > "$rendered/smtp_password"
+smtp_password="$(cat "$ALERT_SMTP_PASSWORD_FILE")"
+: "${smtp_password:?the secret at ALERT_SMTP_PASSWORD_FILE is empty}"
+printf '%s' "$smtp_password" > "$rendered/smtp_password"
 
 render() {
   sed -e "s|\${ALERT_SMTP_SMARTHOST}|$ALERT_SMTP_SMARTHOST|g" \

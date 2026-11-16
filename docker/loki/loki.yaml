@@ -38,6 +38,10 @@ limits_config:
   # detected_level, from the level of a JSON line, for Logs Drilldown's level filter - structured metadata, not a
   # label; the level label from Alloy stays, for the queries that pick WARN and ERROR lines before parsing any JSON
   discover_log_levels: true
+  # Grafana's viewers can send any query: one can't keep Loki busy for long, nor pull the whole store at once
+  max_query_length: 168h
+  query_timeout: 30s
+  max_entries_limit_per_query: 2000
 
 compactor:
   working_directory: /loki/compactor

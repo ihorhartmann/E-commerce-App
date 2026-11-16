@@ -1,15 +1,27 @@
 name: Full Test Suite
 
+# Every test, unit to e2e. A pull request into main runs it once it is ready for review - not while it is a draft, so
+# pushing work in progress costs nothing - and again on every push after that; its single "Full suite" check, the
+# last job, is what the branch rules of main require before a merge (GitHub's merge queue isn't available to a
+# repository of a personal account). It runs on main after the merge too, and by hand.
 on:
-  merge_group:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
   push:
     branches: [main]
+
+# a newer push to the same pull request cancels the run of the one before
+concurrency:
+  group: full-suite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # --- stage 1: unit tests, all 5 services, the web UI and the alerting in parallel ---
 
   unit-inventory:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,6 +35,7 @@ jobs:
       - run: go test ./...
 
   unit-shipping:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,6 +49,7 @@ jobs:
       - run: go test ./...
 
   unit-order:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +64,7 @@ jobs:
       - run: ./gradlew test
 
   unit-payment:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,6 +79,7 @@ jobs:
       - run: mvn -B test -DexcludedGroups=integration
 
   unit-gateway:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,6 +94,7 @@ jobs:
       - run: ./gradlew test
 
   unit-web-ui:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -93,6 +110,7 @@ jobs:
 
   # the alert rules and Alertmanager's routing, offline - the same steps as alerting.yml
   unit-alerting:
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -102,10 +120,12 @@ jobs:
           test rules /p/tests/alerts_test.yaml
       - name: Check Alertmanager's configuration and routing
         run: >-
+          printf ci-password > "$RUNNER_TEMP/smtp_password" &&
           docker run --rm -v "$PWD/docker/alertmanager:/etc/alertmanager:ro"
+          -v "$RUNNER_TEMP/smtp_password:/run/secrets/alert_smtp_password:ro"
           -e ALERT_SMTP_SMARTHOST=smtp.example.com:587 -e ALERT_SMTP_USERNAME=ci@example.com
-          -e ALERT_SMTP_PASSWORD=ci-password -e ALERT_EMAIL_FROM=ci@example.com -e ALERT_EMAIL_TO=ci@example.com
-          -e GRAFANA_URL=http://localhost:8089
+          -e ALERT_SMTP_PASSWORD_FILE=/run/secrets/alert_smtp_password -e ALERT_EMAIL_FROM=ci@example.com
+          -e ALERT_EMAIL_TO=ci@example.com -e GRAFANA_URL=http://localhost:8089
           --entrypoint /bin/sh prom/alertmanager:v0.34.2 /etc/alertmanager/entrypoint.sh check
 
   # --- stage 2: REST + Kafka integration tests, only if every unit job above passed ---
@@ -198,12 +218,10 @@ jobs:
       ALLOY_UI_PORT: 12345
       GATEWAY_CLIENT_SECRET: e2e-gateway-secret
       ORDER_SERVICE_CLIENT_SECRET: e2e-order-service-secret
-      # passwords of the test users in docker/keycloak/realm-ecommerce.json
-      E2E_CLIENT1_PASSWORD: client1
-      E2E_CLIENT2_PASSWORD: client2
-      E2E_COURIER1_PASSWORD: courier1
-      E2E_COURIER2_PASSWORD: courier2
-      E2E_ADMIN_PASSWORD: admin
+      GRAFANA_CLIENT_SECRET: e2e-grafana-secret
+      INTERNAL_ADMIN_PASSWORD: e2e-internal-admin-password
+      APP_ADMIN_PASSWORD: admin-password
+      KC_TEST_CLIENTS_ENABLED: "true"
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -222,3 +240,37 @@ jobs:
         run: npm install -g @stripe/cli
 
       - run: ./gradlew test
+
+  # --- the one check the branch rules of main require: every job above passed ---
+
+  full-suite:
+    name: Full suite
+    needs:
+      - unit-inventory
+      - unit-shipping
+      - unit-order
+      - unit-payment
+      - unit-gateway
+      - unit-web-ui
+      - unit-alerting
+      - integration-inventory
+      - integration-shipping
+      - integration-order
+      - integration-payment
+      - e2e
+    # always: a failed or cancelled job above would otherwise skip this one, and a skipped check counts as passed.
+    # A draft is the exception: nothing ran, so the check is skipped too - grey, not a green it hasn't earned; a draft
+    # can't be merged anyway, and "Ready for review" runs the suite
+    if: always() && github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in ${RESULTS}; do
+            if [[ "${result}" != "success" ]]; then
+              echo "::error::not every job passed: ${RESULTS}"
+              exit 1
+            fi
+          done
+          echo "every job passed"

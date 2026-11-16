@@ -11,9 +11,12 @@ services:
       - "${POSTGRES_PORT}:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: ${POSTGRES_DB}
-      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is not set}
+      GRAFANA_DB_PASSWORD_FILE: /run/secrets/grafana_db_password
+    secrets:
+      - postgres_password
+      - grafana_db_password
     volumes:
       - postgres-data:/var/lib/postgresql
       # run in the order of their names, once - on a new volume: the schemas first, then the users that read them
@@ -29,33 +32,49 @@ services:
     image: quay.io/keycloak/keycloak:26.8.0
     # --import-realm only creates a realm that doesn't exist yet: after editing the realm file,
     # delete the realm (admin console) or recreate the postgres volume for the change to apply
+    # entrypoint.sh reads the secrets Keycloak can only take as environment variables, then runs kc.sh with the command
+    entrypoint: ["/bin/bash", "/opt/keycloak/entrypoint.sh"]
     command: ["start-dev", "--import-realm"]
     networks:
       - app-network
     ports:
       - "${KEYCLOAK_PORT}:8080"
+    secrets:
+      - postgres_password
+      - keycloak_admin_password
+      - app_admin_password
+      - gateway_client_secret
+      - order_service_client_secret
+      - grafana_client_secret
+      - internal_admin_password
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       KC_DB_SCHEMA: keycloak
       KC_DB_USERNAME: ${POSTGRES_USER}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      # public URL, always used as the token issuer (iss) - whoever requested the token
-      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT}
+      # the clients for the e2e tests and Postman (the realm's e2e-tests, postman): off in production
+      KC_TEST_CLIENTS_ENABLED: ${KC_TEST_CLIENTS_ENABLED:-true}
+      # public URL, always used as the token issuer (iss) - whoever requested the token. KEYCLOAK_URL is set in
+      # production only (infrastructure/contabo); every OIDC_ISSUER below falls back to the same local URL
+      KC_HOSTNAME: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}
       # lets other containers use http://keycloak:8080 for back-channel calls (token, jwks)
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
       # /metrics on the management port, with counters of user events - failed logins among them - for Alloy to scrape
       KC_METRICS_ENABLED: "true"
       KC_EVENT_METRICS_USER_ENABLED: "true"
-      GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
-      ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
-      GATEWAY_PORT: ${GATEWAY_PORT}
-      WEB_UI_PORT: ${WEB_UI_PORT}
+      # the addresses the browser comes back to after signing in and out (the gateway's redirect URIs in the realm):
+      # the gateway itself and the web UI in front of it, both on the one public domain in production
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:${GATEWAY_PORT}}
+      WEB_UI_PUBLIC_URL: ${WEB_UI_PUBLIC_URL:-http://localhost:${WEB_UI_PORT}}
+      # Grafana, which signs its admin and its observer in through the realm (the grafana client)
+      GRAFANA_PUBLIC_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:${GRAFANA_PORT}}
     volumes:
+      - ./docker/keycloak/entrypoint.sh:/opt/keycloak/entrypoint.sh:ro
       - ./docker/keycloak/realm-ecommerce.json:/opt/keycloak/data/import/realm-ecommerce.json:ro
+      # the internal tools' own realm (Grafana): their staff, kept apart from the shop's customers - sessions too
+      - ./docker/keycloak/realm-internal.json:/opt/keycloak/data/import/realm-internal.json:ro
       # the login theme, file by file: its glass.css is the web UI's own, so the sign-in pages match the app
       - ./docker/keycloak/themes/ecommerce/login/theme.properties:/opt/keycloak/themes/ecommerce/login/theme.properties:ro
       - ./docker/keycloak/themes/ecommerce/login/resources/css/login.css:/opt/keycloak/themes/ecommerce/login/resources/css/login.css:ro
@@ -128,6 +147,30 @@ services:
       shipping-service:
         condition: service_healthy
 
+  # One-off: the views grafana_reader may read, and nothing else (docker/postgres/grafana-views.sql) - once the
+  # order-service's migrations have created its tables - then exits. Runs on every start, so a database initialized
+  # before the file existed ends up the same.
+  grafana-views:
+    image: postgres:18-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        PGPASSWORD="$$(cat /run/secrets/postgres_password)" exec psql -v ON_ERROR_STOP=1 -h postgres
+        -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v owner="$$POSTGRES_USER" -f /grafana-views.sql
+    restart: "no"
+    networks:
+      - app-network
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    secrets:
+      - postgres_password
+    volumes:
+      - ./docker/postgres/grafana-views.sql:/grafana-views.sql:ro
+    depends_on:
+      order-service:
+        condition: service_healthy
+
   kafka-ui:
     image: kafbat/kafka-ui:v1.5.0
     networks:
@@ -173,6 +216,9 @@ services:
       - --web.enable-otlp-receiver
       # the exporters' metrics, from alloy's prometheus.remote_write
       - --web.enable-remote-write-receiver
+      # Grafana's viewers can send any query: one can't keep Prometheus busy for long, nor load too much into memory
+      - --query.timeout=30s
+      - --query.max-samples=10000000
     networks:
       - app-network
     volumes:
@@ -191,11 +237,13 @@ services:
       # the container if one is missing
       ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST:-}
       ALERT_SMTP_USERNAME: ${ALERT_SMTP_USERNAME:-}
-      ALERT_SMTP_PASSWORD: ${ALERT_SMTP_PASSWORD:-}
+      ALERT_SMTP_PASSWORD_FILE: /run/secrets/alert_smtp_password
       ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM:-}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       # where the emails' links lead
       GRAFANA_URL: http://localhost:${GRAFANA_PORT}
+    secrets:
+      - alert_smtp_password
     volumes:
       - ./docker/alertmanager:/etc/alertmanager:ro
       - alertmanager-data:/alertmanager
@@ -215,8 +263,9 @@ services:
     environment:
       # the postgres exporter's connection (docker/alloy/config.alloy)
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    secrets:
+      - postgres_password
     volumes:
       - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - ./docker/alloy/postgres-queries.yaml:/etc/alloy/postgres-queries.yaml:ro
@@ -254,9 +303,15 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
-      # the read-only Postgres user of its datasource - see docker/postgres/init-grafana-reader.sh
-      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD is not set}
+      # light or dark as the operating system is, for every user who hasn't picked a theme of their own
+      GF_USERS_DEFAULT_THEME: system
+      # the read-only Postgres user of its datasource - see docker/postgres/init-grafana-reader.sh. Grafana's image
+      # turns a GF_..._FILE variable into GF_... with the file's content; GF_DATASOURCE_POSTGRES_PASSWORD is no
+      # setting of Grafana's, only what provisioning/datasources/datasources.yaml reads
+      GF_DATASOURCE_POSTGRES_PASSWORD__FILE: /run/secrets/grafana_db_password
       POSTGRES_DB: ${POSTGRES_DB}
+    secrets:
+      - grafana_db_password
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       # the dashboards themselves, as JSON - see provisioning/dashboards/dashboards.yaml
@@ -290,11 +345,14 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
       # Keycloak realm whose access tokens are accepted: public URL (= iss), keys from inside the network
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # the file /run/secrets/DB_PASSWORD (env.GetSecretEnv)
+    secrets:
+      - source: postgres_password
+        target: DB_PASSWORD
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${INVENTORY_SERVICE_PORT}/health/readiness || exit 1"]
@@ -336,13 +394,17 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
       OIDC_TOKEN_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/token
       OIDC_CLIENT_ID: order-service
-      OIDC_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET}
+    # read as properties (spring.config.import: configtree), each under the name of the placeholder it fills
+    secrets:
+      - source: postgres_password
+        target: DB_PASSWORD
+      - source: order_service_client_secret
+        target: OIDC_CLIENT_SECRET
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${ORDER_SERVICE_PORT}/health/readiness || exit 1"]
@@ -382,18 +444,23 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_SERVICE_NAME: payment-service
       LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       KAFKA_HOST: kafka
       KAFKA_PORT: ${KAFKA_PORT}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # read as properties (spring.config.import: configtree), each under the name of the placeholder it fills
+    secrets:
+      - source: postgres_password
+        target: DB_PASSWORD
+      - source: stripe_secret_key
+        target: STRIPE_SECRET_KEY
+      - source: stripe_webhook_secret
+        target: STRIPE_WEBHOOK_SECRET
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${PAYMENT_SERVICE_PORT}/health/readiness || exit 1"]
@@ -433,10 +500,13 @@ services:
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       OIDC_JWKS_URI: http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs
       OIDC_ROLES_CLAIM: realm_access.roles
+    # the file /run/secrets/DB_PASSWORD (env.GetSecretEnv)
+    secrets:
+      - source: postgres_password
+        target: DB_PASSWORD
     # ready: started, not shutting down, and its database answers - what the services that depend on it wait for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${SHIPPING_SERVICE_PORT}/health/readiness || exit 1"]
@@ -471,16 +541,19 @@ services:
       OTEL_SERVICE_NAME: gateway-service
       LOGGING_LEVEL_COM_HARTMANN: ${LOG_LEVEL:-INFO}
       # public realm URL - equal to `iss` in tokens, used for browser redirects
-      OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/ecommerce
+      OIDC_ISSUER: ${KEYCLOAK_URL:-http://localhost:${KEYCLOAK_PORT}}/realms/ecommerce
       # the same realm from inside the network - token, jwks, userinfo
       OIDC_INTERNAL_URI: http://keycloak:8080/realms/ecommerce
       OIDC_CLIENT_ID: gateway
-      OIDC_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET}
       OIDC_ROLES_CLAIM: realm_access.roles
       ORDER_SERVICE_URL: http://order-service:${ORDER_SERVICE_PORT}
       PAYMENT_SERVICE_URL: http://payment-service:${PAYMENT_SERVICE_PORT}
       INVENTORY_SERVICE_URL: http://inventory-service:${INVENTORY_SERVICE_PORT}
       SHIPPING_SERVICE_URL: http://shipping-service:${SHIPPING_SERVICE_PORT}
+    # read as a property (spring.config.import: configtree): OidcProperties.clientSecret
+    secrets:
+      - source: gateway_client_secret
+        target: oidc.client-secret
     # ready: started, not shutting down - the gateway has no database - what the web UI waits for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${GATEWAY_PORT}/health/readiness || exit 1"]
@@ -533,3 +606,35 @@ volumes:
   alertmanager-data:
   alloy-data:
   grafana-data:
+
+# Every password, client secret and key reaches its container as a file in /run/secrets, never as an environment
+# variable (which `docker inspect` shows). Here their values come from .env; in production
+# (docker-compose.prod.yaml) from the files in secrets/. Either way the containers read the same files.
+secrets:
+  postgres_password:
+    environment: POSTGRES_PASSWORD
+  # grafana_reader, the read-only Postgres user of Grafana's datasource - see docker/postgres/init-grafana-reader.sh
+  grafana_db_password:
+    environment: GRAFANA_DB_PASSWORD
+  # Keycloak's own admin, in the master realm
+  keycloak_admin_password:
+    environment: KEYCLOAK_ADMIN_PASSWORD
+  # the shop's admin, in the ecommerce realm
+  app_admin_password:
+    environment: APP_ADMIN_PASSWORD
+  gateway_client_secret:
+    environment: GATEWAY_CLIENT_SECRET
+  order_service_client_secret:
+    environment: ORDER_SERVICE_CLIENT_SECRET
+  # Grafana's client in the internal realm (its sign-in through Keycloak, production only)
+  grafana_client_secret:
+    environment: GRAFANA_CLIENT_SECRET
+  # the admin of the internal realm (docker/keycloak/realm-internal.json): Grafana's admin
+  internal_admin_password:
+    environment: INTERNAL_ADMIN_PASSWORD
+  stripe_secret_key:
+    environment: STRIPE_SECRET_KEY
+  stripe_webhook_secret:
+    environment: STRIPE_WEBHOOK_SECRET
+  alert_smtp_password:
+    environment: ALERT_SMTP_PASSWORD

@@ -1,0 +1,133 @@
+{
+  "realm": "internal",
+  "displayName": "E-commerce internal tools",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginTheme": "ecommerce",
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "bruteForceProtected": true,
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Grafana's admin"
+      },
+      {
+        "name": "OBSERVER",
+        "description": "Views Grafana - dashboards, logs, traces - and changes nothing"
+      },
+      {
+        "name": "offline_access",
+        "description": "${role_offline-access}"
+      },
+      {
+        "name": "uma_authorization",
+        "description": "${role_uma_authorization}"
+      },
+      {
+        "name": "default-roles-internal",
+        "description": "${role_default-roles}",
+        "composite": true
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-internal",
+    "composite": true
+  },
+  "clients": [
+    {
+      "clientId": "grafana",
+      "name": "Grafana",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${GRAFANA_CLIENT_SECRET}",
+      "baseUrl": "${GRAFANA_PUBLIC_URL}/",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "${GRAFANA_PUBLIC_URL}/login/generic_oauth"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${GRAFANA_PUBLIC_URL}/login"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "admin-cli",
+      "name": "${client_admin-cli}",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "id": "5afacaa6-a73a-493e-924d-b88b23a8e8ec",
+      "username": "observer",
+      "email": "observer@example.com",
+      "firstName": "Grafana",
+      "lastName": "Observer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "secretData": "{\"value\":\"jRe03M9UnNwsxHy8/rkMNPRHXYk/03PRqNToqPOTKs3LDdaFS7zqrThL+JH9Q9UIVPlleTTb9Yhf0kO1LGrgbw==\",\"salt\":\"yQZe+08vVwdh2DoHAMVMag==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":210000,\"algorithm\":\"pbkdf2-sha512\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "OBSERVER"
+      ]
+    },
+    {
+      "id": "5f343f45-6fcf-4ffe-9ed0-bea68a958da6",
+      "username": "admin",
+      "email": "admin@internal.example.com",
+      "firstName": "Admin",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${INTERNAL_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "default-roles-internal",
+        "ADMIN"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 /.idea/
 /.claude
 /.env
+# production's secrets, one file each (infrastructure/contabo/scripts/generate-env-and-secrets.sh)
+/secrets/
 /order-service.iml
 /payment-service.iml
 /inventory-service.iml

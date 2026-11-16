@@ -1,0 +1,107 @@
+name: Provision
+
+# Sets a server up from scratch and deploys a version to it: a fresh Ubuntu 24.04 that has the provision key in
+# root's authorized_keys (Contabo's panel adds it when the server is ordered). Started by hand only:
+# Actions > Provision > Run workflow. Every step can run again on a server that is set up already - it changes nothing
+# that is in place, so the workflow is also how a lost value or the deploy key is put back.
+#
+#   init   - install.sh (swap, SSH, firewall, Docker, the nightly backup), the repository cloned and switched to the
+#            tag, .env and secrets/ generated (generate-env-and-secrets.sh) and completed with the values only a
+#            person knows, which are kept in GitHub (provision.sh), the deploy key allowed to run ecommerce-deploy only
+#   deploy - the Deploy workflow, as a release runs it
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to deploy, e.g. v1.2.0"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    # its own environment: root's full access, and the values only a person knows, used by nothing else
+    environment: provision
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    steps:
+      - name: Check the tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${TAG}' is no version tag (vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+
+      # install.sh of that version, sent over SSH
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: SSH key
+        env:
+          PROVISION_SSH_KEY: ${{ secrets.PROVISION_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 0700 -d ~/.ssh
+          printf '%s\n' "${PROVISION_SSH_KEY}" > ~/.ssh/provision
+          chmod 600 ~/.ssh/provision
+          printf '%s\n' "${SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          {
+            echo "Host server"
+            echo "  HostName ${{ vars.SERVER_HOST }}"
+            echo "  User root"
+            echo "  IdentityFile ~/.ssh/provision"
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+          } > ~/.ssh/config
+
+      - name: Prepare the server
+        run: ssh server 'bash -s' < infrastructure/contabo/scripts/install.sh
+
+      - name: The repository, at the tag
+        env:
+          TAG: ${{ inputs.tag }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          ssh server 'bash -s' -- "${REPOSITORY_URL}" "${TAG}" <<'EOF'
+          set -euo pipefail
+          if [[ ! -d /opt/ecommerce/.git ]]; then
+            git clone --quiet "$1" /opt/ecommerce
+          fi
+          cd /opt/ecommerce
+          git fetch --quiet --force --tags origin
+          git checkout --quiet --force --detach "refs/tags/$2"
+          echo "/opt/ecommerce is at $2"
+          EOF
+
+      - name: The values only a person knows
+        env:
+          DOMAIN: ${{ vars.DOMAIN }}
+          ACME_CA: ${{ vars.ACME_CA }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          ALERT_SMTP_USERNAME: ${{ vars.ALERT_SMTP_USERNAME }}
+          ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
+          ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
+          DEPLOY_SSH_PUBLIC_KEY: ${{ vars.DEPLOY_SSH_PUBLIC_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+        # on the standard input, never as arguments: provision.sh keeps whatever is set already
+        run: |
+          for name in DOMAIN ACME_CA STRIPE_PUBLISHABLE_KEY ALERT_SMTP_USERNAME ALERT_EMAIL_FROM ALERT_EMAIL_TO \
+                      DEPLOY_SSH_PUBLIC_KEY STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET ALERT_SMTP_PASSWORD; do
+            printf '%s=%s\n' "${name}" "${!name}"
+          done | ssh server bash /opt/ecommerce/infrastructure/contabo/scripts/provision.sh
+
+  deploy:
+    needs: init
+    uses: ./.github/workflows/deploy.yml
+    with:
+      tag: ${{ inputs.tag }}
+    secrets: inherit

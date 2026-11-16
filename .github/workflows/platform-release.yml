@@ -1,0 +1,100 @@
+name: Create Platform Release and Deploy
+
+# A platform version tag pushed (git tag v1.4.0 && git push origin v1.4.0, or a release drafted on GitHub) releases
+# that commit of main: the compose files and configuration of that commit, and the versions of our services its
+# versions.env names - each built before by its own Create Service Release (No Deployment). Nothing is built here: the
+# images are checked to be in GHCR, a GitHub release lists the versions and the changes since the previous platform
+# release, and Deploy puts them on the server. Deploying an earlier platform tag rolls back both, the configuration and the versions.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      previous: ${{ steps.tag.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the whole history, to see whether the tagged commit is on main and which tag came before
+          fetch-depth: 0
+
+      - id: tag
+        name: A version of main
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${GITHUB_REF_NAME}' is no version tag (vMAJOR.MINOR.PATCH)"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} tags a commit that isn't on main: only main is released"
+            exit 1
+          fi
+          # the platform's version before, for the release notes; none for the first release
+          echo "previous=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_SHA}^" 2> /dev/null || true)" >> "${GITHUB_OUTPUT}"
+
+      # a version in versions.env that was never built - its service's tag not pushed, or its pull request merged
+      # before the build ended - stops the release here, not on the server
+      - name: Every image of versions.env is in GHCR
+        run: |
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}"
+          missing=0
+          while IFS='=' read -r variable version; do
+            [[ "${variable}" =~ ^[A-Z_]+_IMAGE_TAG$ ]] || continue
+            service="$(tr 'A-Z_' 'a-z-' <<< "${variable%_IMAGE_TAG}")"
+            if docker buildx imagetools inspect "${prefix}/${service}:${version}" > /dev/null 2>&1; then
+              echo "ok: ${service}:${version}"
+            else
+              echo "::error::${prefix}/${service}:${version} isn't in GHCR - push the tag ${service}/${version} first"
+              missing=1
+            fi
+          done < versions.env
+          exit "${missing}"
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ needs.check.outputs.previous }}
+        # a release published on GitHub's page, which made the tag, is there already
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+            echo "the release ${GITHUB_REF_NAME} exists already"
+            exit 0
+          fi
+          {
+            echo "## Service versions"
+            echo
+            echo "| Service | Version |"
+            echo "|---|---|"
+            while IFS='=' read -r variable version; do
+              [[ "${variable}" =~ ^[A-Z_]+_IMAGE_TAG$ ]] || continue
+              echo "| $(tr 'A-Z_' 'a-z-' <<< "${variable%_IMAGE_TAG}") | \`${version}\` |"
+            done < versions.env
+          } > "${RUNNER_TEMP}/notes.md"
+          start=()
+          if [[ -n "${PREVIOUS}" ]]; then
+            start=(--notes-start-tag "${PREVIOUS}")
+          fi
+          # the generated notes - the pull requests merged since the previous platform release - follow the table
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag --latest \
+            --title "${GITHUB_REF_NAME}" --notes-file "${RUNNER_TEMP}/notes.md" --generate-notes "${start[@]}"
+
+  deploy:
+    needs: release
+    uses: ./.github/workflows/deploy.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

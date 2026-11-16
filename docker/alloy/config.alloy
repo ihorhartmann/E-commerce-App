@@ -62,8 +62,14 @@ otelcol.exporter.otlphttp "prometheus" {
 
 // Postgres itself - connections against max_connections, deadlocks, database size - and the custom queries over the
 // services' tables: outbox backlog, orders by status, stuck orders, saga durations, payments, refunds, shipments.
+// The password is a Docker secret; secret-typed here, so Alloy's UI doesn't show it.
+local.file "postgres_password" {
+  filename  = "/run/secrets/postgres_password"
+  is_secret = true
+}
+
 prometheus.exporter.postgres "postgres" {
-  data_source_names          = [string.format("postgresql://%s:%s@postgres:5432/%s?sslmode=disable", sys.env("POSTGRES_USER"), sys.env("POSTGRES_PASSWORD"), sys.env("POSTGRES_DB"))]
+  data_source_names          = [string.format("postgresql://%s:%s@postgres:5432/%s?sslmode=disable", sys.env("POSTGRES_USER"), string.trim_space(convert.nonsensitive(local.file.postgres_password.content)), sys.env("POSTGRES_DB"))]
   custom_queries_config_path = "/etc/alloy/postgres-queries.yaml"
 }
 
@@ -141,7 +147,63 @@ loki.source.docker "containers" {
   host          = "unix:///var/run/docker.sock"
   targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.containers.rules
-  forward_to    = [loki.process.services.receiver]
+  forward_to    = [loki.process.personal_data.receiver]
+}
+
+// What reaches Loki can be read by anyone Grafana lets in, so the visitors' personal data and any secret are masked
+// before it is stored. Our own services log ids only (orders, a user's `sub`), never an address, an email or a token;
+// what the containers facing the internet log about the visitors is cut here: their IP addresses - Caddy's
+// remote_ip/client_ip, the X-Forwarded-For nginx appends to its access log, Keycloak's ipAddress - and the username or
+// email Keycloak's events name. A replace stage swaps what its regex captures for `replace`.
+loki.process "personal_data" {
+  stage.match {
+    selector = "{service_name=~\"caddy|web-ui|keycloak\"}"
+
+    // Caddy's JSON: "remote_ip":"1.2.3.4", "client_ip":..., "remote":"1.2.3.4:5678", and the forwarded-for header
+    stage.replace {
+      expression = `"(?:remote_ip|client_ip|remote)":"([^"]*)"`
+      replace    = "-"
+    }
+    stage.replace {
+      expression = `"X-Forwarded-For":\[("[^\]]*")\]`
+      replace    = "\"-\""
+    }
+    // nginx's access log ends with the X-Forwarded-For it got from Caddy: the visitor's address
+    stage.replace {
+      expression = `"([0-9a-fA-F.:, ]+)"$`
+      replace    = "-"
+    }
+    // Keycloak's events: ipAddress="...", username="...", email="..."
+    stage.replace {
+      expression = `(?:ipAddress|username|email)="([^"]*)"`
+      replace    = "-"
+    }
+    // whatever IPv4 address is left in these lines - the Docker network's ones are no secret, but can't be told apart
+    stage.replace {
+      expression = `\b((?:[0-9]{1,3}\.){3}[0-9]{1,3})\b`
+      replace    = "x.x.x.x"
+    }
+  }
+
+  // in every line: an email address (the domain is kept), and a key or token that shouldn't have been logged
+  stage.replace {
+    expression = `\b([A-Za-z0-9._%+-]+)@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`
+    replace    = "***"
+  }
+  stage.replace {
+    expression = `\b(?:sk|rk|pk)_(?:test|live)_([A-Za-z0-9]+)`
+    replace    = "****"
+  }
+  stage.replace {
+    expression = `\bwhsec_([A-Za-z0-9]+)`
+    replace    = "****"
+  }
+  stage.replace {
+    expression = `(?i)\bBearer ([A-Za-z0-9._~+/=-]+)`
+    replace    = "****"
+  }
+
+  forward_to = [loki.process.services.receiver]
 }
 
 // The services write a JSON object per line: its level becomes a label - only a handful of values, so it stays cheap
