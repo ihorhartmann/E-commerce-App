@@ -83,8 +83,9 @@ git tag -a v1.4.0 -m "v1.4.0" && git push origin v1.4.0                    # dep
 ```
 
 (a platform release can also be published on GitHub's page, Releases → Draft a new release, with a new tag on `main`).
-Several services' tags pushed together add their lines to the same pull request, however many there are; merge it
-once all of them have. Once it is merged or closed, the next service's tag starts a new one from `main` - closing it
+Push each service's tag on its own (`git push origin <tag>`, one after the other): GitHub starts no workflow at all for
+a push of more than three tags. Several services' tags pushed one after the other add their lines to the same pull
+request, however many there are; merge it once all of them have. Once it is merged or closed, the next service's tag starts a new one from `main` - closing it
 unmerged drops its versions. A platform tag put on a commit
 before that pull request is merged deploys the versions of that commit - the old ones - so tag `main` after the merge.
 A change of the configuration only (Grafana, Caddy, a third-party image's version) needs no service tag: merge it and
@@ -93,9 +94,19 @@ a feature, `PATCH` for a fix. A version is built once - its images are never rep
 ran before: Actions → Deploy → Run workflow, the earlier platform tag, which brings back its configuration and its
 service versions together.
 
-The first release: `versions.env` names `v0.1.0` for every service, so push the six tags `inventory-service/v0.1.0`,
-`order-service/v0.1.0`, `payment-service/v0.1.0`, `shipping-service/v0.1.0`, `gateway-service/v0.1.0`,
-`web-ui/v0.1.0` (no pull request follows: the versions are there already), then `v0.1.0`.
+The first release: `versions.env` names `v0.1.0` for every service, so tag `main` with the six tags
+`inventory-service/v0.1.0`, `order-service/v0.1.0`, `payment-service/v0.1.0`, `shipping-service/v0.1.0`,
+`gateway-service/v0.1.0`, `web-ui/v0.1.0` and push them one at a time (no pull request follows: the versions are there
+already), then `v0.1.0`.
+
+```bash
+for s in inventory-service order-service payment-service shipping-service gateway-service web-ui; do
+  git tag "${s}/v0.1.0" && git push origin "${s}/v0.1.0"
+done
+```
+
+A tag pushed with others and never released (no run in Actions) is pushed again after deleting it on GitHub:
+`git push origin --delete <tag>`, then `git push origin <tag>`.
 
 `ecommerce-deploy <tag>` (`scripts/ecommerce-deploy`, installed in `/usr/local/sbin`) switches the clone to the tag and
 runs that version's `scripts/deploy.sh`: the variables and secrets the release adds (`generate-env-and-secrets.sh`),
