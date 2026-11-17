@@ -1,16 +1,145 @@
 # E-commerce-App
 
-Four business services (inventory, order, payment, shipping) behind a Spring Cloud Gateway, with Keycloak as the
-identity provider, and a web UI (Kotlin, Compose HTML) for customers, couriers and admins. See [CLAUDE.md](CLAUDE.md)
-for the architecture.
+An online shop built as a set of microservices: four business services in Go, Kotlin and Java coordinate every order
+through a **saga** over Kafka and HTTP, behind one gateway, with Keycloak for sign-in, Stripe (test mode) for payments
+and a full observability stack (logs, traces, metrics, alerts) in Grafana. It runs in production on a single VPS,
+deployed by GitHub Actions from version tags.
 
-* Order checkout saga architecture (REST/Kafka, compensations): [docs/order_saga.md](docs/order_saga.md)
+<p align="center">
+  <a href="https://ihorhartmann.com"><b>🛒 Shop</b></a> &nbsp;·&nbsp;
+  <a href="https://grafana.ihorhartmann.com"><b>📊 Grafana</b></a> &nbsp;·&nbsp;
+  <a href="docs/order_saga.md"><b>📖 How an order works (the saga)</b></a>
+</p>
+
+![The catalog](docs/images/catalog.png)
+
+## Try it
+
+Everything below is public - the accounts exist only for the demo.
+
+### Accounts
+
+| Where | User | Password | Role | Can |
+|---|---|---|---|---|
+| [Shop](https://ihorhartmann.com) | `client1`, `client2` | `demo` | client | browse, buy, see and cancel own orders and their shipment |
+| [Shop](https://ihorhartmann.com) | `courier1`, `courier2` | `demo` | courier | see the shipments waiting for a courier, pick one up (its street shows only then), then deliver it, lose it, cancel it (the goods couldn't be handed over) or return it to the warehouse |
+| [Grafana](https://grafana.ihorhartmann.com) | `observer` | `demo` | viewer | every dashboard, and Explore over the logs, traces and metrics - read-only, with no personal data |
+
+You can also register in the shop: a new account is a client. The demo accounts can't change their password or
+email. The shop and Grafana are separate Keycloak realms, each with its own session, so you can be signed in to both
+at once with different accounts. The shop's admin, who manages the catalog, is not public.
+
+### Payment cards
+
+Payments go through Stripe in **test mode** - no real money moves. Any future expiry date, any CVC, any postal code.
+
+| Card | What happens |
+|---|---|
+| `4242 4242 4242 4242` | paid - the order moves on to shipping |
+| `4000 0000 0000 0002` | declined - the order stays open and the payment can be retried with another card |
+| `4000 0000 0000 9995` | declined, insufficient funds |
+
+An order that isn't paid within 15 minutes is cancelled, and its stock goes back to the catalog.
+
+### A walk-through
+
+1. **Buy.** Sign in to the shop as `client1`, put a few products into the cart and pay with `4242 4242 4242 4242`.
+   The order is `PLACED` while the payment is being confirmed, then `PROCESSING`: stock reserved, paid, a shipment
+   created.
+2. **Deliver.** In a private window (or another browser) sign in as `courier1`, open *Shipments*, pick the order's
+   shipment up and mark it delivered. Back as `client1`, the order is `FULFILLED`.
+3. **Cancel and refund.** Place another order and cancel it - before the courier picks it up, or after. The stock
+   is released (or, after a pickup, returned by the courier), the money refunded through Stripe, and the order ends
+   `CANCELLED`. The courier can also lose a shipment, or fail to hand it over: the order is cancelled and refunded too.
+4. **Fail.** Pay with a declined card, or leave an order unpaid, or cancel it before paying: nothing is charged, and
+   the reservation is released.
+5. **Watch it.** Open [Grafana](https://grafana.ihorhartmann.com) as `observer`:
+    * **Order journey** - enter an order's id: every trace and every log line of its saga, across all the services;
+    * **Saga** - orders by status, how long the saga takes, payments, refunds, shipments, stuck orders;
+    * **Overview** - is everything fine right now: the symptoms of every service side by side;
+    * **Service** - one service in depth: HTTP, Kafka, errors, outgoing calls, database, runtime, logs and traces;
+    * **Infrastructure** - containers, disk, Postgres, Kafka, Keycloak and the telemetry pipeline itself.
+
+![An order in the shop: its items, delivery address and progress](docs/images/order.png)
+<p align="center"><sub>An order, as its customer sees it</sub></p>
+
+![The trace of placing an order: gateway, order, inventory and payment services, down to the SQL and the Stripe call](docs/images/trace.png)
+<p align="center"><sub>Placing that order, traced through four services - down to the SQL and the Stripe call</sub></p>
+
+![The Infrastructure dashboard: containers running and restarted, CPU and memory by container, free disk space](docs/images/infrastructure.png)
+<p align="center"><sub>The Infrastructure dashboard: every container of the stack, its restarts, CPU and memory</sub></p>
+
+Every step of each of these paths - who calls whom, over HTTP or Kafka, and how each failure is compensated - is in
+**[docs/order_saga.md](docs/order_saga.md)**: the order's state machine, the sequence diagrams of every protocol,
+the compensations and the Kafka topics.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    browser([Browser]) --> caddy[Caddy<br/>HTTPS]
+    caddy --> webui[Web UI<br/>nginx]
+    caddy --> keycloak[Keycloak]
+    caddy --> grafana[Grafana]
+    webui --> gateway[Gateway]
+    gateway --> order[Order<br/>orchestrator]
+    gateway --> inventory[Inventory]
+    gateway --> payment[Payment]
+    gateway --> shipping[Shipping]
+    order -- HTTP --> inventory
+    order -- HTTP --> payment
+    order <-- Kafka --> inventory
+    order <-- Kafka --> payment
+    order <-- Kafka --> shipping
+    payment <--> stripe([Stripe])
+    stripe -. webhook .-> gateway
+```
+
+The **Order service** orchestrates the saga: it reserves stock and starts the payment over HTTP (the customer has to
+wait for both anyway), and drives everything after that - shipment, delivery, cancellation, refund - with Kafka
+commands and events. Every service owns its schema in one Postgres; none reads another's tables.
+
+| Service | Language | Architecture | Stack |
+|---|---|---|---|
+| Inventory | Go | Onion | Fiber, GORM, kafka-go |
+| Order | Kotlin | Clean | Spring Boot, Hibernate, Resilience4j |
+| Payment | Java | Hexagonal | Spring Boot, jOOQ, Stripe |
+| Shipping | Go | Hexagonal | Gin, GORM, kafka-go |
+| Gateway | Kotlin | - (routing and security only) | Spring Cloud Gateway, Spring Security OAuth2 |
+| Web UI | Kotlin/JS | MVVM | Compose HTML, Ktor Client, Stripe.js, nginx |
+
+Infrastructure: Postgres, Kafka (KRaft), Keycloak, and for observability Alloy, Loki, Tempo, Prometheus,
+Alertmanager and Grafana. Conventions shared by all the services: [CLAUDE.md](CLAUDE.md).
+
+### Notable design decisions
+
+* **Reliable messaging.** Every Kafka message is written to a transactional outbox together with the change that
+  causes it, so a message is sent if and only if its change is committed. Consumers are idempotent; a failed message
+  is retried with exponential back-off, then moved to a dead-letter topic - permanent failures (a malformed message,
+  a rule rejecting it) go there at once. Redriving is a deliberate manual step.
+* **Facts, not a status.** An order records what happened to it (paid, cancellation requested, delivered, refunded,
+  ...) and computes its status from those facts, so saga events that arrive late, twice or out of order are still
+  handled correctly.
+* **Concurrency.** Every entity has an optimistic-locking version; a concurrent change is a transient error - retried
+  by Kafka consumers, a `503` over HTTP. Idempotency keys protect the payment and placing an order.
+* **Security.** The gateway signs browser users in (Authorization Code + PKCE) and keeps their tokens server-side;
+  the browser holds only an `HttpOnly` session cookie. Every service validates the JWT itself and checks roles per
+  endpoint and ownership per resource; service-to-service calls use their own client-credentials tokens. Secrets
+  reach the containers as Docker secrets, never as environment variables.
+* **Observability.** JSON logs with the same fields in every service, and one `correlationId` per saga that follows
+  it through HTTP and Kafka; distributed traces across HTTP and Kafka; the same metric names everywhere; alerts on
+  symptoms only, unit-tested with `promtool`, mailed by Alertmanager. Personal data is masked before Loki stores it.
+* **Delivery.** Every service is versioned and released on its own (`order-service/v1.3.0`); a platform release
+  (`v1.4.0`) pins the version of each, and deploying it - or rolling back to an earlier one - is one workflow run.
+  A pull request into `main` must pass the whole suite: unit, integration (Testcontainers) and end-to-end tests
+  against the full stack with real Stripe test mode.
 
 ## Running locally
 
 1. Copy `example.env` to `.env` and put your Stripe test-mode keys into `STRIPE_SECRET_KEY` and
    `STRIPE_PUBLISHABLE_KEY`.
-2. Forward Stripe's webhooks to the gateway and put the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`:
+2. Forward Stripe's webhooks to the gateway and put the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`.
+   Keep it running: an order moves on only once Stripe's webhook reaches the gateway.
 
    ```bash
    stripe listen --all-snapshot --forward-to localhost:8080/api/v1/webhooks/stripe
@@ -24,64 +153,34 @@ for the architecture.
 
 | What | URL |
 |---|---|
-| Web UI - catalog, cart and checkout, orders, shipments | http://localhost:3000 |
-| Gateway - the entry point for clients | http://localhost:8080 |
+| Web UI | http://localhost:3000 |
+| Gateway | http://localhost:8080 |
+| Grafana (anonymous admin locally) | http://localhost:8089 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`) | http://localhost:8090/admin |
 | Kafka UI | http://localhost:9098 |
 | Services directly (debugging, e2e tests) | http://localhost:3001 (inventory) ... 3004 (shipping) |
 
-Keycloak imports the realm (`docker/keycloak/realm-ecommerce.json`) only when it doesn't exist yet. After changing
-the realm file, recreate the database volume: `docker compose down -v`. Its clients `e2e-tests` and `postman` are off
-when `KC_TEST_CLIENTS_ENABLED` is `false`, as in production.
+The demo accounts are the same as in production; locally the shop's `admin` signs in with `APP_ADMIN_PASSWORD` from
+`.env` and can create and edit products. Keycloak imports the realms (`docker/keycloak/realm-ecommerce.json`,
+`docker/keycloak/realm-internal.json`) only when they don't exist yet: after changing a realm file, recreate the
+database volume with `docker compose down -v`. The passwords and secrets of `.env` reach the containers as Docker
+secrets (files in `/run/secrets`); in production they come from the files in `secrets/`.
 
-The passwords and secrets of `.env` reach the containers as Docker secrets - files in `/run/secrets`, never
-environment variables: Compose takes them from `.env` here, from the files in `secrets/` in production.
+## Development
 
-The web UI pays through Stripe test mode: use the card `4242 4242 4242 4242` with any future expiry date and any CVC.
-An order moves on only once Stripe's webhook reaches the gateway, so keep `stripe listen` (step 2) running.
+### Getting a token
 
-## Demo and test users
+**Browser:** open http://localhost:8080/oauth2/authorization/keycloak and sign in; http://localhost:8080/api/v1/me
+then shows who you are and your roles.
 
-The same accounts locally and in production, where anyone may use them: the clients and couriers share the password
-`demo`, published here. They can't change their account (password, email, two-factor login): they have the roles
-below and nothing else. The realm's password policy (8 characters at least, neither the username nor the email) applies
-to everyone else, so the realm file holds the demo password as a hash.
-
-| User | Password | Role | Can |
-|---|---|---|---|
-| `client1`, `client2` | `demo` | `CLIENT` | place, read and cancel own orders (with their shipment) |
-| `courier1`, `courier2` | `demo` | `COURIER` | list available shipments and pick one up (its street shows only then), then deliver / lose / cancel (goods couldn't be handed over) / return it |
-| `admin` | `APP_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | create and update products, read payments and refunds |
-
-Self-registration is open, and a new user gets the `CLIENT` role. The `order-service` client has its own service
-account (roles `INVENTORY_RESERVE`, `PAYMENT_SUBMIT`) for its calls to the inventory- and payment-service.
-
-### Grafana's users
-
-Grafana (in production at `https://grafana.<domain>`) signs in through a realm of its own, `internal`
-(`docker/keycloak/realm-internal.json`): the staff, apart from the shop's customers - no self-registration, a stricter
-password policy (12 characters at least), and sessions of its own, so one can be signed in to the shop and to Grafana
-with different accounts at once. Its client, `grafana`, is used in production only; locally Grafana is an anonymous admin.
-
-| User | Password | Role | Can |
-|---|---|---|---|
-| `observer` | `demo` | `OBSERVER` | every dashboard, and Explore over the logs, traces and metrics - changes nothing, and sees no personal data (IP addresses, logins and emails are masked before Loki stores them, addresses are no column of the views Grafana reads) |
-| `admin` | `INTERNAL_ADMIN_PASSWORD` (`.env`; generated in production, for the owner only) | `ADMIN` | Grafana's admin |
-
-## Getting a token
-
-**Browser:** open http://localhost:8080/oauth2/authorization/keycloak, log in, then
-http://localhost:8080/api/v1/me shows who you are and your roles. The gateway keeps the tokens in its session; the
-browser only holds an `HttpOnly` session cookie.
-
-**curl** - password grant through the `e2e-tests` client (dev/test only):
+**curl** - password grant through the `e2e-tests` client (local only, off in production):
 
 ```bash
 curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/token -d grant_type=password -d client_id=e2e-tests -d username=client1 -d password=demo
 ```
 
-Send the `access_token` from the response as `Authorization: Bearer <token>`, e.g. to
-http://localhost:8080/api/v1/orders/1. It lives 5 minutes.
+Send the `access_token` as `Authorization: Bearer <token>`, e.g. to http://localhost:8080/api/v1/orders/1. It lives
+5 minutes.
 
 **Service token** - client credentials, as the order-service gets it:
 
@@ -89,28 +188,24 @@ http://localhost:8080/api/v1/orders/1. It lives 5 minutes.
 curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/token -u order-service:<ORDER_SERVICE_CLIENT_SECRET> -d grant_type=client_credentials
 ```
 
-**Postman:** the collection authorizes with OAuth 2.0 Authorization Code (With PKCE) through the `postman` client -
-Collection → Authorization → Get New Access Token. Its description explains the full flow and which user each
-request needs.
+### Web UI
 
-## Developing the web UI
-
-With the rest of the stack running in Docker, the Gradle dev server serves the UI straight from the sources and reloads
-the page on every change; it forwards the gateway's paths just like the container's nginx. Stop the `web-ui` container
-first (`docker compose stop web-ui`), since both use the same port:
+With the rest of the stack running in Docker, the Gradle dev server serves the UI from the sources and reloads the
+page on every change. Stop the `web-ui` container first (`docker compose stop web-ui`), since both use the same port:
 
 ```bash
 cd app/web-ui
 WEB_UI_PORT=3000 GATEWAY_URL=http://localhost:8080 STRIPE_PUBLISHABLE_KEY=pk_test_... ./gradlew jsBrowserDevelopmentRun --continuous
 ```
 
-See [app/web-ui/CLAUDE.md](app/web-ui/CLAUDE.md) for its architecture.
+Its architecture: [app/web-ui/CLAUDE.md](app/web-ui/CLAUDE.md).
 
-## Tests
+### Tests
 
 * Unit tests: `go test ./...` (inventory, shipping), `./gradlew test` (order, gateway), `mvn test` (payment).
 * Web UI ViewModel tests: `./gradlew jsNodeTest` in `app/web-ui`.
 * Go integration tests (Testcontainers): `go test -tags integration ./...`.
+* Alert rules: `promtool test rules` over `docker/prometheus/tests/alerts_test.yaml`.
 * E2E tests (`e2e_tests`, the whole stack via Testcontainers, real Stripe test mode):
     * stop the local stack first (`docker compose down`) - the tests start their own on the same ports and network;
     * the variables from `.env` must be in the environment, and the Stripe CLI must be installed;
@@ -118,6 +213,10 @@ See [app/web-ui/CLAUDE.md](app/web-ui/CLAUDE.md) for its architecture.
     * `./gradlew test` in `e2e_tests`.
 
 In CI, every push of a branch runs the unit tests of the services it touches. A pull request into `main` runs the whole
-suite (`full-suite.yml`: unit, integration, e2e) once it is ready for review - a draft runs nothing - and again on every
-push after that; its "Full suite" check must pass before the merge, so a failing test of any kind keeps it out of `main`.
-Releases and deployment: `infrastructure/contabo/README.md`.
+suite (`full-suite.yml`) once it is ready for review, and again on every push after that; its "Full suite" check must
+pass before the merge.
+
+### Releases and deployment
+
+Production runs the docker compose stack on one VPS behind Caddy, deployed by GitHub Actions from version tags:
+[infrastructure/contabo/README.md](infrastructure/contabo/README.md).
