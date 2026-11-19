@@ -2,14 +2,17 @@
 
 An online shop built as a set of microservices: four business services in Go, Kotlin and Java coordinate every order
 through a **saga** over Kafka and HTTP, behind one gateway, with Keycloak for sign-in, Stripe (test mode) for payments
-and a full observability stack (logs, traces, metrics, alerts) in Grafana. It runs in production on a single VPS,
-deployed by GitHub Actions from version tags.
+and a full observability stack (logs, traces, metrics, alerts) in Grafana. It runs in production on a single VPS
+with Docker Compose, deployed by GitHub Actions from version tags; the plan is to move it to Kubernetes, and then to
+AWS EKS.
 
-<p align="center">
-  <a href="https://ihorhartmann.com"><b>🛒 Shop</b></a> &nbsp;·&nbsp;
-  <a href="https://grafana.ihorhartmann.com"><b>📊 Grafana</b></a> &nbsp;·&nbsp;
-  <a href="docs/order_saga.md"><b>📖 How an order works (the saga)</b></a>
+<p>
+  <a href="https://ihorhartmann.com"><img alt="Open the shop - ihorhartmann.com" width="300" src="docs/images/button-shop.svg"></a>
+  <a href="https://grafana.ihorhartmann.com"><img alt="Open Grafana - grafana.ihorhartmann.com" width="300" src="docs/images/button-grafana.svg"></a>
+  <a href="docs/order_saga.md"><img alt="Order saga - how every order works" width="300" src="docs/images/button-saga.svg"></a>
 </p>
+
+<p><a href="#try-it">All accounts, test cards and a walk-through ↓</a></p>
 
 ![The catalog](docs/images/catalog.png)
 
@@ -21,29 +24,38 @@ Everything below is public - the accounts exist only for the demo.
 
 | Where | User | Password | Role | Can |
 |---|---|---|---|---|
-| [Shop](https://ihorhartmann.com) | `client1`, `client2` | `demo` | client | browse, buy, see and cancel own orders and their shipment |
+| [Shop](https://ihorhartmann.com) | `client1`, `client2` | `demo` | client | browse, buy, see and cancel own orders|
 | [Shop](https://ihorhartmann.com) | `courier1`, `courier2` | `demo` | courier | see the shipments waiting for a courier, pick one up (its street shows only then), then deliver it, lose it, cancel it (the goods couldn't be handed over) or return it to the warehouse |
 | [Grafana](https://grafana.ihorhartmann.com) | `observer` | `demo` | viewer | every dashboard, and Explore over the logs, traces and metrics - read-only, with no personal data |
 
-You can also register in the shop: a new account is a client. The demo accounts can't change their password or
-email. The shop and Grafana are separate Keycloak realms, each with its own session, so you can be signed in to both
+You can also register in the shop: a new account is a client. The shop and Grafana are separate Keycloak realms, each 
+with its own session, so you can be signed in to both
 at once with different accounts. The shop's admin, who manages the catalog, is not public.
 
 ### Payment cards
 
-Payments go through Stripe in **test mode** - no real money moves. Any future expiry date, any CVC, any postal code.
+Payments go through Stripe in **test mode** - no real money moves. With every card: any future expiry date, any CVC,
+any postal code. A declined payment leaves the order open, so it can be paid again with another card.
 
-| Card | What happens |
-|---|---|
-| `4242 4242 4242 4242` | paid - the order moves on to shipping |
-| `4000 0000 0000 0002` | declined - the order stays open and the payment can be retried with another card |
-| `4000 0000 0000 9995` | declined, insufficient funds |
+| Card | Type | What happens |
+|---|---|---|
+| `4242 4242 4242 4242` | Visa | paid at once - the order moves on to shipping |
+| `5555 5555 5555 4444` | Mastercard | paid at once |
+| `4000 0000 0000 0002` | declined | generic decline (`card_declined`) |
+| `4000 0000 0000 9995` | declined | insufficient funds (`insufficient_funds`) |
+| `4000 0000 0000 0069` | declined | expired card (`expired_card`) |
+| `4000 0000 0000 0127` | declined | incorrect CVC (`incorrect_cvc`) |
+| `4000 0025 0000 3155` | 3-D Secure | Stripe opens an authentication window: *Complete* - the payment goes through, *Fail* - it is declined |
 
 An order that isn't paid within 15 minutes is cancelled, and its stock goes back to the catalog.
 
 ### A walk-through
 
-1. **Buy.** Sign in to the shop as `client1`, put a few products into the cart and pay with `4242 4242 4242 4242`.
+1. **Buy.** Sign in to the shop as `client1`, put a few products into the cart and check out:
+    * **delivery address** - city, postal code and street are required (any values), the apartment/floor is optional;
+    * **card** - number `4242 4242 4242 4242`, expiry date any month in the future (e.g. `12/34`), CVC any three
+      digits (e.g. `123`).  Everything else it offers (e.g. saving the card with Link) is optional - skip it.
+
    The order is `PLACED` while the payment is being confirmed, then `PROCESSING`: stock reserved, paid, a shipment
    created.
 2. **Deliver.** In a private window (or another browser) sign in as `courier1`, open *Shipments*, pick the order's
@@ -53,18 +65,19 @@ An order that isn't paid within 15 minutes is cancelled, and its stock goes back
    `CANCELLED`. The courier can also lose a shipment, or fail to hand it over: the order is cancelled and refunded too.
 4. **Fail.** Pay with a declined card, or leave an order unpaid, or cancel it before paying: nothing is charged, and
    the reservation is released.
-5. **Watch it.** Open [Grafana](https://grafana.ihorhartmann.com) as `observer`:
+5. **Watch it.** Open [Grafana](https://grafana.ihorhartmann.com) as `observer`, then *Dashboards* in the menu on the
+   left, folder *E-commerce*. Its dashboards (each links to the others at the top):
     * **Order journey** - enter an order's id: every trace and every log line of its saga, across all the services;
     * **Saga** - orders by status, how long the saga takes, payments, refunds, shipments, stuck orders;
     * **Overview** - is everything fine right now: the symptoms of every service side by side;
     * **Service** - one service in depth: HTTP, Kafka, errors, outgoing calls, database, runtime, logs and traces;
     * **Infrastructure** - containers, disk, Postgres, Kafka, Keycloak and the telemetry pipeline itself.
 
-![An order in the shop: its items, delivery address and progress](docs/images/order.png)
-<p align="center"><sub>An order, as its customer sees it</sub></p>
+![A customer's orders: one delivered order expanded with its items, delivery address and progress](docs/images/order.png)
+<p align="center"><sub>A customer's orders - in progress, delivered, cancelled and refunded</sub></p>
 
 ![The trace of placing an order: gateway, order, inventory and payment services, down to the SQL and the Stripe call](docs/images/trace.png)
-<p align="center"><sub>Placing that order, traced through four services - down to the SQL and the Stripe call</sub></p>
+<p align="center"><sub>Placing an order, traced through four services - down to the SQL and the Stripe call</sub></p>
 
 ![The Infrastructure dashboard: containers running and restarted, CPU and memory by container, free disk space](docs/images/infrastructure.png)
 <p align="center"><sub>The Infrastructure dashboard: every container of the stack, its restarts, CPU and memory</sub></p>
@@ -78,26 +91,36 @@ the compensations and the Kafka topics.
 ```mermaid
 flowchart LR
     browser([Browser]) --> caddy[Caddy<br/>HTTPS]
+    stripe([Stripe]) -. webhook .-> caddy
     caddy --> webui[Web UI<br/>nginx]
-    caddy --> keycloak[Keycloak]
+    caddy -- sign-in pages --> keycloak[Keycloak]
     caddy --> grafana[Grafana]
     webui --> gateway[Gateway]
     gateway --> order[Order<br/>orchestrator]
     gateway --> inventory[Inventory]
-    gateway --> payment[Payment]
     gateway --> shipping[Shipping]
+    gateway -- Stripe webhook --> payment[Payment]
     order -- HTTP --> inventory
     order -- HTTP --> payment
     order <-- Kafka --> inventory
     order <-- Kafka --> payment
     order <-- Kafka --> shipping
-    payment <--> stripe([Stripe])
-    stripe -. webhook .-> gateway
+    payment --> stripe
 ```
+
+Every service validates tokens with Keycloak's keys, the gateway and Grafana sign users in through it, and the
+order-service gets its own token from it - directly inside the Docker network, not through Caddy.
 
 The **Order service** orchestrates the saga: it reserves stock and starts the payment over HTTP (the customer has to
 wait for both anyway), and drives everything after that - shipment, delivery, cancellation, refund - with Kafka
 commands and events. Every service owns its schema in one Postgres; none reads another's tables.
+
+> [!NOTE]
+> **One database, a schema per service - on purpose.** Each service has its own schema (`inventory`, `orders`,
+> `payment`, `shipping`) and its own migrations, and never touches another's, but they all live in one Postgres
+> instance. That is deliberate and only to save resources: one database container instead of four on a single VPS.
+> Nothing in the code depends on it - a service's schema can move to a database of its own by changing its connection
+> settings alone.
 
 | Service | Language | Architecture | Stack |
 |---|---|---|---|
@@ -121,7 +144,10 @@ Alertmanager and Grafana. Conventions shared by all the services: [CLAUDE.md](CL
   ...) and computes its status from those facts, so saga events that arrive late, twice or out of order are still
   handled correctly.
 * **Concurrency.** Every entity has an optimistic-locking version; a concurrent change is a transient error - retried
-  by Kafka consumers, a `503` over HTTP. Idempotency keys protect the payment and placing an order.
+  by Kafka consumers, a `503` over HTTP.
+* **Retries are safe.** Placing an order carries an `Idempotency-Key`, so a double click or a retry after a timeout
+  returns the same order instead of a second one; the services' calls to each other and to Stripe carry keys too, so a
+  retry never reserves stock or charges a card twice.
 * **Security.** The gateway signs browser users in (Authorization Code + PKCE) and keeps their tokens server-side;
   the browser holds only an `HttpOnly` session cookie. Every service validates the JWT itself and checks roles per
   endpoint and ownership per resource; service-to-service calls use their own client-credentials tokens. Secrets
