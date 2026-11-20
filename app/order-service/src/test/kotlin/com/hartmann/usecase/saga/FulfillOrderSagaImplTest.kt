@@ -107,23 +107,6 @@ class FulfillOrderSagaImplTest {
     }
 
     @Test
-    fun `onPaymentFailed - fails the order and cancels the reservation`() {
-        val orderId = 1L
-        val messageId = UUID.randomUUID()
-        val correlationId = "corr-1"
-        val messageType = "PaymentFailed"
-        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        val order = placedOrder()
-        stubGetOrder(order)
-        stubSave()
-
-        saga.onPaymentFailed(message, orderId)
-
-        assertEquals(OrderStatus.CANCELLED, savedOrder?.status)
-        verify(exactly = 1) { orderKafkaProducer.publishCancelReservation(correlationId, orderId) }
-    }
-
-    @Test
     fun `onPaymentExpired - expires the order and cancels the reservation`() {
         val orderId = 1L
         val messageId = UUID.randomUUID()

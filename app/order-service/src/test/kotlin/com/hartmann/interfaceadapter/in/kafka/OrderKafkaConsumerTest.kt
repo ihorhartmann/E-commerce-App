@@ -85,21 +85,6 @@ class OrderKafkaConsumerTest {
     }
 
     @Test
-    fun `onPaymentEvent - dispatches PaymentFailed to the saga`() {
-        val orderId = 101L
-        val messageId = UUID.randomUUID()
-        val correlationId = "corr-2"
-        val messageType = KafkaConst.PAYMENT_FAILED_EVENT
-        val message = KafkaMessageMetadata(messageId, correlationId, messageType)
-        every { saga.onPaymentFailed(message, orderId) } returns Unit
-
-        consumer.onPaymentEvent(messageType, messageId.toString(), correlationId, "{\"orderId\":$orderId}")
-
-        verify(exactly = 1) { saga.onPaymentFailed(message, orderId) }
-        confirmVerified(saga)
-    }
-
-    @Test
     fun `onPaymentEvent - dispatches PaymentExpired to the saga`() {
         val orderId = 106L
         val messageId = UUID.randomUUID()

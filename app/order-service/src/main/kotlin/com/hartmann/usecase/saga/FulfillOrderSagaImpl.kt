@@ -29,16 +29,6 @@ class FulfillOrderSagaImpl(
         }
 
     @Transactional
-    override fun onPaymentFailed(message: KafkaMessageMetadata, orderId: Long) =
-        withIdempotency(message) {
-            val order = orderRepository.getOrder(orderId)
-            order.failPayment()
-
-            orderRepository.save(order)
-            orderKafkaProducer.publishCancelReservation(message.correlationId, order.id)
-        }
-
-    @Transactional
     override fun onPaymentExpired(message: KafkaMessageMetadata, orderId: Long) =
         withIdempotency(message) {
             val order = orderRepository.getOrder(orderId)

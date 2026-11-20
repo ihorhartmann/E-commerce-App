@@ -45,11 +45,6 @@ class OrderKafkaConsumer(
                     true
                 }
 
-                KafkaConst.PAYMENT_FAILED_EVENT -> {
-                    saga.onPaymentFailed(message, parse<OrderIdEvent>(message.messageType, payload).orderId)
-                    true
-                }
-
                 KafkaConst.PAYMENT_EXPIRED_EVENT -> {
                     saga.onPaymentExpired(message, parse<OrderIdEvent>(message.messageType, payload).orderId)
                     true
