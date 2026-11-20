@@ -50,32 +50,34 @@ holds its status back, and isn't part of the customer's `OrderResponse`.
 ```mermaid
 stateDiagram-v2
     [*] --> PLACED: place order
-
-    PLACED --> CANCELLED: payment failed
-    PLACED --> CANCELLED: payment expired
-    PLACED --> CANCELLED: payment cancelled,<br/>its event first
-    PLACED --> CANCEL_REQUESTED: customer asked to cancel,<br/>payment cancelled
-    PLACED --> PROCESSING: payment confirmed
-
-    PROCESSING --> CANCEL_REQUESTED: shipment creation failed
-    PROCESSING --> CANCEL_REQUESTED: customer asked to cancel
-    PROCESSING --> CANCEL_REQUESTED: shipment lost
-    PROCESSING --> CANCEL_REQUESTED: shipment cancelled by the courier
-    PROCESSING --> FULFILLED: delivered
-
-    CANCEL_REQUESTED --> CANCELLED: unpaid - payment<br/>cancelled, expired or failed
-    CANCEL_REQUESTED --> FULFILLED: delivered before<br/>the request reached shipping
-    CANCEL_REQUESTED --> CANCEL_REQUESTED: shipment cancelled or lost,<br/>refund requested
-    CANCEL_REQUESTED --> CANCEL_REQUESTED: refund failed
-    CANCEL_REQUESTED --> CANCELLED: refund confirmed
-
+    PLACED --> PROCESSING: 1 paid
+    PLACED --> CANCELLED: 2 payment service failed<br/>3 payment expired<br/>4 cancelled unpaid,<br/>PaymentCancelled first
+    PLACED --> CANCEL_REQUESTED: 5 cancelled unpaid
+    PROCESSING --> FULFILLED: 6 delivered
+    PROCESSING --> CANCEL_REQUESTED: 7 customer cancels<br/>8 shipment lost<br/>9 courier couldn't<br/>hand over
+    CANCEL_REQUESTED --> CANCEL_REQUESTED: 10 shipment cancelled<br/>or lost - refund requested<br/>11 refund failed
+    CANCEL_REQUESTED --> CANCELLED: 12 payment cancelled<br/>or expired<br/>13 refund confirmed
+    CANCEL_REQUESTED --> FULFILLED: 14 delivered,<br/>request too late
     CANCELLED --> [*]
     FULFILLED --> [*]
 ```
 
-Labels above are kept short for rendering; exact `cancellationReason` values
-for each `-> CANCELLED` / `-> CANCEL_REQUESTED` trigger are listed in
-"Compensation steps" below.
+| # | Transition | When | `cancellationReason` |
+|---|---|---|---|
+| 1 | `PLACED → PROCESSING` | the payment is confirmed (`PaymentCompleted`) | |
+| 2 | `PLACED → CANCELLED` | the payment-service failed at checkout | `PAYMENT_FAILED` |
+| 3 | `PLACED → CANCELLED` | the payment expired, unpaid for 15 minutes (`PaymentExpired`) | `PAYMENT_EXPIRED` |
+| 4 | `PLACED → CANCELLED` | the customer cancelled the unpaid order, and `PaymentCancelled` arrived before Order stored the request | `CANCELLED_BY_CUSTOMER` |
+| 5 | `PLACED → CANCEL_REQUESTED` | the customer cancelled the unpaid order: Payment cancelled the payment at Stripe and answered, and Order stored the request - the usual case; `PaymentCancelled` then finishes it (12) | `CANCELLED_BY_CUSTOMER` |
+| 6 | `PROCESSING → FULFILLED` | delivered (`ShipmentDelivered`) | |
+| 7 | `PROCESSING → CANCEL_REQUESTED` | the customer asked to cancel the paid order | `CANCELLED_BY_CUSTOMER` |
+| 8 | `PROCESSING → CANCEL_REQUESTED` | the shipment is lost (`ShipmentLost`), refund requested | `SHIPMENT_LOST` |
+| 9 | `PROCESSING → CANCEL_REQUESTED` | the courier couldn't hand the goods over (`ShipmentCancelled`), refund requested | `CANCELLED_BY_CUSTOMER` (refused) / `DELIVERY_FAILED` (nobody there) |
+| 10 | `CANCEL_REQUESTED → CANCEL_REQUESTED` | Shipping confirmed the cancellation, or the shipment was lost first - refund requested | `CANCELLED_BY_CUSTOMER` / `SHIPMENT_LOST` |
+| 11 | `CANCEL_REQUESTED → CANCEL_REQUESTED` | the refund failed (`RefundFailed`) - needs manual intervention | |
+| 12 | `CANCEL_REQUESTED → CANCELLED` | unpaid: the payment cancelled or expired (`PaymentCancelled`/`PaymentExpired`) | the customer's, kept |
+| 13 | `CANCEL_REQUESTED → CANCELLED` | the refund is confirmed (`RefundCompleted`) | |
+| 14 | `CANCEL_REQUESTED → FULFILLED` | delivered before the request reached Shipping: the customer got the goods, the request came too late | none - cleared, with the request |
 
 `CANCEL_REQUESTED` means only that the order is being cancelled, whatever
 stage it's at. Its facts tell the phases apart:
@@ -85,11 +87,12 @@ stage it's at. Its facts tell the phases apart:
    cancellation (see "Customer cancels an unpaid order" below);
 2. **awaiting shipping** (paid, no `refund`) - the customer asked to cancel, and Shipping hasn't
    answered yet. Nothing is refunded or released, and the shipment's events
-   are still accepted (see "Customer cancels the order" below);
+   are still accepted (see "Customer cancels a paid order" below);
 3. **cancellation confirmed** (`refund` requested) - the shipment is cancelled or lost, the refund
-   is requested, and the order waits for its confirmation. After a pickup, the
-   goods' trip back to the warehouse runs alongside and doesn't hold the
-   order back.
+   is requested, and the order waits for its confirmation. If the courier had
+   already picked the goods up, they also have to bring them back to the
+   warehouse - but the order doesn't wait for that: once the refund is
+   confirmed it is `CANCELLED`, even if the goods are still on their way back.
 
 `RefundFailed` deliberately doesn't move the status - it's a flag for support
 (`refund.failedAt`), not a separate stage: without manual intervention
@@ -125,40 +128,51 @@ sequenceDiagram
         Note over O: no order is created
     else Reservation OK
         I-->>O: HTTP: 201 reserved, with the name, quantity and price of every line
-        Note over O: Order.createNew(id, reservedItems) -> PLACED, stored
-        O->>P: HTTP: POST /api/v1/payments
 
-        alt Payment service unavailable / crashed
-            Note over O: Order.failPayment() -> CANCELLED, reason="Payment failed"
+        alt Storing the order fails
             O--)I: Kafka: CancelReservation
             O-->>U: HTTP: error
-        else Payment service responded
-            P->>S: HTTP: create PaymentIntent
-            S-->>P: HTTP: client_secret
-            P-->>O: HTTP: client_secret
-            O-->>U: HTTP: 201 {order, client_secret}
+            Note over O: no order is created
+        else Order stored
+            Note over O: Order.createNew(id, reservedItems) -> PLACED, stored
+            O->>P: HTTP: POST /api/v1/payments
 
-            U->>S: HTTP: confirmCardPayment (directly, bypassing the backend)
-            S->>P: HTTP: webhook POST /webhooks/stripe
-
-            alt Payment declined
-                P--)O: Kafka: PaymentFailed
-                Note over O: Order.failPayment() -> CANCELLED, reason="Payment failed"
+            alt Payment service unavailable / crashed
+                Note over O: Order.failPayment() -> CANCELLED, reason=PAYMENT_FAILED
                 O--)I: Kafka: CancelReservation
-            else Payment succeeded
-                P--)O: Kafka: PaymentCompleted
-                Note over O: Order.confirmPayment() -> PROCESSING, paymentConfirmedAt
-                O--)Sh: Kafka: CreateShipment
-                Note over Sh: on failure, retried by Shipping's own consumer<br/>(no event back to Order yet - DLQ handling is TODO)
+                O-->>U: HTTP: error
+            else Payment service responded
+                P->>S: HTTP: create PaymentIntent
+                S-->>P: HTTP: client_secret
+                P-->>O: HTTP: client_secret
+                O-->>U: HTTP: 201 {order, client_secret}
 
-                Sh--)O: Kafka: ShipmentCreated
-                Note over O: Order.createShipment(shipmentId)<br/>(stays PROCESSING)
-                O--)I: Kafka: HoldReservation
-                Note over I: reservation holder -> Courier
+                U->>S: HTTP: confirmPayment (Stripe.js, directly, bypassing the backend)
+                S->>P: HTTP: webhook POST /api/v1/webhooks/stripe
+
+                alt Payment declined
+                    Note over P: Payment -> ATTEMPT_DECLINED, still open:<br/>no event, the customer may pay again
+                    Note over O: stays PLACED - until paid, cancelled<br/>by the customer, or expired (15 min)
+                else Payment succeeded
+                    P--)O: Kafka: PaymentCompleted
+                    Note over O: Order.confirmPayment() -> PROCESSING, paymentConfirmedAt
+                    O--)Sh: Kafka: CreateShipment
+                    Note over Sh: on failure retried, then dead-lettered<br/>(shipping.commands.DLT) - no event back to Order
+
+                    Sh--)O: Kafka: ShipmentCreated
+                    Note over O: Order.createShipment(shipmentId)<br/>(stays PROCESSING)
+                    O--)I: Kafka: HoldReservation
+                    Note over I: reservation holder -> Courier
+                end
             end
         end
     end
 ```
+
+A declined card doesn't end the payment: Stripe's `payment_intent.payment_failed` only marks it
+`ATTEMPT_DECLINED`, and the same PaymentIntent can still be paid with another card. Nothing is sent to Order, which
+keeps the order `PLACED` - the customer pays again, cancels it (see "Customer cancels an unpaid order"), or the
+expiration sweep closes it after 15 minutes (see "Unpaid payment expires").
 
 ## Protocol: delivery → outcome (Delivered / Lost / Cancelled)
 
@@ -194,14 +208,14 @@ sequenceDiagram
     else Shipment lost in transit
         C->>Sh: HTTP: POST /shipments/{id}/lose
         Sh--)O: Kafka: ShipmentLost
-        Note over O: Order.loseShipment().requestRefund()<br/>-> CANCEL_REQUESTED, reason="Shipment lost"
+        Note over O: Order.loseShipment() -- refund requested<br/>-> CANCEL_REQUESTED, reason=SHIPMENT_LOST
         O--)P: Kafka: RefundRequested
 
     else Goods couldn't be handed over
         C->>Sh: HTTP: POST /shipments/{id}/cancel {reason}
         Note over Sh: In Delivery -> Cancelled, reason as given,<br/>goods stay with the courier
         Sh--)O: Kafka: ShipmentCancelled {reason}
-        Note over O: Order.cancelShipment(reason)<br/>-> CANCEL_REQUESTED, awaitingReturn=true, refund requested<br/>RecipientRefused -> reason="Cancelled by customer"<br/>RecipientUnavailable -> reason="Delivery failed"
+        Note over O: Order.cancelShipment(reason)<br/>-> CANCEL_REQUESTED, awaitingReturn=true, refund requested<br/>RecipientRefused -> reason=CANCELLED_BY_CUSTOMER<br/>RecipientUnavailable -> reason=DELIVERY_FAILED
         O--)P: Kafka: RefundRequested
 
         C->>Sh: HTTP: POST /shipments/{id}/return
@@ -228,7 +242,7 @@ the goods are back. `Order.returnToStock` only records the return - it accepts
 it once, and only while `awaitingReturn` is set, so a return the order doesn't
 wait for (or a repeated one) is rejected instead of restocking twice.
 
-## Protocol: customer cancels the order
+## Protocol: customer cancels a paid order
 
 The customer cancels the **order**, by calling Order - never shipping- or
 payment-service directly. For an unpaid order, Order first cancels its payment
@@ -252,7 +266,7 @@ sequenceDiagram
     participant P as Payment Service
 
     U->>O: HTTP: POST /api/v1/orders/{id}/cancel
-    Note over O: Order.requestCancellation()<br/>-> CANCEL_REQUESTED, reason="Cancelled by customer"<br/>no refund yet
+    Note over O: Order.requestCancellation()<br/>-> CANCEL_REQUESTED, reason=CANCELLED_BY_CUSTOMER<br/>no refund yet
     O--)Sh: Kafka: CancelShipment {orderId}
     O-->>U: HTTP: 200 order
 
@@ -288,8 +302,8 @@ while it awaits Shipping (`CreateShipment` and `CancelShipment` share the key
 | `ShipmentCreated` | stores `shipmentId`, keeps waiting |
 | `ShipmentInDelivery` | records the pickup, `FulfillReservation`, keeps waiting |
 | `ShipmentDelivered` | `FULFILLED` - the request came too late, the cancellation reason is dropped |
-| `ShipmentLost` | reason becomes "Shipment lost", refund requested, no return awaited |
-| `ShipmentCancelled` | cancellation confirmed, refund requested; the reason stays "Cancelled by customer" even if the courier cancelled on their own first |
+| `ShipmentLost` | reason becomes `SHIPMENT_LOST`, refund requested, no return awaited |
+| `ShipmentCancelled` | cancellation confirmed, refund requested; the reason stays `CANCELLED_BY_CUSTOMER` even if the courier cancelled on their own first |
 
 Shipping never answers a late command with an error or a "rejected" event: a
 cancellation that lost the race is not a failure, and the order leaves the
@@ -319,10 +333,10 @@ Order's own commit of `CANCEL_REQUESTED` and its handling of
   failure, may ask again: Payment answers a payment it already cancelled as it
   is, so the retry succeeds.
 
-`PaymentExpired` and `PaymentFailed` accept an unpaid order being cancelled
-too - Payment answers `200` for a payment closed in any way, and the event that
-closed it may be one of those - and keep the customer's reason: the order ends
-the way they asked for.
+`PaymentExpired` accepts an unpaid order being cancelled too - Payment answers
+`200` for a payment closed in any way, and the event that closed it may be the
+expiration - and keeps the customer's reason: the order ends the way they asked
+for.
 
 ```mermaid
 sequenceDiagram
@@ -340,20 +354,26 @@ sequenceDiagram
 
     alt Cancelled (or already cancelled by an earlier call)
         S-->>P: canceled
-        Note over P: Payment.cancel() -> CANCELLED
-        P--)O: Kafka: PaymentCancelled (outbox, same transaction)
-        P-->>O: HTTP: 200 payment
-        Note over O: reloaded, Order.requestCancellation()<br/>-> CANCEL_REQUESTED, reason="Cancelled by customer"
-        O-->>U: HTTP: 200 order, CANCEL_REQUESTED
-        Note over O: on PaymentCancelled: Order.cancelPayment()<br/>-> CANCELLED, nothing charged, nothing to refund
-        O--)I: Kafka: CancelReservation
+        Note over P: Payment.cancel() -> CANCELLED,<br/>PaymentCancelled to the outbox - one transaction
+        par HTTP answer
+            P-->>O: HTTP: 200 payment
+            Note over O: reloaded, Order.requestCancellation()<br/>-> CANCEL_REQUESTED, reason=CANCELLED_BY_CUSTOMER<br/>(already CANCELLED: returned as it is)
+            O-->>U: HTTP: 200 order
+        and Kafka event, sent by the outbox relay - either order
+            P--)O: Kafka: PaymentCancelled
+            Note over O: Order.cancelPayment() -> CANCELLED,<br/>nothing charged, nothing to refund
+            O--)I: Kafka: CancelReservation
+        end
     else Already paid - the webhook hasn't told yet
         S-->>P: succeeded
-        Note over P: confirmed, as the webhook would
-        P--)O: Kafka: PaymentCompleted
-        P-->>O: HTTP: 409 PAYMENT.PAYMENT_ALREADY_CONFIRMED
-        O-->>U: HTTP: 409 ORDER.PAYMENT_ALREADY_CONFIRMED
-        Note over O: PaymentCompleted moves the order on as a paid one,<br/>which the customer may still cancel - with a refund
+        Note over P: confirmed, as the webhook would,<br/>PaymentCompleted to the outbox - one transaction
+        par HTTP answer
+            P-->>O: HTTP: 409 PAYMENT.PAYMENT_ALREADY_CONFIRMED
+            O-->>U: HTTP: 409 ORDER.PAYMENT_ALREADY_CONFIRMED
+        and Kafka event, sent by the outbox relay - either order
+            P--)O: Kafka: PaymentCompleted
+            Note over O: moves the order on as a paid one,<br/>which the customer may still cancel - with a refund
+        end
     else Payment still processing
         S-->>P: processing
         P-->>O: HTTP: 503, retryable
@@ -377,7 +397,7 @@ calling Stripe outside any database transaction:
    `expirePayment-{orderId}`, reason `abandoned`), so an expired payment can no
    longer be paid;
 2. Stripe cancelled it: the payment is expired and `PaymentExpired` cancels the
-   order (reason "Not paid in time") and releases its stock;
+   order (reason `PAYMENT_EXPIRED`) and releases its stock;
 3. the customer paid it at the last moment: the payment is confirmed instead,
    and `PaymentCompleted` moves the order on - the webhook arriving later
    changes nothing;
@@ -393,31 +413,35 @@ at Stripe cancelled and finishes the job.
 the PaymentIntent is created and before any charge. Just return an error to the
 frontend: no order exists, so there is nothing to compensate.
 
+**Storing the order failed.** The stock is reserved, but there is no order to
+hold it for. The compensation is one action: `CancelReservation` in Inventory.
+
 **Payment service unavailable or crashed.** The reservation already exists,
 the `POST /api/v1/payments` request threw before Stripe ever responded. The
-compensation is the same action: `CancelReservation` in Inventory.
+order is cancelled (`PAYMENT_FAILED`), and the compensation is the same action:
+`CancelReservation` in Inventory.
 
-**Payment declined (Stripe).** The reservation already exists, no money was
-charged. The compensation is one action: `CancelReservation` in Inventory.
+**Payment declined (Stripe).** Not a failure of the saga: the payment stays
+open (`ATTEMPT_DECLINED`) and can be paid with another card, so nothing is
+compensated. If it never is, it ends as an expired payment (below).
 
 **Payment expired, or cancelled by the customer before paying.** No money was
 charged, and the PaymentIntent is cancelled at Stripe so it can no longer be.
 The compensation is one action: `CancelReservation` in Inventory.
 
-**Shipment creation failed.** Money was already charged, the reservation is
-still held. The compensation is threefold: cancel the reservation in
-Inventory, request a refund from Payment, and wait for its confirmation - all
-through Kafka.
+**Shipment creation failed.** Not compensated automatically: Shipping retries
+`CreateShipment`, then dead-letters it (`shipping.commands.DLT`) and tells Order
+nothing, so the order stays `PROCESSING` - paid, its stock reserved. It needs
+the cause fixed and the command redriven by hand.
 
 **Shipment cancelled BEFORE pickup.** Only the customer can cause it, by
-cancelling the order. The reservation hasn't been fulfilled yet - the
-compensation mirrors the previous case: `CancelReservation` +
-`RefundRequested`.
+cancelling the order. The reservation hasn't been fulfilled yet - two actions:
+`CancelReservation` in Inventory and `RefundRequested` to Payment.
 
 **Shipment cancelled AFTER pickup.** By the customer cancelling the order
-(`cancellationReason` "Cancelled by customer"), or by the courier who couldn't
-hand the goods over ("Cancelled by customer" if the recipient refused them,
-"Delivery failed" if nobody could take them). Stock has already been physically
+(`cancellationReason` `CANCELLED_BY_CUSTOMER`), or by the courier who couldn't
+hand the goods over (`CANCELLED_BY_CUSTOMER` if the recipient refused them,
+`DELIVERY_FAILED` if nobody could take them). Stock has already been physically
 decremented (`FulfillReservation` already ran) - `CancelReservation` makes no
 sense here. Instead, two independent things follow: the refund, whose
 confirmation makes the order `CANCELLED`, and the courier physically returning
@@ -443,11 +467,18 @@ by splitting into topics.
 | `inventory.commands` | Order | Inventory | `CancelReservation`, `FulfillReservation`, `HoldReservation`, `Restock` |
 | `shipping.commands` | Order | Shipping | `CreateShipment`, `CancelShipment` |
 | `payment.commands` | Order | Payment | `RefundRequested` |
-| `payment.events` | Payment | Order | `PaymentCompleted`, `PaymentFailed`, `RefundCompleted`, `RefundFailed` |
+| `payment.events` | Payment | Order | `PaymentCompleted`, `PaymentExpired`, `PaymentCancelled`, `RefundCompleted`, `RefundFailed` |
 | `shipping.events` | Shipping | Order | `ShipmentCreated`, `ShipmentInDelivery`, `ShipmentDelivered`, `ShipmentCancelled`, `ShipmentLost`, `ShipmentReturnedToInventory` |
 
 Commands (`*.commands`) are an order to a specific service to do one targeted
-thing. Events (`*.events`) are a fact that happened. Every message carries
-an `eventType`, `correlationId`, `eventId` envelope on top of the JSON
-payload, so a consumer on a topic with multiple message types can correctly
-recognize what just arrived.
+thing. Events (`*.events`) are a fact that happened. Every message carries the
+Kafka headers `messageType`, `messageId` and `correlationId` (the order id)
+next to its JSON payload, so a consumer on a topic with multiple message types
+can tell what just arrived, and a repeated message is recognized by its
+`messageId`.
+
+Every consumed topic has a dead-letter topic, `<topic>.DLT`, declared by its
+consumer: a message that fails permanently goes there at once, one that fails
+transiently after 5 attempts (1, 2, 4, 8 s apart). Nothing is redriven
+automatically - see "Kafka topics, retries and dead-lettering" in the root
+`CLAUDE.md`.
