@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="92" viewBox="0 0 300 92" role="img" aria-label="Open the shop - ihorhartmann.com">
+  <defs>
+    <linearGradient id="g-shop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <filter id="s-shop" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#6366f1" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect x="6" y="4" width="288" height="78" rx="20" fill="url(#g-shop)" filter="url(#s-shop)"/>
+  <rect x="6.5" y="4.5" width="287" height="77" rx="19.5" fill="none" stroke="#ffffff" stroke-opacity="0.25"/>
+  <circle cx="48" cy="43" r="24" fill="#ffffff" fill-opacity="0.18"/>
+  <g transform="translate(36 31)" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2h3l2.6 12.2a1.6 1.6 0 0 0 1.6 1.3h9.4a1.6 1.6 0 0 0 1.6-1.2L21 7H5.2"/><circle cx="9" cy="20.5" r="1.4"/><circle cx="18" cy="20.5" r="1.4"/></g>
+  <text x="86" y="39" fill="#ffffff" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" font-size="21" font-weight="700">Open the shop</text>
+  <text x="86" y="62" fill="#ffffff" fill-opacity="0.88" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif" font-size="14">ihorhartmann.com</text>
+  <path d="M266 36l7 7-7 7" fill="none" stroke="#ffffff" stroke-opacity="0.9" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
