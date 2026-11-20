@@ -15,9 +15,11 @@
 x-restart: &restart
   restart: unless-stopped
 
-# the JVM sizes its heap from the container's limit, but takes only a quarter of it by default
+# the JVM sizes its heap from the container's limit, but takes only a quarter of it by default. Half, not more: a
+# Spring service's non-heap (metaspace, code cache) is 130-220 MiB, and thread stacks, GC and buffers come on top -
+# with a bigger heap, a full one would push the container over its limit, killed without an OutOfMemoryError in the log
 x-jvm: &jvm
-  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50
 
 services:
   caddy:
@@ -49,7 +51,7 @@ services:
 
   postgres:
     <<: *restart
-    mem_limit: 1g
+    mem_limit: 512m
     ports: !override
       - "127.0.0.1:${POSTGRES_PORT}:5432"
 
@@ -69,6 +71,8 @@ services:
       KC_HOSTNAME_ADMIN: http://localhost:${KEYCLOAK_PORT}
       # no password grant (e2e-tests) and no Postman client on the internet
       KC_TEST_CLIENTS_ENABLED: "false"
+      # the image's default heap is 70% of the limit, which leaves too little next to its ~240 MiB of non-heap
+      JAVA_OPTS_KC_HEAP: -XX:MaxRAMPercentage=60 -XX:MinRAMPercentage=60 -XX:InitialRAMPercentage=50
 
   kafka:
     <<: *restart
@@ -88,7 +92,7 @@ services:
       # no login of its own: through the tunnel only
       - "127.0.0.1:${KAFKA_UI_PORT}:8080"
     environment:
-      <<: *jvm
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75
 
   tempo:
     <<: *restart
@@ -100,7 +104,7 @@ services:
 
   prometheus:
     <<: *restart
-    mem_limit: 1g
+    mem_limit: 512m
 
   alertmanager:
     <<: *restart
@@ -111,12 +115,14 @@ services:
 
   alloy:
     <<: *restart
+    # the same as in docker-compose.yaml, which has one too: memory_limiter (docker/alloy/config.alloy) reads it
+    mem_limit: 512m
     ports: !override
       - "127.0.0.1:${ALLOY_UI_PORT}:12345"
 
   grafana:
     <<: *restart
-    mem_limit: 512m
+    mem_limit: 1g
     ports: !override
       - "127.0.0.1:${GRAFANA_PORT}:3000"
     environment:
@@ -161,7 +167,7 @@ services:
     image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/inventory-service:${INVENTORY_SERVICE_IMAGE_TAG:?INVENTORY_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
-    mem_limit: 256m
+    mem_limit: 128m
     ports: !reset []
 
   order-service:
@@ -186,7 +192,7 @@ services:
     image: ${IMAGE_PREFIX:?IMAGE_PREFIX is not set}/shipping-service:${SHIPPING_SERVICE_IMAGE_TAG:?SHIPPING_SERVICE_IMAGE_TAG is not set - versions.env, copied by deploy.sh}
     build: !reset null
     <<: *restart
-    mem_limit: 256m
+    mem_limit: 128m
     ports: !reset []
 
   gateway-service:

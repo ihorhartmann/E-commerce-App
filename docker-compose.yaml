@@ -255,6 +255,7 @@ services:
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
+    # here, not only in docker-compose.prod.yaml: memory_limiter (docker/alloy/config.alloy) reads its thresholds from it
     mem_limit: 512m
     networks:
       - app-network
