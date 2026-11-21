@@ -241,6 +241,11 @@ jobs:
 
       - run: ./gradlew test
 
+      # why the stack didn't start (a failed pull or build, a service that exited) is only in testcontainers' log
+      - name: Testcontainers log
+        if: failure()
+        run: tail -n 300 build/testcontainers.log || echo "no build/testcontainers.log - the tests didn't get that far"
+
   # --- the one check the branch rules of main require: every job above passed ---
 
   full-suite:

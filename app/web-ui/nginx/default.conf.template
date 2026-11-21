@@ -36,6 +36,13 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # product photos never change under the same name (a new photo gets a new file), so a browser keeps them a week
+    # without asking again; a missing one is a 404, not the app's page
+    location /images/products/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=604800";
+    }
+
     location = /config.json {
         default_type application/json;
         add_header Cache-Control "no-store";

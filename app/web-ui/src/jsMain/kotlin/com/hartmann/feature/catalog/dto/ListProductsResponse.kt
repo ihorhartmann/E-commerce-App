@@ -22,6 +22,8 @@ data class CatalogProductResponse(
     val description: String,
     val price: MoneyDto,
     val available: Int,
+    // the photo's path relative to the page, or null when the product has none
+    val imageUrl: String? = null,
 )
 
 fun fromListProductsResponse(response: ListProductsResponse): Page<CatalogProduct> =
@@ -33,4 +35,5 @@ private fun fromCatalogProductResponse(response: CatalogProductResponse): Catalo
     description = response.description,
     price = fromMoneyDto(response.price),
     available = response.available,
+    imageUrl = response.imageUrl,
 )

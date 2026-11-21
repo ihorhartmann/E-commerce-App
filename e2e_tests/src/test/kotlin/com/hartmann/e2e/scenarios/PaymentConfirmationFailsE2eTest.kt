@@ -7,6 +7,7 @@ import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.payment.PaymentApi
 import com.hartmann.e2e.support.api.payment.StripeApi
+import com.hartmann.e2e.support.seed.ProductSeeder
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.Awaitility.await
 import org.junit.jupiter.api.Test
@@ -20,7 +21,7 @@ class PaymentConfirmationFailsE2eTest : E2eScenarioTest() {
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
         val paymentUrl = DockerComposeStack.paymentServiceUrl
 
-        val productId = 2L // seeded "Keyboard", 25 available
+        val productId = ProductSeeder.keyboardId
         val quantity = 1
         val product = InventoryApi.getProduct(inventoryUrl, productId)
 

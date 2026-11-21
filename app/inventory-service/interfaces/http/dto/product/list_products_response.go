@@ -19,6 +19,7 @@ type CatalogProductResponse struct {
 	Description string   `json:"description"`
 	Price       MoneyDTO `json:"price"`
 	Available   uint     `json:"available"`
+	ImageURL    *string  `json:"imageUrl"`
 }
 
 func ToProductListResponse(productPage *dto.ProductPageDTO, page, size int) *ListProductsResponse {
@@ -43,5 +44,14 @@ func toCatalogProductResponse(product *model.Product) CatalogProductResponse {
 		Description: product.Description(),
 		Price:       ToMoneyDTO(product.Price()),
 		Available:   product.Available(),
+		ImageURL:    toImageURL(product.ImageURL()),
 	}
+}
+
+// toImageURL writes a product without an image as null, so the web UI shows its placeholder.
+func toImageURL(imageURL string) *string {
+	if imageURL == "" {
+		return nil
+	}
+	return &imageURL
 }

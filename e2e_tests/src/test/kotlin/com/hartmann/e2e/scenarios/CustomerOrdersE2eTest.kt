@@ -4,6 +4,7 @@ import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
+import com.hartmann.e2e.support.seed.ProductSeeder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -12,7 +13,7 @@ class CustomerOrdersE2eTest : E2eScenarioTest() {
     @Test
     fun `findCustomerOrders - a customer sees only their own orders, newest first`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
-        val productId = 3L // seeded "Mouse"
+        val productId = ProductSeeder.mouseId
         val firstPage = 0
         val pageSize = 100
         val firstOrder = E2eSharedSteps.placeOrder(orderUrl, productId, 1, customer = TestUser.CLIENT1)
@@ -38,7 +39,7 @@ class CustomerOrdersE2eTest : E2eScenarioTest() {
     @Test
     fun `findCustomerOrders - pages through the customer's orders`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
-        val productId = 3L // seeded "Mouse"
+        val productId = ProductSeeder.mouseId
         val quantity = 1
         val pageSize = 1
         val olderOrder = E2eSharedSteps.placeOrder(orderUrl, productId, quantity, customer = TestUser.CLIENT1)

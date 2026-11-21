@@ -9,6 +9,7 @@ import com.hartmann.e2e.support.auth.TokenProvider
 import com.hartmann.e2e.support.auth.givenAs
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
+import com.hartmann.e2e.support.seed.ProductSeeder
 import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import org.assertj.core.api.Assertions.assertThat
@@ -25,21 +26,22 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
 
     @Test
     fun `products - the catalog is public through the gateway`() {
-        val product = InventoryApi.getProduct(gatewayUrl, 1L)
+        val product = InventoryApi.getProduct(gatewayUrl, ProductSeeder.laptopId)
 
         assertThat(product.name).isEqualTo("Laptop")
     }
 
     @Test
     fun `products - the catalog list is public through the gateway`() {
-        val products = InventoryApi.getProducts(gatewayUrl, 0, 1)
+        val size = 1
+        val products = InventoryApi.getProducts(gatewayUrl, 0, size)
 
-        assertThat(products.items.map { it.name }).containsExactly("Laptop")
+        assertThat(products.items).hasSize(size)
     }
 
     @Test
     fun `orders - the customer's own orders listed through the gateway`() {
-        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, customer = TestUser.CLIENT1)
+        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, ProductSeeder.mouseId, 1, customer = TestUser.CLIENT1)
 
         val orders = OrderApi.findCustomerOrders(gatewayUrl, TestUser.CLIENT1, 0, 1)
 
@@ -49,7 +51,7 @@ class GatewayRoutesE2eTest : E2eScenarioTest() {
     @Test
     fun `orders - placed and read through the gateway`() {
         // a Bearer request needs no CSRF token - only one riding on the browser's session cookie does
-        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, 3L, 1, customer = TestUser.CLIENT1)
+        val placedOrder = E2eSharedSteps.placeOrder(gatewayUrl, ProductSeeder.mouseId, 1, customer = TestUser.CLIENT1)
 
         val order = OrderApi.getOrder(gatewayUrl, TestUser.CLIENT1, placedOrder.id)
 

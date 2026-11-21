@@ -37,7 +37,7 @@ func testMoney(t *testing.T) values.Money {
 
 func testProduct(t *testing.T, id uint64, quantity, reserved uint) *model.Product {
 	t.Helper()
-	product, err := model.NewExistingProduct(id, "Widget", "a widget", testMoney(t), quantity, reserved, 1)
+	product, err := model.NewExistingProduct(id, "Widget", "a widget", "", testMoney(t), quantity, reserved, 1)
 	if err != nil {
 		t.Fatalf("unexpected error building test product: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestProductController_CreateProduct(t *testing.T) {
 		productService.EXPECT().Create(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 			func(ctx context.Context, product *model.Product) (*model.Product, error) {
 				gotProduct = product
-				return model.NewExistingProduct(1, product.Name(), product.Description(), product.Price(), product.Quantity(), 0, 0)
+				return model.NewExistingProduct(1, product.Name(), product.Description(), "", product.Price(), product.Quantity(), 0, 0)
 			},
 		)
 		app := newProductTestApp(productService)
@@ -470,6 +470,39 @@ func TestProductController_GetProducts(t *testing.T) {
 			if _, present := item[internalField]; present {
 				t.Errorf("items[0] exposes %q", internalField)
 			}
+		}
+		if imageURL, present := item["imageUrl"]; !present || imageURL != nil {
+			t.Errorf("items[0].imageUrl = %v (present %t), want null for a product without an image", imageURL, present)
+		}
+	})
+
+	t.Run("returns the path of the product's image", func(t *testing.T) {
+		imageURL := "images/products/widget.webp"
+		productService := mocks.NewMockProductService(gomock.NewController(t))
+		product, err := model.NewExistingProduct(1, "Widget", "a widget", imageURL, testMoney(t), 10, 0, 1)
+		if err != nil {
+			t.Fatalf("unexpected error building test product: %v", err)
+		}
+		productPage := &dto.ProductPageDTO{Products: []*model.Product{product}, TotalElements: 1}
+		productService.EXPECT().GetProducts(gomock.Any(), 0, defaultPageSize).Return(productPage, nil).Times(1)
+		app := newProductTestApp(productService)
+
+		req := httptest.NewRequest("GET", "/products", nil)
+
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.StatusCode != 200 {
+			t.Errorf("status = %d, want 200", resp.StatusCode)
+		}
+		body := decodeBody(t, resp.Body)
+		items, ok := body["items"].([]any)
+		if !ok || len(items) != 1 {
+			t.Fatalf("items = %v, want one product", body["items"])
+		}
+		if gotImageURL := items[0].(map[string]any)["imageUrl"]; gotImageURL != imageURL {
+			t.Errorf("items[0].imageUrl = %v, want %q", gotImageURL, imageURL)
 		}
 	})
 

@@ -33,7 +33,7 @@ func testMoney(t *testing.T) values.Money {
 // testProduct builds a stored product with quantity on hand, of which reserved is reserved.
 func testProduct(t *testing.T, id uint64, quantity, reserved uint) *model.Product {
 	t.Helper()
-	product, err := model.NewExistingProduct(id, "Widget", "a widget", testMoney(t), quantity, reserved, 1)
+	product, err := model.NewExistingProduct(id, "Widget", "a widget", "", testMoney(t), quantity, reserved, 1)
 	if err != nil {
 		t.Fatalf("unexpected error building test product: %v", err)
 	}
