@@ -1,3 +1,6 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+
 plugins {
     kotlin("jvm") version "2.4.0"
 }
@@ -35,4 +38,10 @@ tasks.test {
     // e2e tests spin up the full docker-compose stack and hit real Stripe test-mode APIs -
     // they are slow and belong to their own CI stage, not the regular unit/integration test run.
     systemProperty("junit.jupiter.execution.timeout.default", "5m")
+    // a failed test's whole exception - its message and the cause - in the console, so CI's log says why it failed;
+    // by default Gradle prints only the exception's class and line, the rest is in the HTML report, lost with the runner
+    testLogging {
+        events(TestLogEvent.FAILED)
+        exceptionFormat = TestExceptionFormat.FULL
+    }
 }
