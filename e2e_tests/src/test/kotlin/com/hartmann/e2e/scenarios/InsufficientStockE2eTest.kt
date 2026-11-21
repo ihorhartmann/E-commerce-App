@@ -8,6 +8,7 @@ import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.order.OrderApi
 import com.hartmann.e2e.support.api.order.OrderItemRequest
 import com.hartmann.e2e.support.api.order.PlaceOrderRequest
+import com.hartmann.e2e.support.seed.ProductSeeder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.net.HttpURLConnection
@@ -19,7 +20,7 @@ class InsufficientStockE2eTest : E2eScenarioTest() {
         val orderUrl = DockerComposeStack.orderServiceUrl
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
 
-        val productId = 1L // seeded "Laptop", 10 available
+        val productId = ProductSeeder.laptopId
         val product = InventoryApi.getProduct(inventoryUrl, productId)
         val requestedQuantity = product.available + 1
         val firstPage = 0

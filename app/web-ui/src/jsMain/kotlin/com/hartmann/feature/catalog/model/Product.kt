@@ -2,7 +2,7 @@ package com.hartmann.feature.catalog.model
 
 import com.hartmann.core.model.Money
 
-/** A product as the catalog lists it. [imageUrl] stays null until the backend stores product images. */
+/** A product as the catalog lists it. [imageUrl] is null for a product without a photo: the catalog shows a placeholder. */
 data class CatalogProduct(
     val id: Long,
     val name: String,

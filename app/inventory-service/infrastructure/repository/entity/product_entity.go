@@ -14,6 +14,7 @@ type Product struct {
 	ID            uint64          `gorm:"primaryKey"`
 	Name          string          `gorm:"not null"`
 	Description   string          `gorm:"not null"`
+	ImageURL      *string         `gorm:"column:image_url"`
 	PriceAmount   decimal.Decimal `gorm:"type:numeric(19,2);not null"`
 	PriceCurrency string          `gorm:"not null"`
 	Quantity      uint            `gorm:"not null"`
@@ -30,6 +31,7 @@ func ToProductEntity(product *model.Product) *Product {
 		ID:            product.ID(),
 		Name:          product.Name(),
 		Description:   product.Description(),
+		ImageURL:      toImageURLColumn(product.ImageURL()),
 		PriceAmount:   product.Price().Amount(),
 		PriceCurrency: string(product.Price().Currency()),
 		Quantity:      product.Quantity(),
@@ -48,5 +50,23 @@ func FromProductEntity(product *Product) (*model.Product, error) {
 			WithCause(err)
 	}
 
-	return model.NewExistingProduct(product.ID, product.Name, product.Description, price, product.Quantity, product.Reserved, product.Version)
+	return model.NewExistingProduct(
+		product.ID, product.Name, product.Description, fromImageURLColumn(product.ImageURL), price,
+		product.Quantity, product.Reserved, product.Version,
+	)
+}
+
+// toImageURLColumn stores a product without an image as NULL, not as an empty string.
+func toImageURLColumn(imageURL string) *string {
+	if imageURL == "" {
+		return nil
+	}
+	return &imageURL
+}
+
+func fromImageURLColumn(imageURL *string) string {
+	if imageURL == nil {
+		return ""
+	}
+	return *imageURL
 }

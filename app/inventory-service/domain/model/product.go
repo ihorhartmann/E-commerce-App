@@ -11,10 +11,13 @@ type Product struct {
 	id          uint64
 	name        string
 	description string
-	price       values.Money
-	quantity    uint
-	reserved    uint
-	version     uint64
+	// imageURL is where the web UI finds the product's photo, relative to it; empty when it has none. Only the catalog seed
+	// sets it: a product created or updated through the API keeps what it has.
+	imageURL string
+	price    values.Money
+	quantity uint
+	reserved uint
+	version  uint64
 }
 
 func NewProduct(id uint64, name, description string, price values.Money, quantity uint) (*Product, error) {
@@ -34,7 +37,7 @@ func NewProduct(id uint64, name, description string, price values.Money, quantit
 // NewExistingProduct restores a stored product. Stored data that breaks the product's rules is
 // corrupted, so every rule it breaks is reported as ErrInconsistentProduct, not as a request to
 // reject.
-func NewExistingProduct(id uint64, name, description string, price values.Money, quantity, reserved uint, version uint64) (*Product, error) {
+func NewExistingProduct(id uint64, name, description, imageURL string, price values.Money, quantity, reserved uint, version uint64) (*Product, error) {
 	if id == 0 || reserved > quantity {
 		return nil, ErrInconsistentProduct.
 			WithInternalMessage("stored product breaks its invariants").
@@ -48,6 +51,7 @@ func NewExistingProduct(id uint64, name, description string, price values.Money,
 			WithAttrs(slog.Uint64("productID", id)).
 			WithCause(err)
 	}
+	product.imageURL = imageURL
 	product.reserved = reserved
 	product.version = version
 
@@ -80,6 +84,10 @@ func (p *Product) Name() string {
 
 func (p *Product) Description() string {
 	return p.description
+}
+
+func (p *Product) ImageURL() string {
+	return p.imageURL
 }
 
 func (p *Product) Price() values.Money {

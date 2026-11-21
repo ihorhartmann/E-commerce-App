@@ -21,7 +21,7 @@ func testMoney(t *testing.T) values.Money {
 // newTestProduct builds a stored product with quantity on hand, of which reserved is reserved.
 func newTestProduct(t *testing.T, quantity, reserved uint) *Product {
 	t.Helper()
-	product, err := NewExistingProduct(1, "Widget", "a widget", testMoney(t), quantity, reserved, 3)
+	product, err := NewExistingProduct(1, "Widget", "a widget", "", testMoney(t), quantity, reserved, 3)
 	if err != nil {
 		t.Fatalf("unexpected error building test product: %v", err)
 	}
@@ -84,35 +84,36 @@ func TestNewProduct(t *testing.T) {
 }
 
 func TestNewExistingProduct(t *testing.T) {
-	t.Run("creates a product with the given reserved quantity and version", func(t *testing.T) {
+	t.Run("creates a product with the given image, reserved quantity and version", func(t *testing.T) {
 		id := uint64(1)
+		imageURL := "images/products/widget.webp"
 		reserved := uint(4)
 		version := uint64(7)
-		product, err := NewExistingProduct(id, "Widget", "a widget", testMoney(t), 10, reserved, version)
+		product, err := NewExistingProduct(id, "Widget", "a widget", imageURL, testMoney(t), 10, reserved, version)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if product.ID() != id || product.Reserved() != reserved || product.Version() != version {
-			t.Errorf("got %+v, want id %d, reserved %d, version %d", product, id, reserved, version)
+		if product.ID() != id || product.ImageURL() != imageURL || product.Reserved() != reserved || product.Version() != version {
+			t.Errorf("got %+v, want id %d, image %q, reserved %d, version %d", product, id, imageURL, reserved, version)
 		}
 	})
 
 	t.Run("rejects a zero id", func(t *testing.T) {
-		_, err := NewExistingProduct(0, "Widget", "a widget", testMoney(t), 10, 0, 0)
+		_, err := NewExistingProduct(0, "Widget", "a widget", "", testMoney(t), 10, 0, 0)
 		if !errors.Is(err, ErrInconsistentProduct) {
 			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}
 	})
 
 	t.Run("reports more reserved than on hand as an inconsistent product", func(t *testing.T) {
-		_, err := NewExistingProduct(1, "Widget", "a widget", testMoney(t), 5, 6, 0)
+		_, err := NewExistingProduct(1, "Widget", "a widget", "", testMoney(t), 5, 6, 0)
 		if !errors.Is(err, ErrInconsistentProduct) {
 			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}
 	})
 
 	t.Run("reports a stored blank name as an inconsistent product", func(t *testing.T) {
-		_, err := NewExistingProduct(1, "", "a widget", testMoney(t), 10, 0, 0)
+		_, err := NewExistingProduct(1, "", "a widget", "", testMoney(t), 10, 0, 0)
 		if !errors.Is(err, ErrInconsistentProduct) {
 			t.Errorf("err = %v, want %v", err, ErrInconsistentProduct)
 		}

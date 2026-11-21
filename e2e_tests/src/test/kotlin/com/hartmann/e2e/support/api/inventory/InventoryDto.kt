@@ -35,4 +35,5 @@ data class CatalogProductResponse(
     val description: String,
     val price: InventoryMoneyDto,
     val available: Int,
+    val imageUrl: String?,
 )

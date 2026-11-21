@@ -10,6 +10,7 @@ import com.hartmann.e2e.support.auth.TestUser
 import com.hartmann.e2e.support.auth.givenAs
 import com.hartmann.e2e.support.docker.DockerComposeStack
 import com.hartmann.e2e.support.e2e.E2eSharedSteps
+import com.hartmann.e2e.support.seed.ProductSeeder
 import io.restassured.RestAssured.given
 import io.restassured.http.ContentType
 import org.assertj.core.api.Assertions.assertThat
@@ -32,7 +33,7 @@ class AccessControlE2eTest : E2eScenarioTest() {
         val response = given()
             .contentType(ContentType.JSON)
             .header("Idempotency-Key", UUID.randomUUID().toString())
-            .body(placeOrderRequest(3L))
+            .body(placeOrderRequest(ProductSeeder.mouseId))
             .post("${DockerComposeStack.orderServiceUrl}/api/v1/orders")
             .then()
 
@@ -41,7 +42,11 @@ class AccessControlE2eTest : E2eScenarioTest() {
 
     @Test
     fun `place order - forbidden to a courier`() {
-        val response = OrderApi.placeOrder(DockerComposeStack.orderServiceUrl, TestUser.COURIER1, placeOrderRequest(3L))
+        val response = OrderApi.placeOrder(
+            DockerComposeStack.orderServiceUrl,
+            TestUser.COURIER1,
+            placeOrderRequest(ProductSeeder.mouseId),
+        )
 
         assertProblem(response, HttpURLConnection.HTTP_FORBIDDEN, "ORDER.ACCESS_DENIED")
     }
@@ -49,7 +54,7 @@ class AccessControlE2eTest : E2eScenarioTest() {
     @Test
     fun `get order - another customer's order is reported as not found`() {
         val orderUrl = DockerComposeStack.orderServiceUrl
-        val order = E2eSharedSteps.placeOrder(orderUrl, 3L, 1, customer = TestUser.CLIENT1)
+        val order = E2eSharedSteps.placeOrder(orderUrl, ProductSeeder.mouseId, 1, customer = TestUser.CLIENT1)
 
         val ownerStatusCode = OrderApi.findOrder(orderUrl, TestUser.CLIENT1, order.id).extract().statusCode()
         val otherCustomerResponse = OrderApi.findOrder(orderUrl, TestUser.CLIENT2, order.id)

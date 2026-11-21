@@ -4,42 +4,38 @@ import com.hartmann.e2e.support.api.inventory.CreateProductRequest
 import com.hartmann.e2e.support.api.inventory.InventoryApi
 import com.hartmann.e2e.support.api.inventory.InventoryMoneyDto
 import com.hartmann.e2e.support.docker.DockerComposeStack
-import io.restassured.RestAssured.given
 import java.math.BigDecimal
-import java.net.HttpURLConnection
 
 /**
- * Seeds the fixed product catalog every scenario relies on (Laptop/Keyboard/Mouse, expected to
- * land on ids 1/2/3 via insertion order into an empty table). start() is idempotent, same pattern
- * as DockerComposeStack: skips seeding if product 1 already exists, so repeated local runs
- * against a not-yet-wiped postgres-data volume don't fail on a duplicate insert.
+ * Creates the products the scenarios share (Laptop/Keyboard/Mouse) and remembers their ids. The inventory-service
+ * starts with its own demo catalog (its catalog seed), so these get whatever ids come after it: a scenario takes the id
+ * from here, never assumes one. start() is idempotent, same pattern as DockerComposeStack: the products are created once
+ * per run.
  */
 object ProductSeeder {
-    private val seeded: Boolean by lazy {
-        seedIfEmpty()
-        true
-    }
+    private val ids: Map<String, Long> by lazy { seed() }
+
+    /** 10 available: a scenario that needs to ask for more than there is uses this one. */
+    val laptopId: Long get() = ids.getValue(LAPTOP)
+
+    val keyboardId: Long get() = ids.getValue(KEYBOARD)
+
+    val mouseId: Long get() = ids.getValue(MOUSE)
 
     fun start() {
-        check(seeded)
+        check(ids.isNotEmpty())
     }
 
-    private fun seedIfEmpty() {
+    private fun seed(): Map<String, Long> {
         val inventoryUrl = DockerComposeStack.inventoryServiceUrl
-        val alreadySeeded = given().get("$inventoryUrl/api/v1/products/1").statusCode() == HttpURLConnection.HTTP_OK
-        if (alreadySeeded) return
-
-        InventoryApi.createProduct(
-            inventoryUrl,
-            CreateProductRequest("Laptop", "Portable workstation", InventoryMoneyDto(BigDecimal("1299.99"), "EUR"), 10),
-        )
-        InventoryApi.createProduct(
-            inventoryUrl,
-            CreateProductRequest("Keyboard", "Mechanical keyboard", InventoryMoneyDto(BigDecimal("149.99"), "EUR"), 25),
-        )
-        InventoryApi.createProduct(
-            inventoryUrl,
-            CreateProductRequest("Mouse", "Wireless mouse", InventoryMoneyDto(BigDecimal("79.99"), "EUR"), 40),
-        )
+        return listOf(
+            CreateProductRequest(LAPTOP, "Portable workstation", InventoryMoneyDto(BigDecimal("1299.99"), "EUR"), 10),
+            CreateProductRequest(KEYBOARD, "Mechanical keyboard", InventoryMoneyDto(BigDecimal("149.99"), "EUR"), 25),
+            CreateProductRequest(MOUSE, "Wireless mouse", InventoryMoneyDto(BigDecimal("79.99"), "EUR"), 40),
+        ).associate { request -> request.name to InventoryApi.createProduct(inventoryUrl, request).id }
     }
+
+    private const val LAPTOP = "Laptop"
+    private const val KEYBOARD = "Keyboard"
+    private const val MOUSE = "Mouse"
 }
