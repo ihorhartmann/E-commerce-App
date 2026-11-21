@@ -224,7 +224,6 @@ jobs:
       KC_TEST_CLIENTS_ENABLED: "true"
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@v7
 
@@ -238,6 +237,18 @@ jobs:
       # StripeCliListener shells out to the `stripe` binary to forward real Stripe webhooks
       - name: Install Stripe CLI
         run: npm install -g @stripe/cli
+
+      # stripe listen signs the webhooks it forwards with a secret Stripe issues for the key, and Stripe changes it now
+      # and then: asked here from the same key the tests run stripe listen with, never kept as a copy in GitHub's secrets
+      - name: Stripe CLI webhook secret
+        run: |
+          secret="$(stripe listen --print-secret --api-key "${STRIPE_SECRET_KEY}")"
+          if [[ "${secret}" != whsec_* ]]; then
+            echo "::error::stripe listen --print-secret gave no webhook secret"
+            exit 1
+          fi
+          echo "::add-mask::${secret}"
+          echo "STRIPE_WEBHOOK_SECRET=${secret}" >> "${GITHUB_ENV}"
 
       - run: ./gradlew test
 
