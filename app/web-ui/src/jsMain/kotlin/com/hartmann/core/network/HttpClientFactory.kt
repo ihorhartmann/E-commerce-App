@@ -17,7 +17,7 @@ const val IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 private val MUTATING_METHODS = setOf(HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete)
 
 /**
- * The one HTTP client of the app. Requests go to the page's own origin, which nginx (or the dev server) forwards to
+ * The one HTTP client of the app. Requests go to the page's own origin, which Caddy (or the dev server) forwards to
  * the gateway, so the browser attaches the session cookie on its own.
  */
 fun createHttpClient(): HttpClient = HttpClient(Js) {

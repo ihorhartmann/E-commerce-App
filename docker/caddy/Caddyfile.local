@@ -1,0 +1,8 @@
+# Local only (docker-compose.yaml): the shop on http://localhost:${CADDY_PORT}, routed as in production (shop.caddy).
+# Plain HTTP: browsers treat http://localhost as a secure context (Secure cookies, Stripe.js), so local HTTPS would
+# only add a certificate authority to trust on every machine. Keycloak, Grafana and the rest are reached on their own
+# published ports here, not through Caddy.
+
+http://:{$CADDY_PORT} {
+	import shop.caddy
+}

@@ -1,24 +1,6 @@
-# Rendered by the nginx image's envsubst step from the env vars WEB_UI_PORT, GATEWAY_ADDRESS, STRIPE_PUBLISHABLE_KEY.
-# nginx serves the app's static files and forwards everything the gateway handles to it, so that the browser sees
-# one origin: the session cookie, CSRF and the OAuth2 redirects work without CORS.
-
-# The gateway's address is looked up again every 10s, in Docker's DNS: resolved only once, at startup, it would go
-# stale as soon as the gateway is restarted with another IP, and every request would fail with 502 until nginx is
-# restarted too. A shared zone is what lets nginx update the address at runtime.
-upstream gateway {
-    zone gateway 64k;
-    resolver 127.0.0.11 valid=10s ipv6=off;
-    server ${GATEWAY_ADDRESS} resolve;
-    keepalive 16;
-}
-
-# The scheme the browser uses. In production a TLS proxy (Caddy) stands in front of nginx and talks plain HTTP to it,
-# so $scheme is "http" while the browser is on https: keep the X-Forwarded-Proto the proxy sends, or the gateway
-# builds http:// redirect URIs that Keycloak rejects. Without a proxy in front (locally) there is none - use $scheme.
-map $http_x_forwarded_proto $forwarded_proto {
-    default $http_x_forwarded_proto;
-    ""      $scheme;
-}
+# Rendered by the nginx image's envsubst step from the env vars WEB_UI_PORT and STRIPE_PUBLISHABLE_KEY.
+# nginx serves the app's static files and /config.json only. Caddy stands in front of it (docker/caddy/shop.caddy)
+# and sends the gateway's paths - /api, /oauth2, /login, /logout - to the gateway itself, on the same origin.
 
 server {
     listen ${WEB_UI_PORT};
@@ -47,17 +29,5 @@ server {
         default_type application/json;
         add_header Cache-Control "no-store";
         return 200 '{"stripePublishableKey":"${STRIPE_PUBLISHABLE_KEY}"}';
-    }
-
-    location ~ ^/(api/|oauth2/|login/|logout$) {
-        proxy_pass http://gateway;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        # the address the browser uses (host and port): the gateway builds its OAuth2 redirect URIs from it. With
-        # X-Forwarded-Proto, Spring drops the port of Host, so X-Forwarded-Host has to carry it.
-        proxy_set_header Host $http_host;
-        proxy_set_header X-Forwarded-Host $http_host;
-        proxy_set_header X-Forwarded-Proto $forwarded_proto;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }

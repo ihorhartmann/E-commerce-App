@@ -9,9 +9,9 @@
 	acme_ca {$ACME_CA}
 }
 
-# the shop: the web UI's nginx, which forwards /api, /oauth2, /login and /logout to the gateway
+# the shop: the gateway's paths to the gateway, the rest to the web UI - the same routes as locally (shop.caddy)
 {$DOMAIN} {
-	reverse_proxy web-ui:{$WEB_UI_PORT}
+	import shop.caddy
 }
 
 www.{$DOMAIN} {

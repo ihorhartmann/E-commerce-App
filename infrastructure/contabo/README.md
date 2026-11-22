@@ -7,8 +7,9 @@ published `observer` (a viewer). Everything else - Kafka UI, Alloy, Keycloak's a
 through an SSH tunnel.
 
 ```text
-internet ──80/443──> Caddy ──> web-ui (nginx) ──> gateway ──> services
-                          ├──> keycloak (/realms/ecommerce, /resources only)
+internet ──80/443──> Caddy ──> gateway (/api, /oauth2, /login, /logout) ──> services
+                          ├──> web-ui (nginx, static files: everything else on the shop's host)
+                          ├──> keycloak (/realms/ecommerce, /realms/internal, /resources only)
                           └──> grafana
 ```
 

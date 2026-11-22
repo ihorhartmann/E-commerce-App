@@ -15,9 +15,10 @@ business rules of its own beyond checking a form before sending it - the service
 ## Deployment and authentication
 
 * The production build is static files (`build/dist/js/productionExecutable`), served by nginx
-  (`nginx/default.conf.template`). nginx also forwards `/api`, `/oauth2`, `/login` and `/logout` to the Gateway, so
-  the browser sees a single origin: the Gateway's session cookie, its CSRF cookie and the OAuth2 redirects all work
-  without CORS. The Gateway knows nothing about the UI.
+  (`nginx/default.conf.template`) - and nothing else. Caddy stands in front of it and sends `/api`, `/oauth2`,
+  `/login` and `/logout` to the Gateway on the same origin (`docker/caddy/shop.caddy`), so the browser sees a single
+  origin: the Gateway's session cookie, its CSRF cookie and the OAuth2 redirects all work without CORS. The Gateway
+  knows nothing about the UI, nor the UI's nginx about the Gateway.
 * Signing in is a full page navigation to `/oauth2/authorization/keycloak`; signing out is a form POST to `/logout`
   carrying the CSRF token (`BrowserAuthFlowLauncher`). The browser never sees a token - only the `HttpOnly` session cookie.
 * `GET /api/v1/me` (the Gateway's own endpoint) tells who is signed in and their roles; `204 No Content` means a
@@ -26,8 +27,8 @@ business rules of its own beyond checking a form before sending it - the service
 * Every state-changing request carries the CSRF token (`X-XSRF-TOKEN`, from the `XSRF-TOKEN` cookie) and an
   `Idempotency-Key` (`HttpClientFactory`). A request that got no response at all is retried with the same key.
 * Values that differ per environment come from `/config.json`, which nginx renders from env vars (in development,
-  the dev server - `webpack.config.d/dev-server.js`). The container doesn't start if `WEB_UI_PORT`,
-  `GATEWAY_ADDRESS` or `STRIPE_PUBLISHABLE_KEY` is missing (`nginx/00-require-env.sh`).
+  the dev server - `webpack.config.d/dev-server.js`). The container doesn't start if `WEB_UI_PORT` or
+  `STRIPE_PUBLISHABLE_KEY` is missing (`nginx/00-require-env.sh`).
 * The Stripe card form is Stripe's own iframe, mounted into a plain `<div>` the checkout screen renders; Stripe.js is
   loaded from Stripe's domain by `index.html`, never bundled.
 
@@ -76,8 +77,10 @@ hold.
 ## Running
 
 * Production bundle: `./gradlew jsBrowserDistribution`.
-* Dev server with live reload, with the rest of the stack running in Docker:
-  `WEB_UI_PORT=3000 GATEWAY_URL=http://localhost:8080 STRIPE_PUBLISHABLE_KEY=pk_test_... ./gradlew jsBrowserDevelopmentRun --continuous`.
+* Dev server, for working on the UI: it serves the app straight from the sources and reloads the page on every
+  change, instead of the `web-ui` image, which has to be rebuilt for each one. The rest of the stack runs in Docker,
+  except `caddy` (`docker compose stop caddy`): the dev server takes over its port and forwards the gateway's paths
+  itself (`webpack.config.d/dev-server.js`). `WEB_UI_PORT=3000 GATEWAY_URL=http://localhost:8080 STRIPE_PUBLISHABLE_KEY=pk_test_... ./gradlew jsBrowserDevelopmentRun --continuous`.
 * Tests: `./gradlew jsNodeTest`.
 
 ## Tests

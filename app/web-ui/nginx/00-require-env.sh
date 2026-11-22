@@ -4,7 +4,7 @@
 set -eu
 
 missing=""
-for name in WEB_UI_PORT GATEWAY_ADDRESS STRIPE_PUBLISHABLE_KEY; do
+for name in WEB_UI_PORT STRIPE_PUBLISHABLE_KEY; do
     eval "value=\${$name:-}"
     if [ -z "$value" ]; then
         missing="$missing $name"

@@ -26,9 +26,11 @@ The **Order Service** acts as the orchestrator for the other services.
 * Two realms, one per kind of user: `ecommerce` (`docker/keycloak/realm-ecommerce.json`) for the shop - its customers,
   couriers and admin - and `internal` (`docker/keycloak/realm-internal.json`) for the staff's tools - Grafana. Each has
   its own users, policies and sessions; a tool for the staff goes into `internal`, never into the shop's realm.
-* The Web UI's nginx forwards the Gateway's paths (`/api`, `/oauth2`, `/login`, `/logout`), so the browser sees one
-  origin and the session cookie works without CORS. The Gateway knows nothing about the UI: it only builds its
-  redirect URIs from the `X-Forwarded-*` headers nginx sets.
+* Caddy sends the Gateway's paths (`/api`, `/oauth2`, `/login`, `/logout`) to the Gateway and everything else to the
+  Web UI, whose nginx serves static files only (`docker/caddy/shop.caddy`, the same routes locally - plain HTTP - and
+  in production), so the browser sees one origin and the session cookie works without CORS. The Gateway and the UI
+  know nothing about each other: the Gateway only builds its redirect URIs from the `X-Forwarded-*` headers Caddy
+  sets.
 * Every service is an OAuth2 resource server: it validates the token itself (JWKS, issuer), checks the caller's role
   per endpoint (anything not listed is denied), and its use cases check resource ownership (another customer's
   resource is reported as not found).
