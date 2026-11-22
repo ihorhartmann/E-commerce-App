@@ -51,6 +51,7 @@ object DockerComposeStack {
         requiredEnv("GRAFANA_CLIENT_SECRET")
         requiredEnv("INTERNAL_ADMIN_PASSWORD")
         requiredEnv("WEB_UI_PORT")
+        requiredEnv("CADDY_PORT")
         requiredEnv("GRAFANA_PORT")
         requiredEnv("GRAFANA_DB_PASSWORD")
         requiredEnv("ALLOY_UI_PORT")

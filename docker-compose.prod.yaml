@@ -2,7 +2,8 @@
 # .env names both files in COMPOSE_FILE, so a plain `docker compose ...` there always merges them.
 #
 # * Our own services run the images the Build Images workflow pushed to GHCR - nothing is built on the server.
-# * Only Caddy is reachable from the internet (80, 443): it terminates TLS for ${DOMAIN} (the web UI),
+# * Only Caddy is reachable from the internet (80, 443): it terminates TLS for ${DOMAIN} (the shop - the web UI and
+#   the gateway's paths),
 #   auth.${DOMAIN} (Keycloak's sign-in pages) and grafana.${DOMAIN} (signed in through Keycloak). The other tools are
 #   bound to 127.0.0.1 and reached through an SSH tunnel; a port Docker publishes goes around ufw, so nothing else may
 #   be published on 0.0.0.0.
@@ -23,31 +24,30 @@ x-jvm: &jvm
 
 services:
   caddy:
-    image: caddy:2.11.9-alpine
     <<: *restart
     mem_limit: 128m
-    networks:
-      - app-network
-    ports:
+    ports: !override
       - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN is not set}
-      WEB_UI_PORT: ${WEB_UI_PORT}
       # Let's Encrypt's staging CA unless the real one is chosen explicitly: its certificates aren't trusted by
       # browsers, but it has no rate limits worth speaking of - a misconfiguration retried over and over can't lock
       # the domain out of real certificates for a week
       ACME_CA: ${ACME_CA:-https://acme-staging-v02.api.letsencrypt.org/directory}
-    volumes:
+    volumes: !override
+      # HTTPS, the shop (shop.caddy, the same routes as locally), Keycloak's and Grafana's hosts
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy/shop.caddy:/etc/caddy/shop.caddy:ro
       # the certificates and the ACME account: lost, every start would order new ones
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      - web-ui
-      - keycloak
-      - grafana
+      keycloak:
+        condition: service_started
+      grafana:
+        condition: service_started
 
   postgres:
     <<: *restart

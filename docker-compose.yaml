@@ -67,7 +67,7 @@ services:
       # the addresses the browser comes back to after signing in and out (the gateway's redirect URIs in the realm):
       # the gateway itself and the web UI in front of it, both on the one public domain in production
       GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:${GATEWAY_PORT}}
-      WEB_UI_PUBLIC_URL: ${WEB_UI_PUBLIC_URL:-http://localhost:${WEB_UI_PORT}}
+      WEB_UI_PUBLIC_URL: ${WEB_UI_PUBLIC_URL:-http://localhost:${CADDY_PORT}}
       # Grafana, which signs its admin and its observer in through the realm (the grafana client)
       GRAFANA_PUBLIC_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:${GRAFANA_PORT}}
     volumes:
@@ -555,7 +555,7 @@ services:
     secrets:
       - source: gateway_client_secret
         target: oidc.client-secret
-    # ready: started, not shutting down - the gateway has no database - what the web UI waits for
+    # ready: started, not shutting down - the gateway has no database - what Caddy waits for
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${GATEWAY_PORT}/health/readiness || exit 1"]
       interval: 5s
@@ -583,15 +583,32 @@ services:
     image: web-ui:latest
     networks:
       - app-network
-    ports:
-      - "${WEB_UI_PORT}:${WEB_UI_PORT}"
     environment:
       WEB_UI_PORT: ${WEB_UI_PORT}
-      GATEWAY_ADDRESS: gateway-service:${GATEWAY_PORT}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+
+  # The shop's one entry point, as in production: the gateway's paths to the gateway, the rest to the web UI
+  # (docker/caddy/shop.caddy), on one origin. Plain HTTP here (Caddyfile.local); docker-compose.prod.yaml adds HTTPS,
+  # Keycloak's and Grafana's hosts.
+  caddy:
+    image: caddy:2.11.9-alpine
+    networks:
+      - app-network
+    ports:
+      - "${CADDY_PORT}:${CADDY_PORT}"
+    environment:
+      CADDY_PORT: ${CADDY_PORT}
+      # where shop.caddy sends the requests: the web UI's and the gateway's own ports
+      WEB_UI_PORT: ${WEB_UI_PORT}
+      GATEWAY_PORT: ${GATEWAY_PORT}
+    volumes:
+      - ./docker/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy/shop.caddy:/etc/caddy/shop.caddy:ro
     depends_on:
       gateway-service:
         condition: service_healthy
+      web-ui:
+        condition: service_started
 
 networks:
   app-network:

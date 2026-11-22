@@ -1,5 +1,5 @@
-// Dev server only (./gradlew jsBrowserDevelopmentRun): it plays the part nginx plays in the container - forwards the
-// gateway's paths and serves /config.json from env vars. The production bundle has no devServer section.
+// Dev server only (./gradlew jsBrowserDevelopmentRun): it plays the part Caddy and nginx play in Docker - forwards the
+// gateway's paths, serves the app and /config.json from env vars. The production bundle has no devServer section.
 if (config.devServer) {
     const required = ["WEB_UI_PORT", "GATEWAY_URL", "STRIPE_PUBLISHABLE_KEY"];
     const missing = required.filter((name) => !process.env[name]);

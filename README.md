@@ -92,10 +92,10 @@ the compensations and the Kafka topics.
 flowchart LR
     browser([Browser]) --> caddy[Caddy<br/>HTTPS]
     stripe([Stripe]) -. webhook .-> caddy
-    caddy --> webui[Web UI<br/>nginx]
+    caddy -- "/api, /oauth2,<br/>/login, /logout" --> gateway[Gateway]
+    caddy -- everything else --> webui[Web UI<br/>nginx, static files]
     caddy -- sign-in pages --> keycloak[Keycloak]
     caddy --> grafana[Grafana]
-    webui --> gateway[Gateway]
     gateway --> order[Order<br/>orchestrator]
     gateway --> inventory[Inventory]
     gateway --> shipping[Shipping]
@@ -164,11 +164,12 @@ Alertmanager and Grafana. Conventions shared by all the services: [CLAUDE.md](CL
 
 1. Copy `example.env` to `.env` and put your Stripe test-mode keys into `STRIPE_SECRET_KEY` and
    `STRIPE_PUBLISHABLE_KEY`.
-2. Forward Stripe's webhooks to the gateway and put the `whsec_...` secret it prints into `STRIPE_WEBHOOK_SECRET`.
-   Keep it running: an order moves on only once Stripe's webhook reaches the gateway.
+2. Forward Stripe's webhooks to the shop - through Caddy, the way they arrive in production - and put the `whsec_...`
+   secret it prints into `STRIPE_WEBHOOK_SECRET`. Keep it running: an order moves on only once Stripe's webhook
+   reaches the payment-service.
 
    ```bash
-   stripe listen --all-snapshot --forward-to localhost:8080/api/v1/webhooks/stripe
+   stripe listen --all-snapshot --forward-to localhost:3000/api/v1/webhooks/stripe
    ```
 
 3. Start everything:
@@ -179,8 +180,8 @@ Alertmanager and Grafana. Conventions shared by all the services: [CLAUDE.md](CL
 
 | What | URL |
 |---|---|
-| Web UI | http://localhost:3000 |
-| Gateway | http://localhost:8080 |
+| The shop - Caddy: the web UI, and the gateway's paths on the same origin | http://localhost:3000 |
+| Gateway directly (Bearer clients: curl, Postman) | http://localhost:8080 |
 | Grafana (anonymous admin locally) | http://localhost:8089 |
 | Keycloak admin console (`KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`) | http://localhost:8090/admin |
 | Kafka UI | http://localhost:9098 |
@@ -217,7 +218,8 @@ curl -s -X POST http://localhost:8090/realms/ecommerce/protocol/openid-connect/t
 ### Web UI
 
 With the rest of the stack running in Docker, the Gradle dev server serves the UI from the sources and reloads the
-page on every change. Stop the `web-ui` container first (`docker compose stop web-ui`), since both use the same port:
+page on every change, and forwards the gateway's paths itself, as Caddy does. Stop the `caddy` container first
+(`docker compose stop caddy`), since both use the same port:
 
 ```bash
 cd app/web-ui

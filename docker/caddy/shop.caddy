@@ -1,0 +1,16 @@
+# The shop's routes, the same locally (Caddyfile.local) and in production (Caddyfile), each importing this file into
+# the shop's site: the gateway's paths go to the gateway, everything else to the web UI's nginx, which serves the
+# app's static files. The browser sees one origin for both, so the session cookie, CSRF and the OAuth2 redirects work
+# without CORS.
+#
+# Caddy passes the browser's Host on and sets X-Forwarded-Proto and X-Forwarded-Host (with the port): the gateway
+# builds its OAuth2 redirect URIs from them. Whatever X-Forwarded-* a client sends itself is replaced, not trusted.
+
+@gateway path /api/* /oauth2/* /login/* /logout
+handle @gateway {
+	reverse_proxy gateway-service:{$GATEWAY_PORT}
+}
+
+handle {
+	reverse_proxy web-ui:{$WEB_UI_PORT}
+}
